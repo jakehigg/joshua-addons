@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# uv and ruff caches
+.uv/
+.uv-cache/
+.ruff_cache/
+
+# Coverage
+.coverage
+coverage.xml
+
+# Secrets and local config
+.env
+*.local.yaml
+
+# Helm chart artifacts
+charts/*/charts/
+*.tgz
+
+# Tool artifacts
+*.db
+*.log
