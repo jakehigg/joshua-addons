@@ -1,0 +1,56 @@
+# One generic chart, one addon per release. Install it once for each addon
+# you run: `helm install hello charts/joshua-addon -f addons/hello/values.yaml`.
+# The release name becomes every object's name, so two addons never collide.
+
+replicaCount: 1 # pods for the addon's Deployment
+
+image:
+  repository: "" # required: the addon's image, such as ghcr.io/jakehigg/joshua-addons-hello
+  tag: "" # empty means this chart's appVersion, the version the addon shipped with
+  pullPolicy: IfNotPresent # when to pull the image
+
+port: 8000 # the port the addon serves MCP and /healthz on
+
+env: {} # plain environment variables, as a map of NAME: value
+
+envFrom: [] # raw envFrom entries (configMapRef, secretRef), rendered as given
+
+existingSecret: "" # a Secret name; every key in it becomes an environment variable
+
+probes:
+  enabled: true # turn the liveness and readiness probes off for an addon without /healthz
+  path: /healthz # the probe path
+  port: "" # empty means the value in `port`
+  initialDelaySeconds: 10 # wait before the first probe
+  periodSeconds: 10 # time between probes
+
+resources: {} # CPU and memory requests and limits for the addon container
+
+extraContainers: [] # extra containers, rendered next to the addon's own container as given
+
+service:
+  extraPorts: [] # extra Service ports, beyond `port`, rendered as given
+
+ingress:
+  enabled: false # expose the addon outside the cluster
+  className: "" # the IngressClass to use
+  host: "" # required when ingress.enabled is true
+  path: / # the path this addon answers on
+  annotations: {} # Ingress annotations, such as a cert-manager issuer
+  tls:
+    enabled: false # terminate TLS at the Ingress
+    secretName: "" # empty means "<host>-tls"
+
+persistence:
+  enabled: false # give the addon its own PersistentVolumeClaim
+  size: 1Gi # requested storage
+  storageClass: "" # empty means the cluster default
+  accessModes:
+    - ReadWriteOnce # the claim's access modes
+  mountPath: /data # where the addon container mounts the claim
+
+configFile:
+  enabled: false # write configFile.content to a ConfigMap and mount it read-only
+  name: config.yaml # the file name, and the ConfigMap key
+  content: "" # the file's contents, as a string
+  mountPath: /etc/joshua-addon/config.yaml # where the addon container mounts the file

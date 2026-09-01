@@ -1,0 +1,18 @@
+{{/* One ClusterIP Service. An in-cluster caller, such as the joshua-ai
+     gateway, reaches the addon at http://<release name>:<port>/mcp. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "joshua-addon.fullname" . }}
+  labels:
+    {{- include "joshua-addon.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "joshua-addon.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.port }}
+      targetPort: {{ .Values.port }}
+    {{- with .Values.service.extraPorts }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}

@@ -1,0 +1,89 @@
+{{/* One addon, one container, one Deployment. `extraContainers` adds a
+     sidecar an addon needs, such as a local cache; the chart renders it
+     verbatim next to the main container. */}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "joshua-addon.fullname" . }}
+  labels:
+    {{- include "joshua-addon.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "joshua-addon.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "joshua-addon.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ include "joshua-addon.fullname" . }}
+          image: {{ include "joshua-addon.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+          {{- if or .Values.env .Values.existingSecret .Values.envFrom }}
+          env:
+            {{- range $name, $value := .Values.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if or .Values.envFrom .Values.existingSecret }}
+          envFrom:
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if .Values.existingSecret }}
+            - secretRef:
+                name: {{ .Values.existingSecret }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.probes.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: {{ .Values.probes.port | default .Values.port }}
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: {{ .Values.probes.port | default .Values.port }}
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if or .Values.persistence.enabled .Values.configFile.enabled }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if .Values.configFile.enabled }}
+            - name: config
+              mountPath: {{ .Values.configFile.mountPath }}
+              subPath: {{ .Values.configFile.name }}
+              readOnly: true
+            {{- end }}
+          {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if or .Values.persistence.enabled .Values.configFile.enabled }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "joshua-addon.fullname" . }}
+        {{- end }}
+        {{- if .Values.configFile.enabled }}
+        - name: config
+          configMap:
+            name: {{ include "joshua-addon.fullname" . }}
+        {{- end }}
+      {{- end }}

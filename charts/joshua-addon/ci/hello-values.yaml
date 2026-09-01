@@ -1,0 +1,4 @@
+# Mirrors addons/hello/values.yaml: the minimal case, so CI proves the chart
+# renders with only image.repository set.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-hello

@@ -32,6 +32,7 @@ sync:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
+	uv run --with pyyaml python scripts/check_chart_version.py
 
 fmt:
 	uv run ruff format .

@@ -1,0 +1,18 @@
+{{- if .Values.persistence.enabled }}
+{{/* One volume for the addon's own data, mounted at persistence.mountPath. */}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "joshua-addon.fullname" . }}
+  labels:
+    {{- include "joshua-addon.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

@@ -1,0 +1,27 @@
+apiVersion: v2
+name: joshua-addon
+description: One chart for one addon. Install it once for each addon you run, with that addon's own values file.
+type: application
+# The chart version, the chart appVersion, and every addon image tag in this
+# repository are the same string. One version covers the whole repository, so
+# an addon that did not change still gets the new tag. `scripts/check_chart_version.py`
+# and the `chart` CI job refuse a file where they disagree.
+#
+# A `v*` tag builds every addon image at the tag version and packages the
+# chart with `--version` and `--app-version` set to it, so a release keeps
+# them the same without reading this file. Bump both here in the change that
+# needs a release, and tag the merge commit.
+version: 0.0.1
+# An empty `image.tag` in an addon's values means this version, so the chart
+# pulls the image that shipped with it.
+appVersion: "0.0.1"
+home: https://github.com/jakehigg/joshua-addons
+sources:
+  - https://github.com/jakehigg/joshua-addons
+keywords:
+  - joshua
+  - addon
+  - mcp
+maintainers:
+  - name: jakehigg
+    url: https://github.com/jakehigg

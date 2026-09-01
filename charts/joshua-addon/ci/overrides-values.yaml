@@ -1,0 +1,36 @@
+# Values that exercise every override path: ingress, persistence, an extra
+# container, extra env, an existing Secret, an extra Service port, and a
+# custom probe path. They name no real deployment.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-hello
+env:
+  LOG_LEVEL: DEBUG
+existingSecret: hello-addon-secrets
+probes:
+  path: /status
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+extraContainers:
+  - name: cache
+    image: redis:7-alpine
+    ports:
+      - containerPort: 6379
+service:
+  extraPorts:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+ingress:
+  enabled: true
+  className: nginx
+  host: hello.example.com
+  tls:
+    enabled: true
+persistence:
+  enabled: true
+  size: 5Gi

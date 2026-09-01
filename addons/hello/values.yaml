@@ -1,0 +1,4 @@
+# The hello addon, installed with charts/joshua-addon. Every other setting
+# takes the chart's default: port 8000, no ingress, no persistence.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-hello

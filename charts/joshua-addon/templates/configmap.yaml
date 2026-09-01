@@ -1,0 +1,12 @@
+{{- if .Values.configFile.enabled }}
+{{/* A single file, mounted read-only in the addon at configFile.mountPath. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "joshua-addon.fullname" . }}
+  labels:
+    {{- include "joshua-addon.labels" . | nindent 4 }}
+data:
+  {{ .Values.configFile.name }}: |
+{{ .Values.configFile.content | indent 4 }}
+{{- end }}
