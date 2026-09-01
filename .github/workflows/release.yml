@@ -1,0 +1,193 @@
+# Cutting a release: push a tag such as v0.0.1. This builds every addon
+# image, pushes them to the GitHub container registry, packages the chart,
+# and attaches it to a GitHub release.
+#
+# Nothing here deploys. ArgoCD reads the chart and a values file from Git, so a
+# release is only the act of publishing artifacts.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to build, without the leading v
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Finds every addon from the tree, so no job here names one. A new addon
+  # under addons/<name>/ with a Dockerfile joins the matrix below on its own.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      addons: ${{ steps.list.outputs.addons }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - id: list
+        run: echo "addons=$(python3 scripts/list_addons.py)" >> "$GITHUB_OUTPUT"
+
+  # Each architecture builds on a runner of its own architecture. GitHub gives
+  # a public repository free arm64 runners.
+  #
+  # A build pushes no tag. It pushes the image by digest, and the merge job
+  # below joins the digests into one manifest list under the version tag. A tag
+  # written by two jobs at once would keep whichever finished last.
+  images:
+    needs: [version, discover]
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        member: ${{ fromJSON(needs.discover.outputs.addons) }}
+        platform:
+          - name: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - name: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: addons/${{ matrix.member }}/Dockerfile
+          platforms: ${{ matrix.platform.name }}
+          # The label links the package to this repository, so the package page
+          # shows the source and can inherit the repository visibility.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/joshua-addons-${{ matrix.member }},push-by-digest=true,name-canonical=true,push=true
+          # One cache for each addon and each architecture. A shared scope makes
+          # the two architectures evict each other.
+          cache-from: type=gha,scope=${{ matrix.member }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.member }}-${{ matrix.platform.arch }}
+
+      # The merge job needs the digest of every build. Name each file after the
+      # digest, so the two architectures never write one name.
+      - name: keep the digest
+        run: |
+          mkdir -p /tmp/digests
+          # The output is "sha256:<hex>". Keep the hex alone: an artifact path
+          # cannot hold a colon, and the merge job puts the prefix back.
+          digest='${{ steps.build.outputs.digest }}'
+          echo "digest ${digest}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.member }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  # Join the two architectures of one image into a manifest list, and put the
+  # version tag on the list. `docker pull` then takes the right architecture.
+  merge:
+    needs: [version, discover, images]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        member: ${{ fromJSON(needs.discover.outputs.addons) }}
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-${{ matrix.member }}-*
+          merge-multiple: true
+          path: /tmp/digests
+      - name: make the manifest list
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/joshua-addons-${{ matrix.member }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cd /tmp/digests
+          refs=()
+          for digest in *; do
+            refs+=("$IMAGE@sha256:$digest")
+          done
+          echo "joining ${#refs[@]} builds into $IMAGE:$VERSION"
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "index:org.opencontainers.image.version=$VERSION" \
+            --annotation "index:org.opencontainers.image.licenses=AGPL-3.0-or-later" \
+            "${refs[@]}"
+      - name: show what the tag holds
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/joshua-addons-${{ matrix.member }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  chart:
+    needs: [version, merge]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: package the chart at the release version
+        run: |
+          helm package charts/joshua-addon \
+            --version "${{ needs.version.outputs.version }}" \
+            --app-version "${{ needs.version.outputs.version }}" \
+            --destination dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: dist/*.tgz
+
+  publish:
+    needs: [version, chart]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: helm-chart
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tgz
+          generate_release_notes: true
+          # A pre-release until the interfaces settle.
+          prerelease: ${{ startsWith(needs.version.outputs.version, '0.') }}
