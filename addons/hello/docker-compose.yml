@@ -1,0 +1,42 @@
+# Run the `hello` addon alone. `make up ADDON=hello` starts it. The image
+# comes from the GitHub container registry, so nothing is built here: set
+# JOSHUA_ADDONS_VERSION in `.env` to take another release.
+#
+# To run your own build instead, add the developer override:
+#   docker compose -f addons/hello/docker-compose.yml -f addons/hello/docker-compose.dev.yml up -d --build
+#
+# Secrets come only from `.env` (see `.env.example`). No secret is written in
+# this file; every value is a literal or a `${VAR}` from `.env`.
+#
+# Network: the addon joins `joshua`, the external network joshua-ai's own
+# compose file creates. The gateway reaches this addon at
+# `http://hello:8000/mcp`. When joshua-ai is not up, the external network is
+# missing and compose refuses to start; start joshua-ai first, or set
+# JOSHUA_NETWORK to the network joshua-ai actually created.
+services:
+  hello:
+    image: ghcr.io/jakehigg/joshua-addons-hello:${JOSHUA_ADDONS_VERSION:-0.0.1}
+    restart: unless-stopped
+    environment:
+      ADDON_TOKEN: ${ADDON_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # Not published on the host. Only the gateway, over the shared network,
+    # reaches this addon. Uncomment for local debugging only:
+    # ports:
+    #   - "8000:8000"
+    healthcheck:
+      # The slim image has no curl, so the check uses python. `urlopen` exits
+      # non-zero on a non-200 response.
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - joshua
+
+networks:
+  joshua:
+    external: true
+    name: ${JOSHUA_NETWORK:-joshua-ai_default}

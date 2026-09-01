@@ -44,9 +44,8 @@ git checkout -b 42-weather-addon
 4. Run the checks:
 
 ```
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest
+make lint
+make test
 ```
 
 5. Commit. The subject is one short line. The body says why. Write both in
