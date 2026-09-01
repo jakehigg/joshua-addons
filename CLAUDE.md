@@ -32,7 +32,7 @@ addons/<name>/pyproject.toml       a workspace member
 addons/<name>/Dockerfile           the image; its presence puts the addon in CI
 addons/<name>/docker-compose.yml   how a person runs this addon alone
 addons/<name>/values.yaml          the Helm values for this addon
-addons/<name>/joshua_addon_<name>/ the package
+addons/<name>/joshua_<name>/     the package
 addons/<name>/tests/               the tests
 addons/<name>/README.md            what it does, and how to configure it
 ```
