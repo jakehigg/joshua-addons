@@ -22,9 +22,7 @@ The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000, and answers
 
 ## Add it to joshua.yaml
 
-Add this block to the `mcp:` section of your `joshua.yaml`, and set
-`ADDON_TOKEN` for the `hello` container and the matching header for the
-gateway:
+Add this block to the `mcp:` section of your `joshua.yaml`:
 
 ```yaml
 mcp:
@@ -32,9 +30,8 @@ mcp:
     type: http
     url: http://hello:8000/mcp
     allow: all
-    headers:
-      Authorization: "Bearer ${HELLO_ADDON_TOKEN:-}"
 ```
 
 Read `../../docs/config.md` in `joshua-ai` for the full `mcp:` shape, including
-`allow`, `tools`, and per-person identities.
+`allow`, `tools`, and per-person identities. See `../../docs/install.md` for
+the steps that apply this change, and for how to add a token.

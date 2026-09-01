@@ -44,13 +44,30 @@ mcp:
     type: http
     url: http://hello:8000/mcp
     allow: all
+```
+
+   This runs the addon with no token. The Docker network is the boundary:
+   only a container on that network reaches `http://hello:8000`.
+
+5. Optional: add a token. This needs one change outside this repository
+   first. The `gateway` service in the `docker-compose.yml` of joshua-ai
+   passes the container a fixed set of variables, and `HELLO_ADDON_TOKEN` is
+   not one of them, so the token never reaches `gateway` as the file ships.
+   Add `HELLO_ADDON_TOKEN: ${HELLO_ADDON_TOKEN:-}` to that set before you go
+   on. Skip this step otherwise: an empty token still renders as
+   `Authorization: Bearer ` with nothing after it, and the gateway's HTTP
+   client refuses to send that header and never connects to the addon.
+
+   Put the same value in `ADDON_TOKEN` in `addons/hello/.env`, and in
+   `HELLO_ADDON_TOKEN` in the `.env` of joshua-ai. Add a `headers:` block to
+   the `hello` entry from step 4:
+
+```yaml
     headers:
       Authorization: "Bearer ${HELLO_ADDON_TOKEN:-}"
 ```
 
-5. Set the token. Put the same value in `ADDON_TOKEN` in
-   `addons/hello/.env`, and in `HELLO_ADDON_TOKEN` in the `.env` of
-   joshua-ai. Restart the addon so it reads the new value:
+   Restart the addon so it reads the new value:
 
 ```
 make up ADDON=hello
@@ -61,7 +78,7 @@ make up ADDON=hello
    connection. `core` also needs a restart to pick up the new tool.
 
 ```
-export $(grep JOSHUA_TOKEN_LAPTOP .env)
+export $(grep '^JOSHUA_TOKEN_LAPTOP=' .env)
 docker compose exec -e TOKEN="$JOSHUA_TOKEN_LAPTOP" core python -c '
 import os, urllib.request
 req = urllib.request.Request(
@@ -71,6 +88,10 @@ print(urllib.request.urlopen(req).read().decode())
 '
 docker compose restart core
 ```
+
+   The anchored pattern matters: `.env` also documents this variable in a
+   comment, and a bare `grep JOSHUA_TOKEN_LAPTOP .env` matches that line too
+   and breaks the `export`.
 
    This two-step apply is what the operations guide of joshua-ai states for
    a change to `mcp:`. Verify it yourself against
