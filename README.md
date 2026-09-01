@@ -26,6 +26,15 @@ Start Joshua from `joshua-ai` first. Then, for each addon you want:
 
 Each addon has a `README.md` that says what it does and which settings it takes.
 
+## Read more
+
+- [docs/architecture.md](docs/architecture.md): what an addon is, and the
+  trust model between an addon and the core of Joshua.
+- [docs/install.md](docs/install.md): the install steps, for Docker Compose
+  and for Kubernetes.
+- [docs/adding-an-addon.md](docs/adding-an-addon.md): the contract for a new
+  addon.
+
 ## Versions
 
 One version covers the whole repository. The chart version, the chart
