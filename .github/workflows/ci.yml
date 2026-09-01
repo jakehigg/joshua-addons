@@ -1,0 +1,110 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  UV_VERSION: "0.12.5"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  # Finds every addon from the tree, so no other job names one. A new addon
+  # under addons/<name>/ with a Dockerfile joins every matrix below on its
+  # own.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      addons: ${{ steps.list.outputs.addons }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - id: list
+        run: echo "addons=$(python3 scripts/list_addons.py)" >> "$GITHUB_OUTPUT"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen --all-packages
+      - run: uv lock --check
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run python scripts/check_test_policy.py
+      # The root suite holds the guards for the scripts themselves:
+      # list_addons.py finds every addon, check_chart_version.py keeps the
+      # version honest, and check_test_policy.py polices its own coverage
+      # rule. No other job runs it. check_chart_version.py needs pyyaml,
+      # which is not a project dependency, so this run adds it the same way
+      # the chart job does.
+      - name: root test suite
+        if: hashFiles('tests/**') != ''
+        run: uv run --with pyyaml python -m pytest tests
+
+  test:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        member: ${{ fromJSON(needs.discover.outputs.addons) }}
+    # No addon needs a service yet. One that does adds a `services:` block to
+    # this job, next to its own matrix entry, when it lands.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen --all-packages
+      - name: unit tests
+        run: >
+          uv run --package joshua-${{ matrix.member }} pytest addons/${{ matrix.member }}/tests
+          --cov=joshua_${{ matrix.member }} --cov-report=term --cov-fail-under=80
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      # The chart and every addon image ship together, so a chart must never
+      # meet an image it did not ship with.
+      - name: The chart version and every addon image agree
+        run: uv run --with pyyaml python scripts/check_chart_version.py
+      - uses: azure/setup-helm@v4
+      - uses: yokawasa/action-setup-kube-tools@v0.11.2
+        with:
+          kubeconform: "0.6.7"
+      # Each file in ci/ is one installation the chart must render. Rendering
+      # proves the templates make valid Kubernetes objects, and it needs no
+      # cluster. The release name is a placeholder, not an addon: this chart
+      # installs once per addon, under a name the person who runs it picks.
+      - name: Lint and render every values file
+        run: |
+          for f in charts/joshua-addon/ci/*-values.yaml; do
+            echo "== $f"
+            helm lint charts/joshua-addon -f "$f"
+            helm template addon-ci charts/joshua-addon -f "$f" > /tmp/rendered.yaml
+            kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered.yaml
+          done
+
+  build:
+    if: github.event_name == 'push'
+    needs: [discover, lint, test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        member: ${{ fromJSON(needs.discover.outputs.addons) }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f addons/${{ matrix.member }}/Dockerfile .
