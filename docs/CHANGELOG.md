@@ -4,6 +4,16 @@ Each entry names what changed for the person who runs an addon. The
 releases, with the images and the packaged chart, are at
 <https://github.com/jakehigg/joshua-addons/releases>.
 
+## 0.1.2
+
+### Added
+
+- `pantry` serves its old family web UI at `/` and the REST API it needs at
+  `/api/*`, from the same container and port as `/mcp`. `/` and `/api` are
+  open, no bearer token -- the same posture the old family UI had; a
+  deployer gates access with the ingress or the docker network. `/mcp` and
+  `/healthz` keep their existing behavior unchanged.
+
 ## 0.1.1
 
 ### Fixed

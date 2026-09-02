@@ -55,8 +55,38 @@ uv run python scripts/pantry_import.py my_export.json --url http://localhost:800
 
 ## Run it
 
-The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000, and answers
-`GET /healthz` with `{"ok": true}`.
+The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000, answers
+`GET /healthz` with `{"ok": true}`, and serves the web UI and its REST API
+(see "Web UI" below) from the same port.
+
+## Web UI
+
+The addon serves a web UI at `/`, ported from the old `joshua-pantry`
+family app. It shows:
+
+- **Pantry** — every tracked item, grouped by category: in stock, out of
+  stock, and likely depleted or unknown. Record a purchase by name, mark an
+  item out of stock, merge two items, rename an item, edit its aliases, or
+  hide it.
+- **Analytics** — purchase frequency and cost per item: how often it is
+  bought, the cost trend, and the cycle length the depletion estimate uses.
+- **Admin** — every purchase record, paginated, newest first. Edit a
+  purchase's cost or store, or delete one.
+
+`/` and its REST API at `/api/*` are open: they take no bearer token, the
+same posture the old family UI had. `/mcp` still needs `ADDON_TOKEN` when
+one is set. Gate who reaches `/` and `/api` with your ingress or your
+docker network, not this addon.
+
+To reach the UI on a compose install, uncomment the `ports:` block in
+`docker-compose.yml` (or add `-p 8000:8000` on your own run) and open
+`http://localhost:8000/`. On Kubernetes, port-forward the addon's Service:
+
+```
+kubectl port-forward svc/<release> 8000:8000
+```
+
+then open `http://localhost:8000/`.
 
 ## Settings
 
