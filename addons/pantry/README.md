@@ -17,6 +17,16 @@ item, so a receipt name never has to match the pantry exactly first. Recording
 the same item twice for the same date merges into one purchase; a later call
 can still fill in a SKU or UPC an earlier call left blank.
 
+## Preferred products
+
+An item like "spaghetti sauce" can cover more than one product — a jar of
+Rao's, a jar of the store brand. A receipt line with a UPC, or a SKU and a
+store, finds or creates that exact product on the item. `resolve_product`
+looks up an item's preference: a pin, when `set_preferred_product` has set
+one, or `candidates` — the products seen on past receipts — when it has not.
+No preference is a real answer, not a gap: it means ask the person, never
+guess from the candidates.
+
 ## Tools
 
 | Tool | What it does |
@@ -25,8 +35,11 @@ can still fill in a SKU or UPC an earlier call left blank.
 | `get_inventory` | List every tracked item's status, with an optional filter. |
 | `get_item_history` | Purchase history and frequency data for one item. |
 | `get_item_cost` | Average and most recent cost for one or more items. |
+| `get_price_stats` | Cost stats for one item: overall, per store, per product. |
 | `consume_items` | Mark items consumed, e.g. after a meal. |
 | `set_preferred_store` | Set or clear the store an item is usually bought at. |
+| `resolve_product` | Look up the exact product an item resolves to, or its candidates. |
+| `set_preferred_product` | Pin, or clear, the exact product an item resolves to. |
 | `set_purchase_cost` | Attach a price to a purchase that already exists. |
 | `set_purchase_store` | Tag which store one or more existing purchases came from. |
 | `delete_purchase` | Delete a single purchase record, keeping the item. |

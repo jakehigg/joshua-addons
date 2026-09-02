@@ -24,6 +24,9 @@ async def test_lists_every_tool(app_factory) -> None:
         "delete_item",
         "add_alias",
         "list_aliases",
+        "resolve_product",
+        "set_preferred_product",
+        "get_price_stats",
     }
 
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Float, Text, inspect
+from sqlalchemy import Float, Integer, Text, inspect
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from sqlalchemy.types import TypeEngine
 
@@ -27,21 +27,42 @@ from .models import Base
 
 @dataclass(frozen=True)
 class Migration:
-    """One additive column, applied when its table exists but the column does not."""
+    """One additive column, applied when its table exists but the column does not.
+
+    ``references``, when set, is a raw ``REFERENCES`` clause (e.g.
+    ``"products(id) ON DELETE SET NULL"``) appended to the ``ADD COLUMN``
+    statement. Both SQLite and Postgres accept an inline ``REFERENCES``
+    clause on ``ALTER TABLE ... ADD COLUMN``, and every existing row gets the
+    new column as NULL, which always satisfies a foreign key — so this is
+    safe to add to a table that already has rows.
+    """
 
     table: str
     column: str
     type_: TypeEngine
+    references: str | None = None
 
 
 # Ordered oldest to newest. sku, upc, and quantity are the columns this addon
 # adds to purchase_records beyond the ported base model (see models.py); they
 # are the seed entries that exercise the mechanism against a database created
-# before this addon's release added them.
+# before this addon's release added them. The preference columns (P2.3) add
+# the preferred-product pointer and its confidence/source to items; the new
+# ``products`` table itself needs no entry here — ``create_all`` (see
+# ``run_migrations`` below) creates any missing table, including one that did
+# not exist in a pre-P2.3 database.
 ADDITIVE_MIGRATIONS: list[Migration] = [
     Migration("purchase_records", "sku", Text()),
     Migration("purchase_records", "upc", Text()),
     Migration("purchase_records", "quantity", Float()),
+    Migration(
+        "items",
+        "preferred_product_id",
+        Integer(),
+        references="products(id) ON DELETE SET NULL",
+    ),
+    Migration("items", "preference_confidence", Text()),
+    Migration("items", "preference_source", Text()),
 ]
 
 
@@ -66,8 +87,10 @@ async def run_migrations(engine: AsyncEngine) -> None:
             if not existing or migration.column in existing:
                 continue
             compiled_type = migration.type_.compile(dialect=conn.dialect)
-            # migration.table/column/type_ come only from ADDITIVE_MIGRATIONS
-            # above, a fixed list in this file, never from a caller or request.
-            await conn.exec_driver_sql(
-                f"ALTER TABLE {migration.table} ADD COLUMN {migration.column} {compiled_type}"
-            )
+            stmt = f"ALTER TABLE {migration.table} ADD COLUMN {migration.column} {compiled_type}"
+            if migration.references:
+                stmt += f" REFERENCES {migration.references}"
+            # migration.table/column/type_/references come only from
+            # ADDITIVE_MIGRATIONS above, a fixed list in this file, never
+            # from a caller or request.
+            await conn.exec_driver_sql(stmt)

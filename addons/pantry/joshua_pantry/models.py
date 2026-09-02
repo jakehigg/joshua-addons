@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -80,6 +80,27 @@ class Item(Base):
     # preference. Display/guidance hint only — does not affect purchase or
     # depletion logic.
     preferred_store: Mapped[str | None] = mapped_column(Text, default=None)
+    # The exact product this item resolves to (e.g. "spaghetti sauce" -> one
+    # UPC), when the household has a settled choice. Null is a first-class
+    # answer meaning "ask the person" — never guess from products history.
+    # ``use_alter`` breaks the items<->products create-table cycle (see
+    # Product.item_id below): SQLAlchemy defers this constraint to a separate
+    # ALTER TABLE after both tables exist, instead of erroring on the cycle.
+    preferred_product_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "products.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_items_preferred_product_id",
+        ),
+        index=True,
+        default=None,
+    )
+    # "auto" (confident) or "low" (tentative); null when preferred_product_id
+    # is null. See set_preferred_product in server.py for how each is set.
+    preference_confidence: Mapped[str | None] = mapped_column(Text, default=None)
+    # "imported" | "manual" | "learned"; null when preferred_product_id is null.
+    preference_source: Mapped[str | None] = mapped_column(Text, default=None)
 
     purchase_records: Mapped[list[PurchaseRecord]] = relationship(back_populates="item")
     inventory: Mapped[Inventory | None] = relationship(back_populates="item", uselist=False)
@@ -88,6 +109,13 @@ class Item(Base):
         back_populates="item", cascade="all, delete-orphan"
     )
     category: Mapped[Category | None] = relationship(back_populates="items")
+    products: Mapped[list[Product]] = relationship(
+        back_populates="item",
+        foreign_keys="Product.item_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    preferred_product: Mapped[Product | None] = relationship(foreign_keys=[preferred_product_id])
 
 
 class ItemAlias(Base):
@@ -126,6 +154,40 @@ class PurchaseRecord(Base):
     quantity: Mapped[float | None] = mapped_column(default=None)
 
     item: Mapped[Item] = relationship(back_populates="purchase_records")
+
+
+class Product(Base):
+    """One physical product a household can buy for an item.
+
+    "Spaghetti Sauce" (the item) may resolve to several products over time —
+    a jar of Rao's, a jar of the store brand — each its own row here, found
+    by ``upc`` or by ``sku``+``store`` (see ``joshua_pantry.products``).
+    ``extra`` holds retailer-specific ids (a future Instacart product id, for
+    example) with no schema change: it is read and written whole, never
+    queried into.
+    """
+
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
+    # Unique when set; a bare UNIQUE constraint allows any number of NULL
+    # rows on both SQLite and Postgres, so a product with no known UPC never
+    # collides with another (see test_models.py for a same-item proof and
+    # test_migrations.py for the pre-P2.3 upgrade path).
+    upc: Mapped[str | None] = mapped_column(Text, unique=True, default=None)
+    sku: Mapped[str | None] = mapped_column(Text, default=None)
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    store: Mapped[str | None] = mapped_column(Text, default=None)
+    size: Mapped[str | None] = mapped_column(Text, default=None)  # e.g. "24 oz"
+    unit: Mapped[str | None] = mapped_column(Text, default=None)
+    # Retailer-specific ids and other future fields; read and written whole.
+    extra: Mapped[dict | None] = mapped_column(JSON, default=None)
+    last_purchased_at: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now)
+
+    item: Mapped[Item] = relationship(back_populates="products", foreign_keys=[item_id])
 
 
 class Inventory(Base):

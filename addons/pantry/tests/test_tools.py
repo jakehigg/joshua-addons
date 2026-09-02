@@ -265,3 +265,242 @@ async def test_consume_items_empty_list_rejected(bound_db) -> None:
 async def test_consume_items_blank_name_rejected(bound_db) -> None:
     with pytest.raises(ToolError, match="non-empty name"):
         await server.consume_items(["   "])
+
+
+# --- P2.3: preferred products, price stats -------------------------------
+
+
+async def test_record_purchase_links_a_product_from_a_upc(bound_db) -> None:
+    result = await server.record_purchase(
+        items=[
+            server.PurchaseLine(
+                name="Spaghetti Sauce",
+                cost=4.5,
+                upc="111",
+                description="Rao's Marinara",
+                size="24 oz",
+            )
+        ],
+        purchased_at=_DAY,
+    )
+    product = result["items"][0]["product"]
+    assert product["upc"] == "111"
+    assert product["description"] == "Rao's Marinara"
+    assert product["size"] == "24 oz"
+
+
+async def test_record_purchase_upc_under_a_different_item_raises(bound_db) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Milk", upc="555")], purchased_at=_DAY
+    )
+    with pytest.raises(ToolError, match="Milk") as excinfo:
+        await server.record_purchase(
+            items=[server.PurchaseLine(name="Orange Juice", upc="555")],
+            purchased_at="2026-08-02",
+        )
+    assert "Orange Juice" in str(excinfo.value)
+
+
+async def test_resolve_product_unknown_item_raises(bound_db) -> None:
+    with pytest.raises(ToolError, match="Nonexistent"):
+        await server.resolve_product("Nonexistent")
+
+
+async def test_resolve_product_no_preference_lists_candidates_most_recent_first(
+    bound_db,
+) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="A")],
+        purchased_at="2026-01-01",
+    )
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="B")],
+        purchased_at="2026-01-03",
+    )
+    # A second sighting of "A" moves it back to most-recently-purchased.
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="A")],
+        purchased_at="2026-01-05",
+    )
+
+    result = await server.resolve_product("Spaghetti Sauce")
+
+    assert result["preference"] is None
+    assert [c["upc"] for c in result["candidates"]] == ["A", "B"]
+
+
+async def test_set_preferred_product_pins_by_upc_and_resolve_reflects_it(bound_db) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="A", description="Rao's")],
+        purchased_at=_DAY,
+    )
+
+    pin_result = await server.set_preferred_product("Spaghetti Sauce", upc="A")
+    assert pin_result["preference"]["upc"] == "A"
+    assert pin_result["confidence"] == "auto"
+    assert pin_result["source"] == "manual"
+    assert pin_result["cleared"] is False
+
+    resolved = await server.resolve_product("Spaghetti Sauce")
+    assert resolved["preference"]["upc"] == "A"
+    assert resolved["confidence"] == "auto"
+    assert resolved["source"] == "manual"
+    assert resolved.get("stale") is not True
+
+
+async def test_set_preferred_product_pins_by_sku(bound_db) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Eggs", sku="SKU-1", store="Aldi")],
+        purchased_at=_DAY,
+    )
+
+    result = await server.set_preferred_product("Eggs", sku="SKU-1")
+    assert result["preference"]["sku"] == "SKU-1"
+
+
+async def test_set_preferred_product_clears_with_no_args(bound_db) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="A")],
+        purchased_at=_DAY,
+    )
+    await server.set_preferred_product("Spaghetti Sauce", upc="A")
+
+    result = await server.set_preferred_product("Spaghetti Sauce")
+    assert result == {"item": "Spaghetti Sauce", "preference": None, "cleared": True}
+
+    resolved = await server.resolve_product("Spaghetti Sauce")
+    assert resolved["preference"] is None
+
+
+async def test_set_preferred_product_unknown_item_raises(bound_db) -> None:
+    with pytest.raises(ToolError, match="Nonexistent"):
+        await server.set_preferred_product("Nonexistent", upc="A")
+
+
+async def test_set_preferred_product_unmatched_upc_lists_known_products(bound_db) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="A")],
+        purchased_at=_DAY,
+    )
+    with pytest.raises(ToolError, match="Products on file: A") as excinfo:
+        await server.set_preferred_product("Spaghetti Sauce", upc="Z")
+    assert "Spaghetti Sauce" in str(excinfo.value)
+
+
+async def test_resolve_product_staleness_guard_flips_on_when_preference_not_seen_recently(
+    bound_db,
+) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="OLD")],
+        purchased_at="2026-01-01",
+    )
+    await server.set_preferred_product("Spaghetti Sauce", upc="OLD")
+
+    # Not stale yet: OLD is still within the last 2 purchases.
+    fresh = await server.resolve_product("Spaghetti Sauce", recent_window=2)
+    assert fresh.get("stale") is not True
+
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="NEW")],
+        purchased_at="2026-01-02",
+    )
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="NEW")],
+        purchased_at="2026-01-03",
+    )
+
+    stale = await server.resolve_product("Spaghetti Sauce", recent_window=2)
+    assert stale["stale"] is True
+    assert "Spaghetti Sauce" in stale["note"]
+
+
+async def test_get_price_stats_by_store_and_product_with_missing_costs(bound_db) -> None:
+    await server.record_purchase(
+        items=[
+            server.PurchaseLine(
+                name="Eggs", cost=2.0, upc="U1", store="Aldi", description="Grade A"
+            )
+        ],
+        purchased_at="2026-01-01",
+    )
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Eggs", cost=3.0, upc="U2", store="Kroger")],
+        purchased_at="2026-01-02",
+    )
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Eggs")],
+        purchased_at="2026-01-03",
+    )
+
+    stats = await server.get_price_stats("Eggs")
+
+    assert stats["overall"]["count"] == 3
+    assert stats["overall"]["avg_cost"] == 2.5
+    assert stats["overall"]["min_cost"] == 2.0
+    assert stats["overall"]["max_cost"] == 3.0
+    assert stats["overall"]["last_cost"] == 3.0  # most recent priced purchase
+
+    by_store = {s["store"]: s for s in stats["by_store"]}
+    assert by_store["Aldi"]["count"] == 1
+    assert by_store["Aldi"]["avg_cost"] == 2.0
+    assert by_store["unknown"]["count"] == 1
+    assert by_store["unknown"]["avg_cost"] is None
+
+    by_product = {p["upc"]: p for p in stats["by_product"]}
+    assert by_product["U1"]["description"] == "Grade A"
+    assert by_product["U1"]["avg_cost"] == 2.0
+    assert by_product["U2"]["avg_cost"] == 3.0
+    assert by_product[None]["count"] == 1
+    assert by_product[None]["avg_cost"] is None
+
+
+async def test_get_price_stats_never_errors_on_an_item_with_no_purchases(bound_db) -> None:
+    await server.consume_items(["Kale"])
+
+    stats = await server.get_price_stats("Kale")
+
+    assert stats["overall"] == {
+        "count": 0,
+        "avg_cost": None,
+        "min_cost": None,
+        "max_cost": None,
+        "last_cost": None,
+    }
+    assert stats["by_store"] == []
+    assert stats["by_product"] == []
+
+
+async def test_get_price_stats_unknown_item_raises(bound_db) -> None:
+    with pytest.raises(ToolError, match="Nonexistent"):
+        await server.get_price_stats("Nonexistent")
+
+
+async def test_get_inventory_carries_preferred_product(bound_db) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="A")],
+        purchased_at=_DAY,
+    )
+    await server.set_preferred_product("Spaghetti Sauce", upc="A")
+
+    rows = await server.get_inventory()
+    row = next(r for r in rows if r["name"] == "Spaghetti Sauce")
+    assert row["preferred_product"]["upc"] == "A"
+
+
+async def test_get_inventory_preferred_product_is_null_by_default(bound_db) -> None:
+    await server.record_purchase(items=[server.PurchaseLine(name="Eggs")], purchased_at=_DAY)
+
+    rows = await server.get_inventory()
+    row = next(r for r in rows if r["name"] == "Eggs")
+    assert row["preferred_product"] is None
+
+
+async def test_get_item_history_carries_preferred_product(bound_db) -> None:
+    await server.record_purchase(
+        items=[server.PurchaseLine(name="Spaghetti Sauce", upc="A")],
+        purchased_at=_DAY,
+    )
+    await server.set_preferred_product("Spaghetti Sauce", upc="A")
+
+    history = await server.get_item_history("Spaghetti Sauce")
+    assert history["preferred_product"]["upc"] == "A"

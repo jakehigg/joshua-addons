@@ -35,7 +35,15 @@ from joshua_pantry import inventory as inv_service
 from joshua_pantry.database import build_engine, build_sessionmaker
 from joshua_pantry.log import get_logger
 from joshua_pantry.migrations import run_migrations
-from joshua_pantry.models import ConsumptionEvent, Inventory, Item, ItemAlias, PurchaseRecord
+from joshua_pantry.models import (
+    ConsumptionEvent,
+    Inventory,
+    Item,
+    ItemAlias,
+    Product,
+    PurchaseRecord,
+)
+from joshua_pantry.products import find_or_create_product, product_dict
 from joshua_pantry.purchases import upsert_purchase
 from joshua_pantry.resolution import get_aliases_by_item, normalize, resolve_item
 
@@ -112,6 +120,12 @@ class PurchaseLine(BaseModel):
     upc: str | None = None
     quantity: float | None = None
     store: str | None = None
+    # Optional product detail. A line with a sku/upc (or sku+store) finds or
+    # creates that product's record; these three, when given, fill in blank
+    # fields on it (never overwrite a value already on file).
+    description: str | None = None
+    size: str | None = None
+    unit: str | None = None
 
 
 @mcp.tool()
@@ -136,9 +150,16 @@ async def record_purchase(
     same item twice on the same date merges into one purchase record; a
     later call can still fill in a SKU or UPC the first call left out.
 
+    A line with a upc, or a sku and a store, finds or creates that exact
+    product on the item (see resolve_product): a second sighting stamps it
+    seen again, and description/size/unit fill in only what is still blank.
+    A upc already on file under a different item is refused — fix the line
+    instead of merging two different products.
+
     Args:
         items: One entry per receipt line: name (required, non-empty), and
-            the optional cost, sku, upc, quantity, and store.
+            the optional cost, sku, upc, quantity, store, description, size,
+            and unit.
         purchased_at: The receipt date — an ISO timestamp or YYYY-MM-DD.
             This date applies to every item in the call.
         store: The store name for the whole receipt. An item's own store
@@ -195,6 +216,18 @@ async def record_purchase(
             if match.last_purchased_at is None or when > match.last_purchased_at:
                 match.last_purchased_at = when
 
+            product = await find_or_create_product(
+                session,
+                match,
+                when=when,
+                upc=rec.upc,
+                sku=rec.sku,
+                store=rec.store,
+                description=entry.description,
+                size=entry.size,
+                unit=entry.unit,
+            )
+
             lines.append(
                 {
                     "name": name,
@@ -207,6 +240,7 @@ async def record_purchase(
                     "quantity": rec.quantity,
                     "store": rec.store,
                     "purchased_at": rec.purchased_at.isoformat(),
+                    "product": product_dict(product),
                 }
             )
             touched.add(match.id)
@@ -247,6 +281,8 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
     The lookup also matches aliases; matched_via says whether the name hit
     the item's own name, an alias, or a fuzzy match. recent_purchases
     carries the sku, upc, and quantity recorded on each purchase, when set.
+    preferred_product is null when no product preference is set — use
+    resolve_product to see candidates and set one.
 
     Args:
         item_name: The item to look up (alias and fuzzy matched).
@@ -266,6 +302,12 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
 
         inv_result = await session.execute(select(Inventory).where(Inventory.item_id == match.id))
         inv = inv_result.scalar_one_or_none()
+
+        preferred_product = (
+            await session.get(Product, match.preferred_product_id)
+            if match.preferred_product_id is not None
+            else None
+        )
 
         alias_result = await session.execute(
             select(ItemAlias).where(ItemAlias.item_id == match.id).order_by(ItemAlias.alias)
@@ -287,6 +329,7 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
             "aliases": [a.alias.title() for a in aliases],
             "matched_via": matched_via,
             "preferred_store": match.preferred_store,
+            "preferred_product": product_dict(preferred_product),
             "status": inv_service.get_item_status(inv),
             "avg_cycle_days": inv.avg_cycle_days if inv else None,
             "last_purchased_at": (
@@ -309,6 +352,226 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
                 }
                 for p in purchases
             ],
+        }
+
+
+DEFAULT_STALE_WINDOW = 20
+
+
+@mcp.tool()
+async def resolve_product(
+    item_name: str, recent_window: int = DEFAULT_STALE_WINDOW
+) -> dict[str, Any]:
+    """Resolve an item to the exact product the household reorders, if one is set.
+
+    preference is null when nothing is pinned yet — that is a real answer,
+    not a gap: ask the person which product they want, do not guess from
+    candidates. candidates lists every product seen in this item's purchase
+    history, most-recently-purchased first, whether or not a preference is
+    set. When a preference is set but it has not appeared in the item's last
+    recent_window purchases, stale is true and note explains why — the
+    person may have switched products without saying so.
+
+    Args:
+        item_name: The item to resolve (alias and fuzzy matched).
+        recent_window: How many of the item's most recent purchases count
+            toward the staleness check. Default 20.
+    """
+    async with _session_factory()() as session:
+        match = await resolve_item(session, item_name)
+        if match is None:
+            raise ToolError(f"Item '{item_name}' not found.")
+
+        product_result = await session.execute(
+            select(Product)
+            .where(Product.item_id == match.id)
+            .order_by(Product.last_purchased_at.desc().nulls_last())
+        )
+        candidates = [product_dict(p) for p in product_result.scalars().all()]
+
+        response: dict[str, Any] = {
+            "item": match.name.title(),
+            "preference": None,
+            "candidates": candidates,
+        }
+
+        if match.preferred_product_id is None:
+            return response
+
+        preferred = await session.get(Product, match.preferred_product_id)
+        if preferred is None:
+            # Defensive only: ON DELETE SET NULL keeps this from happening.
+            return response
+
+        response["preference"] = product_dict(preferred)
+        response["confidence"] = match.preference_confidence
+        response["source"] = match.preference_source
+
+        pr_result = await session.execute(
+            select(PurchaseRecord)
+            .where(PurchaseRecord.item_id == match.id)
+            .order_by(PurchaseRecord.purchased_at.desc())
+            .limit(recent_window)
+        )
+        recent = pr_result.scalars().all()
+        seen = {p.upc for p in recent if p.upc} | {p.sku for p in recent if p.sku}
+        appears = (preferred.upc and preferred.upc in seen) or (
+            preferred.sku and preferred.sku in seen
+        )
+        if recent and not appears:
+            response["stale"] = True
+            response["note"] = (
+                f"The preferred product for '{match.name.title()}' was not seen in "
+                f"the last {len(recent)} purchases. Check it is still what the "
+                "household buys before ordering it again."
+            )
+
+        return response
+
+
+@mcp.tool()
+async def set_preferred_product(
+    item_name: str, upc: str | None = None, sku: str | None = None
+) -> dict[str, Any]:
+    """Pin, or clear, the exact product an item resolves to.
+
+    Pass upc or sku to pin: it must already match a product recorded for
+    this item (see resolve_product for the list) — this never invents a
+    product, it only chooses among ones already seen. A person choosing the
+    product by hand is as authoritative as it gets, so a pin always sets
+    confidence to "auto" and source to "manual", the same tier an imported,
+    settled preference would carry. Pass neither upc nor sku to clear the
+    preference back to null — "ask the person" — instead of leaving a stale
+    pin in place.
+
+    Args:
+        item_name: The item to set the preference on (alias and fuzzy
+            matched). Must already exist — this never creates an item.
+        upc: The UPC of the product to pin. Matched against this item's
+            recorded products.
+        sku: The SKU of the product to pin, when upc is not known. When
+            more than one of this item's products share the sku, the
+            most-recently-purchased one is pinned.
+    """
+    async with _session_factory()() as session:
+        match = await resolve_item(session, item_name)
+        if match is None:
+            raise ToolError(f"Item '{item_name}' not found.")
+
+        if not upc and not sku:
+            match.preferred_product_id = None
+            match.preference_confidence = None
+            match.preference_source = None
+            await session.commit()
+            return {
+                "item": match.name.title(),
+                "preference": None,
+                "cleared": True,
+            }
+
+        query = select(Product).where(Product.item_id == match.id)
+        if upc:
+            query = query.where(Product.upc == upc)
+        else:
+            query = query.where(Product.sku == sku)
+        query = query.order_by(Product.last_purchased_at.desc().nulls_last())
+
+        product = (await session.execute(query)).scalars().first()
+        if product is None:
+            known = (
+                (await session.execute(select(Product).where(Product.item_id == match.id)))
+                .scalars()
+                .all()
+            )
+            listing = ", ".join(p.upc or p.sku or "(no upc/sku)" for p in known) or "none"
+            raise ToolError(
+                f"No product of '{match.name.title()}' matches "
+                f"{'upc ' + upc if upc else 'sku ' + sku}. "
+                f"Products on file: {listing}."
+            )
+
+        match.preferred_product_id = product.id
+        match.preference_confidence = "auto"
+        match.preference_source = "manual"
+        await session.commit()
+
+        return {
+            "item": match.name.title(),
+            "preference": product_dict(product),
+            "confidence": "auto",
+            "source": "manual",
+            "cleared": False,
+        }
+
+
+@mcp.tool()
+async def get_price_stats(item_name: str) -> dict[str, Any]:
+    """Get cost statistics for one item: overall, per store, and per product.
+
+    Built from purchase records, not products: overall covers every
+    purchase, by_store groups purchases under the store recorded on them
+    ("unknown" when none was), and by_product groups them by upc (a upc
+    without a matching product still gets its own group; description is
+    null there). A purchase with no cost still counts, but never turns into
+    a number — count is always accurate even when avg/min/max/last are null.
+
+    Args:
+        item_name: The item to look up (alias and fuzzy matched).
+    """
+    async with _session_factory()() as session:
+        match = await resolve_item(session, item_name)
+        if match is None:
+            raise ToolError(f"Item '{item_name}' not found.")
+
+        pr_result = await session.execute(
+            select(PurchaseRecord)
+            .where(PurchaseRecord.item_id == match.id)
+            .order_by(PurchaseRecord.purchased_at.desc())
+        )
+        purchase_rows = pr_result.scalars().all()
+
+        def _stats(rows: list[PurchaseRecord]) -> dict[str, Any]:
+            costs = [r.unit_cost for r in rows if r.unit_cost is not None]
+            last_cost = next((r.unit_cost for r in rows if r.unit_cost is not None), None)
+            return {
+                "count": len(rows),
+                "avg_cost": round(mean(costs), 2) if costs else None,
+                "min_cost": min(costs) if costs else None,
+                "max_cost": max(costs) if costs else None,
+                "last_cost": last_cost,
+            }
+
+        overall = _stats(purchase_rows)
+
+        by_store: dict[str, list[PurchaseRecord]] = {}
+        for row in purchase_rows:
+            by_store.setdefault(row.store or "unknown", []).append(row)
+        stores = [{"store": store, **_stats(rows)} for store, rows in sorted(by_store.items())]
+
+        by_upc: dict[str | None, list[PurchaseRecord]] = {}
+        for row in purchase_rows:
+            by_upc.setdefault(row.upc, []).append(row)
+
+        product_result = await session.execute(select(Product).where(Product.item_id == match.id))
+        products_by_upc = {p.upc: p for p in product_result.scalars().all() if p.upc}
+
+        by_product = []
+        for upc, rows in by_upc.items():
+            product = products_by_upc.get(upc) if upc else None
+            by_product.append(
+                {
+                    "upc": upc,
+                    "description": product.description if product else None,
+                    **_stats(rows),
+                }
+            )
+        by_product.sort(key=lambda entry: (entry["upc"] is None, entry["upc"] or ""))
+
+        return {
+            "item": match.name.title(),
+            "overall": overall,
+            "by_store": stores,
+            "by_product": by_product,
         }
 
 

@@ -15,7 +15,8 @@ from statistics import mean, median
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Category, ConsumptionEvent, Inventory, Item, PurchaseRecord
+from .models import Category, ConsumptionEvent, Inventory, Item, Product, PurchaseRecord
+from .products import product_dict
 from .resolution import get_aliases_by_item
 
 # Bump this when the live algorithm changes so inventory rows are stamped.
@@ -140,10 +141,11 @@ async def get_all_inventory_status(
     )
 
     result = await session.execute(
-        select(Item, Inventory, latest_consumption.c.last_consumed_at, Category.name)
+        select(Item, Inventory, latest_consumption.c.last_consumed_at, Category.name, Product)
         .outerjoin(Inventory, Item.id == Inventory.item_id)
         .outerjoin(latest_consumption, Item.id == latest_consumption.c.item_id)
         .outerjoin(Category, Item.category_id == Category.id)
+        .outerjoin(Product, Item.preferred_product_id == Product.id)
         .where(Item.is_tracked.is_(True))
         .order_by(Item.name)
     )
@@ -151,7 +153,7 @@ async def get_all_inventory_status(
     aliases_map = await get_aliases_by_item(session)
 
     out = []
-    for item, inv, last_consumed_at, category_name in rows:
+    for item, inv, last_consumed_at, category_name, preferred_product in rows:
         status = get_item_status(inv, last_consumed_at)
         if status_filter and status != status_filter:
             continue
@@ -163,6 +165,7 @@ async def get_all_inventory_status(
                 "aliases": [_display(a) for a in aliases_map.get(item.id, [])],
                 "category": _display(category_name) if category_name else None,
                 "preferred_store": item.preferred_store,
+                "preferred_product": product_dict(preferred_product),
                 "status": status,
                 "last_purchased_at": lpa.isoformat() if lpa else None,
                 "avg_cycle_days": inv.avg_cycle_days if inv else None,
