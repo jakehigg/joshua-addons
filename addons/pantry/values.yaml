@@ -8,3 +8,5 @@ image:
 
 persistence:
   enabled: true
+  mountPath: /data
+  size: 1Gi

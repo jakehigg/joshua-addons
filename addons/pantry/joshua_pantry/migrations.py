@@ -35,12 +35,25 @@ class Migration:
     clause on ``ALTER TABLE ... ADD COLUMN``, and every existing row gets the
     new column as NULL, which always satisfies a foreign key — so this is
     safe to add to a table that already has rows.
+
+    ``constraint_name``, when set, names the foreign key with an explicit
+    ``CONSTRAINT`` clause. Give it whenever the same column, on a table
+    ``create_all`` builds fresh, gets a named constraint in ``models.py``
+    (see ``Item.preferred_product_id``): Postgres otherwise auto-names the
+    constraint from the inline ``REFERENCES`` clause (for example
+    ``items_preferred_product_id_fkey``), so a database that took the
+    additive path ends up with a different constraint name than one
+    ``create_all`` built fresh — and a later ``DROP CONSTRAINT`` by the name
+    in ``models.py`` (SQLAlchemy issues one for a ``use_alter`` foreign key
+    on ``drop_all``) fails on the additive-path database, naming a
+    constraint that database never had.
     """
 
     table: str
     column: str
     type_: TypeEngine
     references: str | None = None
+    constraint_name: str | None = None
 
 
 # Ordered oldest to newest. sku, upc, and quantity are the columns this addon
@@ -60,6 +73,7 @@ ADDITIVE_MIGRATIONS: list[Migration] = [
         "preferred_product_id",
         Integer(),
         references="products(id) ON DELETE SET NULL",
+        constraint_name="fk_items_preferred_product_id",
     ),
     Migration("items", "preference_confidence", Text()),
     Migration("items", "preference_source", Text()),
@@ -89,8 +103,11 @@ async def run_migrations(engine: AsyncEngine) -> None:
             compiled_type = migration.type_.compile(dialect=conn.dialect)
             stmt = f"ALTER TABLE {migration.table} ADD COLUMN {migration.column} {compiled_type}"
             if migration.references:
+                if migration.constraint_name:
+                    stmt += f" CONSTRAINT {migration.constraint_name}"
                 stmt += f" REFERENCES {migration.references}"
-            # migration.table/column/type_/references come only from
-            # ADDITIVE_MIGRATIONS above, a fixed list in this file, never
+            # migration.table/column/type_/references/constraint_name come
+            # only from ADDITIVE_MIGRATIONS above, a fixed list in this file,
+            # never
             # from a caller or request.
             await conn.exec_driver_sql(stmt)

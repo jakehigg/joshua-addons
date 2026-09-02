@@ -15,7 +15,13 @@ RUN useradd --uid 1000 --create-home app
 WORKDIR /app
 COPY --from=builder --chown=1000:1000 /app/.venv /app/.venv
 COPY --from=builder --chown=1000:1000 /app/addons/pantry /app/addons/pantry
-ENV PATH="/app/.venv/bin:$PATH"
+# The SQLite file's home, for the DATABASE_URL-unset default. Owned by app so
+# the addon can create pantry.db here with no volume mounted, and so the
+# named volume in docker-compose.yml (mounted over this directory) inherits
+# the same owner.
+RUN mkdir /data && chown 1000:1000 /data
+ENV PATH="/app/.venv/bin:$PATH" \
+    PANTRY_DB=/data/pantry.db
 USER 1000
 EXPOSE 8000
 ENTRYPOINT ["python", "-m", "joshua_pantry"]

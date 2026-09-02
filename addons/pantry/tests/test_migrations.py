@@ -101,7 +101,7 @@ async def test_pre_p2_3_schema_upgrades_in_place(raw_engine: AsyncEngine) -> Non
                 first_seen TIMESTAMP,
                 last_seen TIMESTAMP,
                 last_purchased_at TIMESTAMP,
-                is_tracked BOOLEAN NOT NULL DEFAULT 1,
+                is_tracked BOOLEAN NOT NULL DEFAULT TRUE,
                 category_id INTEGER,
                 preferred_store TEXT
             )

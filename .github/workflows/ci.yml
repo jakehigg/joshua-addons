@@ -55,8 +55,26 @@ jobs:
       fail-fast: false
       matrix:
         member: ${{ fromJSON(needs.discover.outputs.addons) }}
-    # No addon needs a service yet. One that does adds a `services:` block to
-    # this job, next to its own matrix entry, when it lands.
+    # Every member gets this service, whether or not its own tests use it —
+    # joshua-ai's own CI gives every one of its members the same postgres
+    # service its core job needs. hello opens no connection and ignores it.
+    # Named for the job, not for an addon: a later addon that needs Postgres
+    # reads TEST_DATABASE_URL, the same as this one does.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: addons
+          POSTGRES_USER: addons
+          POSTGRES_PASSWORD: addons
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U addons -d addons"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://addons:addons@localhost:5432/addons
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -67,7 +85,17 @@ jobs:
       - name: unit tests
         run: >
           uv run --package joshua-${{ matrix.member }} pytest addons/${{ matrix.member }}/tests
-          --cov=joshua_${{ matrix.member }} --cov-report=term --cov-fail-under=80
+          --cov=joshua_${{ matrix.member }} --cov-report= --cov-fail-under=0
+      # An addon with no integration-marked test (hello) collects zero and
+      # pytest exits 5 ("no tests ran"), tolerated the same way joshua-ai's
+      # core job tolerates it.
+      - name: integration tests
+        run: |
+          rc=0
+          uv run --package joshua-${{ matrix.member }} pytest addons/${{ matrix.member }}/tests -m integration \
+            --cov=joshua_${{ matrix.member }} --cov-append --cov-report= --cov-fail-under=0 || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then exit "$rc"; fi
+          uv run --package joshua-${{ matrix.member }} coverage report --show-missing --fail-under=80
 
   chart:
     runs-on: ubuntu-latest
