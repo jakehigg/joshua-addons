@@ -18,7 +18,7 @@
 # JOSHUA_NETWORK to the network joshua-ai actually created.
 services:
   pantry:
-    image: ghcr.io/jakehigg/joshua-addons-pantry:${JOSHUA_ADDONS_VERSION:-0.1.0}
+    image: ghcr.io/jakehigg/joshua-addons-pantry:${JOSHUA_ADDONS_VERSION:-0.1.1}
     restart: unless-stopped
     environment:
       ADDON_TOKEN: ${ADDON_TOKEN:-}

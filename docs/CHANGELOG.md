@@ -4,6 +4,14 @@ Each entry names what changed for the person who runs an addon. The
 releases, with the images and the packaged chart, are at
 <https://github.com/jakehigg/joshua-addons/releases>.
 
+## 0.1.1
+
+### Fixed
+
+- The chart sets `fsGroup: 1000` on the pod, so an addon with persistence can
+  write its volume. Without it, a PersistentVolumeClaim mounts root-owned and
+  an addon that stores data (pantry) cannot open its database.
+
 ## 0.1.0 - 2026-09-01
 
 ### Added

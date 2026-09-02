@@ -18,6 +18,14 @@ spec:
       labels:
         {{- include "joshua-addon.labels" . | nindent 8 }}
     spec:
+      {{- with .Values.podSecurityContext }}
+      # fsGroup makes a mounted volume group-writable for the app user. A
+      # PersistentVolumeClaim mounts root-owned without it, and every addon
+      # image runs as uid 1000, so an addon with persistence cannot write its
+      # own data unless this is set.
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ include "joshua-addon.fullname" . }}
           image: {{ include "joshua-addon.image" . }}

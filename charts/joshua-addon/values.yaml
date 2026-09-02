@@ -41,6 +41,12 @@ ingress:
     enabled: false # terminate TLS at the Ingress
     secretName: "" # empty means "<host>-tls"
 
+# Pod-level security context. The default fsGroup matches the uid 1000 app
+# user every addon image runs as, so a mounted volume is writable. Set to {}
+# to omit the block entirely.
+podSecurityContext:
+  fsGroup: 1000
+
 persistence:
   enabled: false # give the addon its own PersistentVolumeClaim
   size: 1Gi # requested storage
