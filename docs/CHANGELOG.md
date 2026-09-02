@@ -4,6 +4,19 @@ Each entry names what changed for the person who runs an addon. The
 releases, with the images and the packaged chart, are at
 <https://github.com/jakehigg/joshua-addons/releases>.
 
+## 0.1.0 - 2026-09-01
+
+### Added
+
+- `pantry`, a receipt-first grocery pantry addon. `record_purchase` turns a
+  receipt into pantry state; 16 tools cover inventory status, purchase
+  history, price stats, preferred products, aliases, and a bulk `import_data`
+  path for a first-time load from another system. SQLite by default, on a
+  named volume; set `DATABASE_URL` to use Postgres instead.
+- CI: a `postgres:16` service in the test job, so an addon whose tests need
+  Postgres (marked `@pytest.mark.integration`) can run them there. An addon
+  with none, such as `hello`, is unaffected.
+
 ## 0.0.1 - 2026-09-01
 
 The first release.

@@ -1,0 +1,20 @@
+# Build the image from this checkout instead of running a release. Use it
+# when you change the code:
+#
+#   docker compose -f addons/pantry/docker-compose.yml -f addons/pantry/docker-compose.dev.yml up -d --build
+#
+# or, with the root Makefile:
+#
+#   make up-dev ADDON=pantry
+#
+# The build is tagged `joshua-addons-pantry:dev`, so it never replaces a
+# release on your machine. `make up ADDON=pantry` still runs the release, and
+# `make up-dev ADDON=pantry` still runs your build. Nothing here changes
+# docker-compose.yml. The build context is the repo root, because the addon
+# depends on the workspace lockfile.
+services:
+  pantry:
+    image: joshua-addons-pantry:dev
+    build:
+      context: ../..
+      dockerfile: addons/pantry/Dockerfile

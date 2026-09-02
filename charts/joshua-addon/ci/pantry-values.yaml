@@ -1,0 +1,11 @@
+# Mirrors addons/pantry/values.yaml: image.repository plus persistence, so CI
+# proves the chart renders a PersistentVolumeClaim and its mount. Neither
+# hello-values.yaml (no persistence) nor overrides-values.yaml (persistence
+# plus ingress, an extra container, and more) exercises this combination on
+# its own.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-pantry
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi

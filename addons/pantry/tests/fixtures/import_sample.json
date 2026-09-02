@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "name": "Milk",
+      "akas": ["whole milk"],
+      "category": "Dairy",
+      "preferred_store": "Aldi"
+    },
+    {
+      "name": "Eggs",
+      "akas": ["large eggs", "brown eggs"],
+      "category": "Dairy"
+    },
+    {
+      "name": "Spaghetti Sauce",
+      "akas": ["pasta sauce", "marinara sauce"],
+      "category": "Pantry",
+      "preference": {
+        "upc": "00111122223",
+        "description": "Rao's Marinara",
+        "size": "24 oz",
+        "confidence": "auto"
+      }
+    },
+    {
+      "name": "Bread",
+      "category": "Bakery"
+    },
+    {
+      "name": "Butter",
+      "category": "Dairy",
+      "preferred_store": "Kroger"
+    },
+    {
+      "name": "Coffee",
+      "akas": ["ground coffee"],
+      "preference": {
+        "sku": "SKU-COFFEE-1",
+        "description": "House Blend",
+        "confidence": "low"
+      }
+    },
+    {
+      "name": "Bananas",
+      "category": "Produce"
+    },
+    {
+      "name": "Chicken Thighs",
+      "akas": ["chicken"],
+      "category": "Meat"
+    },
+    {
+      "name": "Rice",
+      "category": "Pantry"
+    },
+    {
+      "name": "Olive Oil",
+      "preferred_store": "Kroger"
+    }
+  ],
+  "purchases": [
+    {"item": "Milk", "purchased_at": "2026-01-05", "store": "Aldi", "cost": 3.5, "upc": "011110000001"},
+    {"item": "Milk", "purchased_at": "2026-01-12", "store": "Aldi", "cost": 3.55, "upc": "011110000001", "quantity": 1},
+    {"item": "Milk", "purchased_at": "2026-01-19", "store": "Aldi", "cost": 3.6, "upc": "011110000001"},
+    {"item": "Milk", "purchased_at": "2026-01-26", "store": "Aldi", "cost": 3.65, "upc": "011110000001", "quantity": 1},
+
+    {"item": "Eggs", "purchased_at": "2026-01-06", "store": "Aldi", "cost": 2.5},
+    {"item": "Eggs", "purchased_at": "2026-01-20", "store": "Kroger", "cost": 2.75},
+    {"item": "Eggs", "purchased_at": "2026-02-03", "store": "Aldi", "cost": 2.6},
+    {"item": "Eggs", "purchased_at": "2026-02-17", "store": "Kroger"},
+
+    {"item": "Spaghetti Sauce", "purchased_at": "2026-01-10", "store": "Kroger", "cost": 4.5, "upc": "00111122223"},
+    {"item": "Spaghetti Sauce", "purchased_at": "2026-01-24", "store": "Kroger", "cost": 4.5, "upc": "00111122223"},
+    {"item": "Spaghetti Sauce", "purchased_at": "2026-02-07", "store": "Kroger", "cost": 4.6, "upc": "00111122223"},
+    {"item": "Spaghetti Sauce", "purchased_at": "2026-02-21", "store": "Kroger", "cost": 4.6, "upc": "00111122223"},
+
+    {"item": "Bread", "purchased_at": "2026-01-07", "store": "Aldi", "cost": 2.75},
+    {"item": "Bread", "purchased_at": "2026-01-14", "store": "Aldi", "cost": 2.75},
+    {"item": "Bread", "purchased_at": "2026-01-21", "store": "Aldi"},
+    {"item": "Bread", "purchased_at": "2026-01-28", "store": "Aldi", "cost": 2.8},
+
+    {"item": "Butter", "purchased_at": "2026-01-15", "store": "Kroger", "cost": 4.25},
+    {"item": "Butter", "purchased_at": "2026-01-29", "store": "Kroger", "cost": 4.25},
+    {"item": "Butter", "purchased_at": "2026-02-12", "store": "Kroger", "cost": 4.3},
+    {"item": "Butter", "purchased_at": "2026-02-26", "store": "Kroger", "cost": 4.3},
+
+    {"item": "Coffee", "purchased_at": "2026-01-03", "store": "Kroger", "cost": 8.5, "sku": "SKU-COFFEE-1"},
+    {"item": "Coffee", "purchased_at": "2026-01-17", "store": "Kroger", "cost": 8.5, "sku": "SKU-COFFEE-1"},
+    {"item": "Coffee", "purchased_at": "2026-01-31", "store": "Kroger", "cost": 8.75, "sku": "SKU-COFFEE-1"},
+    {"item": "Coffee", "purchased_at": "2026-02-14", "store": "Kroger", "sku": "SKU-COFFEE-1"},
+
+    {"item": "Bananas", "purchased_at": "2026-01-04", "store": "Aldi", "cost": 1.2},
+    {"item": "Bananas", "purchased_at": "2026-01-11", "store": "Aldi", "cost": 1.25},
+    {"item": "Bananas", "purchased_at": "2026-01-18", "store": "Aldi", "cost": 1.2},
+    {"item": "Bananas", "purchased_at": "2026-01-25", "store": "Aldi", "cost": 1.3},
+
+    {"item": "Chicken Thighs", "purchased_at": "2026-01-09", "store": "Kroger", "cost": 6.5},
+    {"item": "Chicken Thighs", "purchased_at": "2026-01-23", "store": "Kroger", "cost": 6.75},
+    {"item": "Chicken Thighs", "purchased_at": "2026-02-06", "store": "Kroger"},
+    {"item": "Chicken Thighs", "purchased_at": "2026-02-20", "store": "Kroger", "cost": 6.6},
+
+    {"item": "Rice", "purchased_at": "2026-01-02", "store": "Aldi", "cost": 2.2},
+    {"item": "Rice", "purchased_at": "2026-02-01", "store": "Aldi", "cost": 2.2},
+    {"item": "Rice", "purchased_at": "2026-03-01", "store": "Aldi", "cost": 2.25},
+    {"item": "Rice", "purchased_at": "2026-03-31", "store": "Aldi", "cost": 2.25},
+
+    {"item": "Olive Oil", "purchased_at": "2026-01-08", "store": "Kroger", "cost": 7.0},
+    {"item": "Olive Oil", "purchased_at": "2026-02-08", "store": "Kroger", "cost": 7.25},
+    {"item": "Olive Oil", "purchased_at": "2026-03-08", "store": "Kroger", "cost": 7.25},
+    {"item": "Olive Oil", "purchased_at": "2026-04-08", "store": "Kroger", "cost": 7.5}
+  ],
+  "consumptions": [
+    {"item": "Bananas", "occurred_at": "2026-02-15T18:00:00Z", "note": "smoothie, after the last purchase"},
+    {"item": "Milk", "occurred_at": "2026-01-10T08:00:00Z", "note": "cereal"},
+    {"item": "Eggs", "occurred_at": "2026-01-08T08:00:00Z", "note": "omelette"},
+    {"item": "Bread", "occurred_at": "2026-01-09T12:00:00Z", "note": "sandwich"},
+    {"item": "Spaghetti Sauce", "occurred_at": "2026-01-12T18:00:00Z", "note": "pasta night"},
+    {"item": "Chicken Thighs", "occurred_at": "2026-01-10T18:00:00Z", "note": "tacos"},
+    {"item": "Rice", "occurred_at": "2026-01-05T18:00:00Z", "note": "stir fry"},
+    {"item": "Coffee", "occurred_at": "2026-01-05T07:00:00Z", "note": "morning brew"},
+    {"item": "Butter", "occurred_at": "2026-01-16T09:00:00Z", "note": "baking"},
+    {"item": "Olive Oil", "occurred_at": "2026-01-09T18:00:00Z", "note": "salad dressing"}
+  ]
+}
