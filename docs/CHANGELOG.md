@@ -4,7 +4,7 @@ Each entry names what changed for the person who runs an addon. The
 releases, with the images and the packaged chart, are at
 <https://github.com/jakehigg/joshua-addons/releases>.
 
-## 0.2.0
+## 0.1.2
 
 ### Added
 
