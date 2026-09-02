@@ -126,7 +126,7 @@ class ItemAlias(Base):
     alias: Mapped[str] = mapped_column(Text)
     # Globally unique: one alias name can only ever point to one item.
     normalized: Mapped[str] = mapped_column(Text, unique=True)
-    source: Mapped[str] = mapped_column(Text, default="manual")  # manual | agent | merge
+    source: Mapped[str] = mapped_column(Text, default="manual")  # manual | agent | merge | imported
     created_at: Mapped[datetime] = mapped_column(default=_now)
 
     item: Mapped[Item] = relationship(back_populates="aliases")

@@ -27,6 +27,13 @@ one, or `candidates` — the products seen on past receipts — when it has not.
 No preference is a real answer, not a gap: it means ask the person, never
 guess from the candidates.
 
+## Bulk import
+
+`import_data` loads a household's pantry history in one pass: items, with
+their aliases and preferences, purchases, and consumption events. Read
+`docs/import.md` for the file format and `scripts/pantry_import.py` for a
+command-line driver.
+
 ## Tools
 
 | Tool | What it does |
@@ -46,6 +53,7 @@ guess from the candidates.
 | `delete_item` | Permanently delete a tracked item and all its history. |
 | `add_alias` | Teach the pantry that one name refers to an existing item. |
 | `list_aliases` | List the alternate names on file for one item, or every item. |
+| `import_data` | Load pantry history in bulk: items, purchases, and consumption events. See `docs/import.md`. |
 
 ## Run it
 

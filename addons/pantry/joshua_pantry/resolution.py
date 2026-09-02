@@ -12,7 +12,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Item, ItemAlias
+from .models import Category, Item, ItemAlias
 
 _PUNCT_RE = re.compile(r"[^a-z0-9 ]+")
 _WS_RE = re.compile(r"\s+")
@@ -77,6 +77,24 @@ async def resolve_item(
             if norm in cand_norm or cand_norm in norm:
                 return cand_item
     return None
+
+
+async def resolve_or_create_category(session: AsyncSession, name: str) -> Category:
+    """Find or create a ``Category`` by its normalized name.
+
+    Mirrors item name normalization, so "Dairy" and "dairy" collapse to one
+    row. Used by ``import_data`` (P2.4), the first write path onto this
+    table.
+    """
+    norm = normalize(name)
+    result = await session.execute(select(Category).where(Category.normalized == norm))
+    category = result.scalars().first()
+    if category is not None:
+        return category
+    category = Category(name=name.strip().lower(), normalized=norm)
+    session.add(category)
+    await session.flush()
+    return category
 
 
 async def get_aliases_by_item(session: AsyncSession) -> dict[int, list[str]]:

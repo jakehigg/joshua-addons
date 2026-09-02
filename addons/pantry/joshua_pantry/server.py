@@ -36,6 +36,7 @@ from joshua_pantry.database import build_engine, build_sessionmaker
 from joshua_pantry.log import get_logger
 from joshua_pantry.migrations import run_migrations
 from joshua_pantry.models import (
+    Category,
     ConsumptionEvent,
     Inventory,
     Item,
@@ -43,9 +44,18 @@ from joshua_pantry.models import (
     Product,
     PurchaseRecord,
 )
-from joshua_pantry.products import find_or_create_product, product_dict
+from joshua_pantry.products import (
+    find_or_create_preference_product,
+    find_or_create_product,
+    product_dict,
+)
 from joshua_pantry.purchases import upsert_purchase
-from joshua_pantry.resolution import get_aliases_by_item, normalize, resolve_item
+from joshua_pantry.resolution import (
+    get_aliases_by_item,
+    normalize,
+    resolve_item,
+    resolve_or_create_category,
+)
 
 logger = get_logger("pantry")
 
@@ -1014,6 +1024,483 @@ async def list_aliases(item_name: str | None = None) -> dict[str, Any]:
                 for i in items
             ]
         }
+
+
+IMPORT_VERSION = 1
+
+_ITEM_FIELDS = frozenset({"name", "akas", "category", "preferred_store", "preference"})
+_PREFERENCE_FIELDS = frozenset({"upc", "sku", "description", "store", "size", "unit", "confidence"})
+_PURCHASE_FIELDS = frozenset({"item", "purchased_at", "store", "cost", "upc", "sku", "quantity"})
+_CONSUMPTION_FIELDS = frozenset({"item", "occurred_at", "note"})
+
+
+def _validate_string(value: Any, path: str, *, required: bool = False) -> list[str]:
+    if value is None:
+        return [f"{path}: required"] if required else []
+    if not isinstance(value, str) or (required and not value.strip()):
+        return [f"{path}: must be a non-empty string"]
+    return []
+
+
+def _validate_number(value: Any, path: str) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return [f"{path}: must be a number"]
+    return []
+
+
+async def _validate_import_item(
+    session: AsyncSession, index: int, entry: Any, batch_aka_claims: dict[str, str]
+) -> list[str]:
+    path = f"items[{index}]"
+    if not isinstance(entry, dict):
+        return [f"{path}: must be an object"]
+
+    errors: list[str] = []
+    unknown = set(entry) - _ITEM_FIELDS
+    if unknown:
+        errors.append(f"{path}: unknown field {sorted(unknown)[0]!r}")
+
+    name = entry.get("name")
+    errors.extend(_validate_string(name, f"{path}.name", required=True))
+    if not isinstance(name, str) or not name.strip():
+        return errors  # nothing else in this row resolves without a name
+
+    item_norm = normalize(name)
+
+    akas = entry.get("akas")
+    if akas is not None and not isinstance(akas, list):
+        errors.append(f"{path}.akas: must be a list")
+        akas = []
+    for j, aka in enumerate(akas or []):
+        aka_path = f"{path}.akas[{j}]"
+        if not isinstance(aka, str) or not aka.strip():
+            errors.append(f"{aka_path}: must be a non-empty string")
+            continue
+        norm = normalize(aka)
+        if not norm or norm == item_norm:
+            continue
+
+        claimant = batch_aka_claims.get(norm)
+        if claimant is not None and normalize(claimant) != item_norm:
+            errors.append(
+                f"{aka_path}: '{aka}' is claimed as an alias by two different "
+                f"items in this batch ('{claimant}' and '{name}')"
+            )
+            continue
+        batch_aka_claims[norm] = name.strip()
+
+        existing_item = (
+            (await session.execute(select(Item).where(Item.normalized == norm))).scalars().first()
+        )
+        if existing_item is not None and existing_item.normalized != item_norm:
+            errors.append(
+                f"{aka_path}: '{aka}' is already a tracked item "
+                f"('{existing_item.name.title()}'), not an alias of '{name}'"
+            )
+            continue
+
+        owner_row = (
+            (
+                await session.execute(
+                    select(Item)
+                    .join(ItemAlias, ItemAlias.item_id == Item.id)
+                    .where(ItemAlias.normalized == norm)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if owner_row is not None and owner_row.normalized != item_norm:
+            errors.append(
+                f"{aka_path}: '{aka}' is already an alias of "
+                f"'{owner_row.name.title()}', not '{name}'"
+            )
+
+    errors.extend(_validate_string(entry.get("category"), f"{path}.category"))
+    errors.extend(_validate_string(entry.get("preferred_store"), f"{path}.preferred_store"))
+
+    preference = entry.get("preference")
+    if preference is not None:
+        if not isinstance(preference, dict):
+            errors.append(f"{path}.preference: must be an object")
+        else:
+            unknown_pref = set(preference) - _PREFERENCE_FIELDS
+            if unknown_pref:
+                errors.append(f"{path}.preference: unknown field {sorted(unknown_pref)[0]!r}")
+            if not preference.get("upc") and not preference.get("sku"):
+                errors.append(f"{path}.preference: needs upc or sku")
+            if preference.get("confidence") not in ("auto", "low"):
+                errors.append(f"{path}.preference.confidence: must be 'auto' or 'low'")
+            for field in ("upc", "sku", "description", "store", "size", "unit"):
+                errors.extend(_validate_string(preference.get(field), f"{path}.preference.{field}"))
+
+    return errors
+
+
+def _validate_import_purchase(index: int, entry: Any) -> list[str]:
+    path = f"purchases[{index}]"
+    if not isinstance(entry, dict):
+        return [f"{path}: must be an object"]
+
+    errors: list[str] = []
+    unknown = set(entry) - _PURCHASE_FIELDS
+    if unknown:
+        errors.append(f"{path}: unknown field {sorted(unknown)[0]!r}")
+
+    errors.extend(_validate_string(entry.get("item"), f"{path}.item", required=True))
+
+    purchased_at = entry.get("purchased_at")
+    errors.extend(_validate_string(purchased_at, f"{path}.purchased_at", required=True))
+    if isinstance(purchased_at, str) and purchased_at.strip():
+        try:
+            _parse_purchased_at(purchased_at)
+        except ToolError:
+            errors.append(f"{path}.purchased_at: could not parse {purchased_at!r}")
+
+    for field in ("store", "upc", "sku"):
+        errors.extend(_validate_string(entry.get(field), f"{path}.{field}"))
+    for field in ("cost", "quantity"):
+        errors.extend(_validate_number(entry.get(field), f"{path}.{field}"))
+
+    return errors
+
+
+def _validate_import_consumption(index: int, entry: Any) -> list[str]:
+    path = f"consumptions[{index}]"
+    if not isinstance(entry, dict):
+        return [f"{path}: must be an object"]
+
+    errors: list[str] = []
+    unknown = set(entry) - _CONSUMPTION_FIELDS
+    if unknown:
+        errors.append(f"{path}: unknown field {sorted(unknown)[0]!r}")
+
+    errors.extend(_validate_string(entry.get("item"), f"{path}.item", required=True))
+
+    occurred_at = entry.get("occurred_at")
+    errors.extend(_validate_string(occurred_at, f"{path}.occurred_at", required=True))
+    if isinstance(occurred_at, str) and occurred_at.strip():
+        try:
+            _parse_purchased_at(occurred_at)
+        except ToolError:
+            errors.append(f"{path}.occurred_at: could not parse {occurred_at!r}")
+
+    errors.extend(_validate_string(entry.get("note"), f"{path}.note"))
+    return errors
+
+
+async def _validate_import(
+    session: AsyncSession,
+    version: int,
+    items: list[Any] | None,
+    purchases: list[Any] | None,
+    consumptions: list[Any] | None,
+) -> list[str]:
+    """Check the whole batch before anything is written. See docs/import.md."""
+    if version != IMPORT_VERSION:
+        return [f"version: unsupported version {version!r}; only version {IMPORT_VERSION} works"]
+
+    errors: list[str] = []
+    batch_aka_claims: dict[str, str] = {}
+    for i, entry in enumerate(items or []):
+        errors.extend(await _validate_import_item(session, i, entry, batch_aka_claims))
+    for i, entry in enumerate(purchases or []):
+        errors.extend(_validate_import_purchase(i, entry))
+    for i, entry in enumerate(consumptions or []):
+        errors.extend(_validate_import_consumption(i, entry))
+    return errors
+
+
+async def _apply_import_item(
+    session: AsyncSession,
+    entry: dict[str, Any],
+    counts: dict[str, dict[str, int]],
+    conflicts: list[dict[str, Any]],
+    now: datetime,
+) -> None:
+    name = entry["name"].strip()
+    match = await resolve_item(session, name)
+    created = match is None
+    changed = False
+
+    if match is None:
+        match = Item(
+            name=name.lower(),
+            normalized=normalize(name),
+            first_seen=now,
+            last_seen=now,
+            is_tracked=True,
+        )
+        session.add(match)
+        await session.flush()
+    else:
+        match.is_tracked = True
+
+    for aka in entry.get("akas") or []:
+        norm = normalize(aka)
+        if not norm or norm == match.normalized:
+            continue
+        already = (
+            (await session.execute(select(ItemAlias).where(ItemAlias.normalized == norm)))
+            .scalars()
+            .first()
+        )
+        if already is not None:
+            continue
+        session.add(
+            ItemAlias(
+                item_id=match.id, alias=aka.strip().lower(), normalized=norm, source="imported"
+            )
+        )
+        changed = True
+
+    category = entry.get("category")
+    if category:
+        cat = await resolve_or_create_category(session, category)
+        if match.category_id is None:
+            match.category_id = cat.id
+            changed = True
+        elif match.category_id != cat.id:
+            existing_cat = await session.get(Category, match.category_id)
+            conflicts.append(
+                {
+                    "type": "item_category",
+                    "item": match.name.title(),
+                    "existing": existing_cat.name.title() if existing_cat else None,
+                    "imported": category,
+                }
+            )
+
+    preferred_store = entry.get("preferred_store")
+    if preferred_store:
+        cleaned = preferred_store.strip()
+        if match.preferred_store is None:
+            match.preferred_store = cleaned
+            changed = True
+        elif match.preferred_store != cleaned:
+            conflicts.append(
+                {
+                    "type": "item_preferred_store",
+                    "item": match.name.title(),
+                    "existing": match.preferred_store,
+                    "imported": cleaned,
+                }
+            )
+
+    preference = entry.get("preference")
+    if preference:
+        if match.preferred_product_id is not None and match.preference_source == "manual":
+            existing_product = await session.get(Product, match.preferred_product_id)
+            conflicts.append(
+                {
+                    "type": "preference",
+                    "item": match.name.title(),
+                    "reason": "an existing manual preference is never overwritten",
+                    "existing": product_dict(existing_product),
+                    "imported": {k: v for k, v in preference.items() if k != "confidence"},
+                }
+            )
+        else:
+            product = await find_or_create_preference_product(
+                session,
+                match,
+                upc=preference.get("upc"),
+                sku=preference.get("sku"),
+                store=preference.get("store"),
+                description=preference.get("description"),
+                size=preference.get("size"),
+                unit=preference.get("unit"),
+            )
+            confidence = preference["confidence"]
+            if (
+                match.preferred_product_id != product.id
+                or match.preference_confidence != confidence
+                or match.preference_source != "imported"
+            ):
+                match.preferred_product_id = product.id
+                match.preference_confidence = confidence
+                match.preference_source = "imported"
+                changed = True
+
+    if created:
+        counts["items"]["created"] += 1
+    elif changed:
+        counts["items"]["merged"] += 1
+    else:
+        counts["items"]["skipped"] += 1
+
+
+async def _apply_import_purchase(
+    session: AsyncSession,
+    entry: dict[str, Any],
+    counts: dict[str, dict[str, int]],
+    touched: set[int],
+) -> None:
+    when = _parse_purchased_at(entry["purchased_at"])
+    name = entry["item"].strip()
+    match = await resolve_item(session, name)
+
+    if match is None:
+        match = Item(
+            name=name.lower(),
+            normalized=normalize(name),
+            first_seen=when,
+            last_seen=when,
+            is_tracked=True,
+        )
+        session.add(match)
+        await session.flush()
+        counts["items"]["created"] += 1
+    else:
+        match.is_tracked = True
+        if match.last_seen is None or when > match.last_seen:
+            match.last_seen = when
+
+    rec, purchase_created = await upsert_purchase(
+        session,
+        match.id,
+        when,
+        source="imported",
+        unit_cost=entry.get("cost"),
+        store=entry.get("store"),
+        sku=entry.get("sku"),
+        upc=entry.get("upc"),
+        quantity=entry.get("quantity"),
+    )
+    if match.last_purchased_at is None or when > match.last_purchased_at:
+        match.last_purchased_at = when
+
+    await find_or_create_product(
+        session, match, when=when, upc=rec.upc, sku=rec.sku, store=rec.store
+    )
+
+    touched.add(match.id)
+    if purchase_created:
+        counts["purchases"]["created"] += 1
+    else:
+        counts["purchases"]["merged"] += 1
+
+
+async def _apply_import_consumption(
+    session: AsyncSession,
+    entry: dict[str, Any],
+    counts: dict[str, dict[str, int]],
+    touched: set[int],
+) -> None:
+    occurred_at = _parse_purchased_at(entry["occurred_at"])
+    name = entry["item"].strip()
+    match = await resolve_item(session, name)
+
+    if match is None:
+        match = Item(
+            name=name.lower(),
+            normalized=normalize(name),
+            first_seen=occurred_at,
+            last_seen=occurred_at,
+            is_tracked=True,
+        )
+        session.add(match)
+        await session.flush()
+        counts["items"]["created"] += 1
+    else:
+        match.is_tracked = True
+
+    existing = (
+        (
+            await session.execute(
+                select(ConsumptionEvent).where(
+                    ConsumptionEvent.item_id == match.id,
+                    ConsumptionEvent.occurred_at == occurred_at,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        counts["consumptions"]["skipped"] += 1
+        return
+
+    session.add(
+        ConsumptionEvent(
+            item_id=match.id, note=entry.get("note"), occurred_at=occurred_at, source="imported"
+        )
+    )
+    touched.add(match.id)
+    counts["consumptions"]["created"] += 1
+
+
+@mcp.tool()
+async def import_data(
+    version: int,
+    items: list[dict[str, Any]] | None = None,
+    purchases: list[dict[str, Any]] | None = None,
+    consumptions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Load pantry history in bulk: items, purchases, and consumption events.
+
+    Use this for a first-time load from another system, or a legacy export.
+    Read docs/import.md for the full file format. One call is one batch —
+    for a large dataset, send several calls, each with a slice of items,
+    purchases, and consumptions. 200 rows per section, per call, is a safe
+    chunk size.
+
+    Every name resolves through the same alias and fuzzy match
+    record_purchase uses. A name that matches nothing creates a tracked
+    item. Purchases collapse to one per item per day, the same rule
+    record_purchase follows. A preference sets the item's preferred
+    product with source "imported", unless the item already carries a
+    person's manual preference — that is never overwritten, and the
+    difference is reported instead. Importing the same file twice changes
+    nothing the second time.
+
+    The whole batch is checked before anything is written. One bad row, or
+    one unknown field, stops the whole call — nothing in the batch applies.
+    The error names the JSON path, for example
+    "items[3].preference: needs upc or sku".
+
+    Args:
+        version: The import format version. Must be 1.
+        items: Item rows: name (required), akas, category,
+            preferred_store, and preference (upc or sku, plus description,
+            store, size, unit, and confidence).
+        purchases: Purchase rows: item and purchased_at (required), plus
+            store, cost, upc, sku, and quantity.
+        consumptions: Consumption rows: item and occurred_at (required),
+            plus note.
+    """
+    async with _session_factory()() as session:
+        errors = await _validate_import(session, version, items, purchases, consumptions)
+        if errors:
+            raise ToolError("import rejected:\n" + "\n".join(f"- {e}" for e in errors))
+
+        counts: dict[str, dict[str, int]] = {
+            "items": {"created": 0, "merged": 0, "skipped": 0},
+            "purchases": {"created": 0, "merged": 0, "skipped": 0},
+            "consumptions": {"created": 0, "skipped": 0},
+        }
+        conflicts: list[dict[str, Any]] = []
+        touched: set[int] = set()
+        now = datetime.now(UTC)
+
+        try:
+            for entry in items or []:
+                await _apply_import_item(session, entry, counts, conflicts, now)
+            for entry in purchases or []:
+                await _apply_import_purchase(session, entry, counts, touched)
+            for entry in consumptions or []:
+                await _apply_import_consumption(session, entry, counts, touched)
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+        for item_id in touched:
+            await inv_service.recalculate_inventory(session, item_id)
+
+    return {"version": version, "counts": counts, "conflicts": conflicts}
 
 
 class BearerAuthMiddleware:

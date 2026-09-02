@@ -27,6 +27,7 @@ async def test_lists_every_tool(app_factory) -> None:
         "resolve_product",
         "set_preferred_product",
         "get_price_stats",
+        "import_data",
     }
 
 

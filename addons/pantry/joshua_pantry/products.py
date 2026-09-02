@@ -121,3 +121,73 @@ async def find_or_create_product(
     if unit and not product.unit:
         product.unit = unit
     return product
+
+
+async def find_or_create_preference_product(
+    session: AsyncSession,
+    item: Item,
+    *,
+    upc: str | None = None,
+    sku: str | None = None,
+    store: str | None = None,
+    description: str | None = None,
+    size: str | None = None,
+    unit: str | None = None,
+) -> Product:
+    """Find or create the ``Product`` an imported preference names.
+
+    Used by ``import_data`` (P2.4) for an item's ``preference`` block, where
+    a bare ``sku`` names a settled choice on its own. This differs from
+    ``find_or_create_product``, which needs ``sku`` and ``store`` together
+    because a bare sku can repeat across stores on a purchase line — a
+    preference names one product, so a bare sku is enough here. Raises
+    ``ToolError`` when ``upc`` already names a product under a different
+    item, the same rule ``find_or_create_product`` enforces. The caller
+    guarantees ``upc`` or ``sku`` is set.
+    """
+    product: Product | None = None
+
+    if upc:
+        result = await session.execute(select(Product).where(Product.upc == upc))
+        product = result.scalar_one_or_none()
+        if product is not None and product.item_id != item.id:
+            other = await session.get(Item, product.item_id)
+            other_name = other.name.title() if other else "another item"
+            raise ToolError(
+                f"UPC '{upc}' is already on file for '{other_name}', "
+                f"not '{item.name.title()}'. A UPC belongs to one item."
+            )
+
+    if product is None and sku:
+        query = select(Product).where(Product.item_id == item.id, Product.sku == sku)
+        if store:
+            query = query.where(Product.store == store)
+        product = (await session.execute(query)).scalars().first()
+
+    if product is None:
+        product = Product(
+            item_id=item.id,
+            upc=upc,
+            sku=sku,
+            store=store,
+            description=description,
+            size=size,
+            unit=unit,
+        )
+        session.add(product)
+        await session.flush()
+        return product
+
+    if upc and not product.upc:
+        product.upc = upc
+    if sku and not product.sku:
+        product.sku = sku
+    if store and not product.store:
+        product.store = store
+    if description and not product.description:
+        product.description = description
+    if size and not product.size:
+        product.size = size
+    if unit and not product.unit:
+        product.unit = unit
+    return product

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "name": "Cereal",
+      "akas": ["milk"]
+    },
+    {
+      "name": "Almond Milk",
+      "akas": ["whole milk"]
+    }
+  ]
+}

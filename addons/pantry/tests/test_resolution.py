@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from joshua_pantry import resolution
-from joshua_pantry.models import Item, ItemAlias
+from joshua_pantry.models import Category, Item, ItemAlias
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -107,3 +108,15 @@ async def test_get_aliases_by_item_groups_and_sorts(session: AsyncSession) -> No
 
     grouped = await resolution.get_aliases_by_item(session)
     assert grouped[item.id] == ["pb", "peanut spread"]
+
+
+async def test_resolve_or_create_category_creates_once(session: AsyncSession) -> None:
+    first = await resolution.resolve_or_create_category(session, "Dairy")
+    await session.commit()
+
+    second = await resolution.resolve_or_create_category(session, "dairy")
+    await session.commit()
+
+    assert second.id == first.id
+    result = await session.execute(select(Category).where(Category.normalized == "dairy"))
+    assert len(result.scalars().all()) == 1
