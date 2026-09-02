@@ -27,3 +27,7 @@ charts/*/charts/
 # Tool artifacts
 *.db
 *.log
+
+# Frontend build artifacts (addons/*/frontend/)
+node_modules/
+dist/
