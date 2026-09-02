@@ -34,3 +34,16 @@ async def test_mcp_route_accepts_the_right_token(app_factory) -> None:
         result = await session.call_tool("get_inventory", {})
         assert result.is_error is not True
         assert result.structured_content == {"result": []}
+
+
+async def test_api_and_root_stay_open_when_a_token_is_configured(app_factory, bound_db) -> None:
+    """``/mcp`` needs the token; ``/api`` (and, when mounted, ``/``) never do."""
+    app = app_factory("right-token")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        mcp_response = await client.post("/mcp", json={})
+        api_response = await client.get("/api/inventory")
+
+    assert mcp_response.status_code == 401
+    assert api_response.status_code == 200
+    assert api_response.json() == []

@@ -59,7 +59,10 @@ from joshua_pantry.resolution import (
 
 logger = get_logger("pantry")
 
-OPEN_PATHS = frozenset({"/healthz"})
+# Only ``/mcp`` needs a bearer token. ``/healthz``, ``/api/*`` (the REST API
+# behind the ported web UI), and the UI itself at ``/`` stay open -- the same
+# posture the old family UI had.
+PROTECTED_PREFIX = "/mcp"
 
 # Set by ``lifespan`` on startup, cleared on shutdown. A tool called before
 # startup (or after shutdown) fails loudly instead of touching no database.
@@ -1504,9 +1507,10 @@ async def import_data(
 
 
 class BearerAuthMiddleware:
-    """Require ``Authorization: Bearer <token>`` on every path except ``OPEN_PATHS``.
+    """Require ``Authorization: Bearer <token>`` on ``PROTECTED_PREFIX`` only.
 
-    Skips the check entirely when ``token`` is ``None`` (no ``ADDON_TOKEN``
+    ``/healthz``, ``/api/*``, and the served UI at ``/`` stay open. Skips the
+    check entirely when ``token`` is ``None`` (no ``ADDON_TOKEN``
     configured): the docker network is the boundary in that case.
     """
 
@@ -1515,7 +1519,9 @@ class BearerAuthMiddleware:
         self.token = token
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or self.token is None or scope["path"] in OPEN_PATHS:
+        path = scope.get("path", "")
+        protected = path == PROTECTED_PREFIX or path.startswith(PROTECTED_PREFIX + "/")
+        if scope["type"] != "http" or self.token is None or not protected:
             await self.app(scope, receive, send)
             return
 
@@ -1540,13 +1546,30 @@ mcp.custom_route("/healthz", methods=["GET"])(healthz)
 
 
 def build_app() -> ASGIApp:
-    """Build the addon's ASGI app: the MCP routes plus the auth wrapper.
+    """Build the addon's ASGI app: MCP, the REST API, the built UI, and the auth wrapper.
 
     ``host="0.0.0.0"`` turns off the SDK's loopback-only DNS-rebinding guard: a
     caller reaches this addon by its compose or cluster hostname (for example
     ``http://pantry:8000/mcp``), never by ``localhost``, and the guard would
     otherwise reject every real request.
+
+    The REST API and the built frontend are mounted onto the same
+    ``Starlette`` instance the MCP SDK returns, after it has already
+    registered ``/mcp`` and ``/healthz``. Starlette tries routes in
+    registration order, so those two are matched first, then ``/api``, then
+    the catch-all UI mount at ``/`` last. Mounting more routes does not touch
+    that Starlette instance's lifespan (session manager + this module's
+    ``lifespan``, wired up by the MCP SDK), so the database still opens the
+    same way regardless of what else is mounted.
     """
+    from joshua_pantry.api import build_api_app
+    from joshua_pantry.static import build_static_app
+
     inner = mcp.streamable_http_app(streamable_http_path="/mcp", host="0.0.0.0")
+    inner.mount("/api", build_api_app())
+    static_app = build_static_app()
+    if static_app is not None:
+        inner.mount("/", static_app)
+
     token = os.environ.get("ADDON_TOKEN") or None
     return BearerAuthMiddleware(inner, token)
