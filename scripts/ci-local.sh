@@ -20,8 +20,9 @@ echo "==> lint: test policy"
 uv run python scripts/check_test_policy.py
 if [ -d tests ]; then
   echo "==> lint: root tests"
-  # check_chart_version.py needs pyyaml, which is not a project dependency.
-  uv run --with pyyaml python -m pytest tests
+  # check_chart_version.py needs pyyaml, and export_legacy_pantry.py needs
+  # asyncpg; neither is a root project dependency.
+  uv run --with pyyaml --with asyncpg python -m pytest tests
 fi
 
 # The addon list comes from list_addons.py, the same script the CI discover

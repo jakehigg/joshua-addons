@@ -40,13 +40,15 @@ jobs:
       - run: uv run python scripts/check_test_policy.py
       # The root suite holds the guards for the scripts themselves:
       # list_addons.py finds every addon, check_chart_version.py keeps the
-      # version honest, and check_test_policy.py polices its own coverage
-      # rule. No other job runs it. check_chart_version.py needs pyyaml,
-      # which is not a project dependency, so this run adds it the same way
-      # the chart job does.
+      # version honest, check_test_policy.py polices its own coverage rule,
+      # and export_legacy_pantry.py exports the legacy pantry. No other job
+      # runs it. check_chart_version.py needs pyyaml and
+      # export_legacy_pantry.py needs asyncpg — neither is a project
+      # dependency, so this run adds both the same way the chart job adds
+      # pyyaml.
       - name: root test suite
         if: hashFiles('tests/**') != ''
-        run: uv run --with pyyaml python -m pytest tests
+        run: uv run --with pyyaml --with asyncpg python -m pytest tests
 
   test:
     needs: discover
