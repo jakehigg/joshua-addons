@@ -16,7 +16,12 @@
   --paper-dark: #e1cfa6;
   --ink: #2a1b13;
   --ink-soft: #6b5340;
-  --cover: clamp(200px, 56vmin, 380px);
+  /* The cover has to fit the height as well as the width. `vmin` alone is
+     the smaller side, which on a wide short window is still the height, but
+     it ignores the header, the caption and the arrows stacked below. The
+     `vh` term keeps a tablet or a laptop in landscape from pushing the
+     arrows off the bottom. */
+  --cover: clamp(200px, min(56vmin, 38vh), 380px);
   --display: "Cooper Black", "Arial Rounded MT Bold", "Arial Black", "Trebuchet MS", sans-serif;
   --body: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
   --mono: "Courier New", Courier, monospace;
@@ -27,7 +32,10 @@
 
 [hidden] { display: none !important; }
 
-html, body { margin: 0; min-height: 100%; }
+/* `clip` rather than `hidden`: the 3D shelf and the sliding disc reach past
+   the viewport on a narrow screen, and `hidden` would turn that into a
+   sideways scroll that fights the swipe gesture. */
+html, body { margin: 0; min-height: 100%; overflow-x: clip; }
 
 body {
   background:
@@ -38,7 +46,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  overflow-x: hidden;
+  overflow-x: clip;
   padding-bottom: env(safe-area-inset-bottom);
 }
 
@@ -213,7 +221,7 @@ button, input, select { font: inherit; color: inherit; }
   position: absolute;
   left: 50%;
   top: 40%;
-  width: min(120vw, 1100px);
+  width: min(100%, 1100px);
   height: 60%;
   transform: translate(-50%, -50%);
   background: radial-gradient(ellipse at center, rgba(227, 168, 58, 0.22), transparent 62%);
@@ -622,6 +630,116 @@ button, input, select { font: inherit; color: inherit; }
   .top { padding: 14px 16px 14px; }
   .filters { padding-left: 16px; padding-right: 16px; }
   .now { min-height: 108px; }
+}
+
+/* A short viewport is nearly always a phone held sideways. Stacking the
+   shelf, the caption and the arrows needs more height than there is, so the
+   caption moves beside the shelf and the cover is sized from the height
+   that is actually left rather than from the smaller viewport side. */
+@media (max-height: 680px) and (orientation: landscape) {
+  :root { --cover: clamp(100px, 33vh, 240px); }
+
+  .top {
+    padding: 8px 16px 10px;
+    gap: 4px 16px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .wordmark { font-size: clamp(1.35rem, 4.2vh, 2.1rem); }
+  .count { display: none; }
+  .brand { flex: 0 0 auto; }
+  .tools { flex: 1 1 auto; max-width: 62%; }
+  .tools input, .tools select { padding: 7px 10px; }
+  .stripes { height: 6px; }
+
+  .filters { padding: 6px 16px 0; gap: 4px; }
+  .chip { padding: 4px 10px; font-size: 0.74rem; }
+
+  .stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(170px, 32%, 290px);
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: 18px;
+    padding: 4px 16px 2px;
+  }
+  /* The row of covers is wider than its column, so clip it at the column
+     edge rather than let the far covers slide under the caption. `clip` on
+     one axis leaves the reflection below the shelf untouched, which
+     `hidden` would cut off. */
+  .coverflow {
+    grid-column: 1;
+    grid-row: 1;
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+  .shelf { grid-column: 1; grid-row: 2; }
+  /* The shadow below the shelf is an absolutely positioned block, and it
+     still counts toward the page height. Stacked, the caption below absorbs
+     it; here nothing does, so it has to be shorter than the screen can
+     spare. */
+  .shelf::after { height: 34px; }
+
+  /* The caption sits above the shelf line and the arrows below it, so the
+     two read as one block beside the covers. */
+  .now {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    text-align: left;
+    padding: 0 0 8px;
+    min-height: 0;
+  }
+  .now-title { font-size: clamp(1.05rem, 3.4vh, 1.5rem); }
+  /* One line, always. A wrapped artist name changes the height of the whole
+     column, which is the difference between fitting the screen and not. */
+  .now-meta {
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .now-open { margin-top: 8px; }
+
+  .arrows {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-start;
+    align-self: start;
+    padding: 6px 0 0;
+    gap: 12px;
+  }
+  .arrow { width: 38px; height: 38px; font-size: 1.45rem; }
+
+  .empty { grid-column: 1 / -1; grid-row: 1 / -1; }
+  .glow { height: 74%; }
+
+  /* The gatefold goes side by side too. Stacked, a full-width square cover
+     is taller than the whole screen, so the title and the tracklist sit
+     below the fold and the panel reads as broken. The narrow first column
+     shrinks the cover, because the cover is sized by its width. */
+  .detail-body { grid-template-columns: minmax(0, 34%) 1fr; }
+  .detail-body .cover-wrap { padding: 14px 12px 14px 14px; align-self: start; }
+  .info { padding: 16px 18px 20px; }
+  .info h2 { font-size: 1.25rem; padding-right: 44px; }
+  .info .artist { margin-bottom: 10px; font-size: 0.95rem; }
+  .section { margin-bottom: 12px; }
+}
+
+/* A short portrait window (a small phone, or the browser chrome eating the
+   screen) needs the same restraint without the two-column split. */
+@media (max-height: 700px) and (orientation: portrait) {
+  :root { --cover: clamp(140px, 31vh, 300px); }
+  .top { padding: 8px 16px 8px; gap: 8px 16px; }
+  .wordmark { font-size: clamp(1.6rem, 5.6vw, 2.4rem); }
+  .count { display: none; }
+  .tools input, .tools select { padding: 7px 10px; }
+  .filters { padding-top: 6px; }
+  .chip { padding: 4px 10px; font-size: 0.74rem; }
+  .now { min-height: 0; padding-top: 10px; }
+  .now-open { margin-top: 6px; }
+  .arrows { padding: 6px 0 2px; }
+  .arrow { width: 38px; height: 38px; font-size: 1.45rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
