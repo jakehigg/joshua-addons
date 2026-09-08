@@ -1,0 +1,11 @@
+# The vinyl addon, installed with charts/joshua-addon. The SQLite file, the
+# cached art, and the bundle need somewhere to live, so persistence is on by
+# default, at the chart's default mountPath (/data, this addon's default
+# VINYL_DATA_DIR). Put DISCOGS_TOKEN in an existingSecret, never here.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-vinyl
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi
