@@ -35,10 +35,15 @@ Open `http://<host>:8000/` on a device that can reach the container.
 
 The section letter is the first letter of the artist sort-name that
 MusicBrainz publishes: `Dylan, Bob` files under D, and `Beatles, The` under
-B. The addon writes no name parser of its own. A compilation (credited to
-Various, or a `Compilation` format) and a soundtrack (a `Soundtrack` or
-`Score` style) go to one section after Z. A sort-name that starts with a
-digit or a symbol files under `#`, before A.
+B. The addon writes no name parser of its own. A various-artists release
+(credited to Various) and a soundtrack (a `Soundtrack` or `Score` style) go
+to one section after Z. A sort-name that starts with a digit or a symbol
+files under `#`, before A.
+
+A compilation by one artist files under that artist. A greatest-hits record
+belongs beside the rest of that artist, so `Best Of The Beach Boys` files
+under B. It still counts as a compilation for search and display; only the
+shelf position changes.
 
 A classical release files under its performer. Discogs credits the composer
 first (`Bach / Glenn Gould`), so a release in the Classical genre with more
@@ -106,7 +111,7 @@ a JSON file at `VINYL_CONFIG`, not in code. This is the default, written out:
     "relabel": {"Folk, World, & Country": "Folk & World"}
   },
   "sections": [
-    {"name": "Compilations & Soundtracks", "traits": ["compilation", "soundtrack"]}
+    {"name": "Compilations & Soundtracks", "traits": ["various", "soundtrack"]}
   ],
   "overrides": {
     "artist_sort": {},
@@ -121,8 +126,10 @@ a JSON file at `VINYL_CONFIG`, not in code. This is the default, written out:
   not under that genre.
 - `facets.relabel` renames a genre for display.
 - `sections` lists the dividers after Z, in shelf order. Each matches one or
-  more traits: `compilation` or `soundtrack`. Split them into two sections,
-  or add one, without a code change.
+  more traits: `various`, `soundtrack`, or `compilation`. Split them into two
+  sections, or add one, without a code change. `compilation` covers a
+  greatest-hits record by one artist as well, so a section that lists it
+  takes those off the artist shelf.
 - `overrides.artist_sort` maps an artist name to the sort-name to use.
   `overrides.section` and `overrides.primary_facet` map a Discogs release id,
   as a string, to a fixed value.

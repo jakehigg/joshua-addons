@@ -28,15 +28,24 @@ def test_letter_of(sort_name: str, letter: str) -> None:
     assert shelf.letter_of(sort_name) == letter
 
 
-def test_various_is_a_compilation() -> None:
+def test_various_is_a_compilation_and_many_artists() -> None:
     assert shelf.traits_of("Various", [], [{"name": "Vinyl", "descriptions": ["LP"]}]) == {
-        shelf.COMPILATION
+        shelf.COMPILATION,
+        shelf.VARIOUS,
     }
 
 
 def test_compilation_format_description_is_a_compilation() -> None:
     formats = [{"name": "Vinyl", "descriptions": ["LP", "Compilation"]}]
     assert shelf.traits_of("Ennio Morricone", [], formats) == {shelf.COMPILATION}
+
+
+def test_a_compilation_by_one_artist_files_under_that_artist() -> None:
+    """A greatest-hits record belongs beside the artist, not after Z."""
+    formats = [{"name": "Vinyl", "descriptions": ["LP", "Compilation"]}]
+    traits = shelf.traits_of("The Beach Boys", [], formats)
+    assert traits == {shelf.COMPILATION}
+    assert shelf.section_for("Beach Boys, The", traits, ShelfConfig().sections) == "B"
 
 
 @pytest.mark.parametrize("style", ["Soundtrack", "Score", "soundtrack"])
@@ -59,11 +68,10 @@ def test_soundtrack_by_one_composer_is_never_filed_under_the_composer() -> None:
     assert section == "Compilations & Soundtracks"
 
 
-def test_compilation_goes_after_z() -> None:
+def test_a_various_artists_compilation_goes_after_z() -> None:
     sections = ShelfConfig().sections
-    assert shelf.section_for("Various Artists", {shelf.COMPILATION}, sections) == (
-        "Compilations & Soundtracks"
-    )
+    traits = {shelf.COMPILATION, shelf.VARIOUS}
+    assert shelf.section_for("Various Artists", traits, sections) == ("Compilations & Soundtracks")
 
 
 def test_no_trait_means_the_letter() -> None:
@@ -73,15 +81,15 @@ def test_no_trait_means_the_letter() -> None:
 def test_split_sections_take_the_first_match_in_order() -> None:
     sections = [
         Section(name="Soundtracks", traits=["soundtrack"]),
-        Section(name="Compilations", traits=["compilation"]),
+        Section(name="Compilations", traits=["various"]),
     ]
-    both = {shelf.COMPILATION, shelf.SOUNDTRACK}
+    both = {shelf.COMPILATION, shelf.VARIOUS, shelf.SOUNDTRACK}
     assert shelf.section_for("Morricone, Ennio", both, sections) == "Soundtracks"
-    assert shelf.section_for("Various Artists", {shelf.COMPILATION}, sections) == "Compilations"
+    assert shelf.section_for("Various Artists", {shelf.VARIOUS}, sections) == "Compilations"
 
 
 def test_a_trait_no_section_lists_falls_back_to_the_letter() -> None:
-    sections = [Section(name="Compilations", traits=["compilation"])]
+    sections = [Section(name="Compilations", traits=["various"])]
     assert shelf.section_for("Morricone, Ennio", {shelf.SOUNDTRACK}, sections) == "M"
 
 

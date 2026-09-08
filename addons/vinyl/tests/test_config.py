@@ -67,7 +67,7 @@ def test_shelf_config_defaults() -> None:
     assert rules.facets.promote == {"Country": "Folk, World, & Country"}
     assert rules.facets.relabel == {"Folk, World, & Country": "Folk & World"}
     assert [s.name for s in rules.sections] == ["Compilations & Soundtracks"]
-    assert rules.sections[0].traits == ["compilation", "soundtrack"]
+    assert rules.sections[0].traits == ["various", "soundtrack"]
     assert rules.overrides.artist_sort == {}
 
 

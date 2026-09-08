@@ -106,7 +106,7 @@ class ShelfConfig(BaseModel):
     facets: FacetRules = Field(default_factory=FacetRules)
     sections: list[Section] = Field(
         default_factory=lambda: [
-            Section(name="Compilations & Soundtracks", traits=["compilation", "soundtrack"])
+            Section(name="Compilations & Soundtracks", traits=["various", "soundtrack"])
         ]
     )
     overrides: Overrides = Field(default_factory=Overrides)
