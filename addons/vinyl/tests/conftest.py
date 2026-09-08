@@ -61,16 +61,33 @@ def collection_items() -> list[dict[str, Any]]:
     return items
 
 
+def release_fixtures() -> dict[int, dict[str, Any]]:
+    """Every captured ``/releases/{id}`` response, by release id."""
+    releases = {}
+    for path in sorted(FIXTURES.glob("discogs_release_*.json")):
+        release = load_fixture(path.name)
+        releases[int(release["id"])] = release
+    return releases
+
+
 class FakeDiscogs:
-    """Serves the fixture items and fake image bytes. Counts every download."""
+    """Serves the fixture items and fake image bytes. Counts every call."""
 
     def __init__(self, items: list[dict[str, Any]] | None = None) -> None:
         self.items = collection_items() if items is None else items
+        self.releases = release_fixtures()
         self.downloads: list[str] = []
+        self.release_calls: list[tuple[int, str | None]] = []
         self.fail_urls: set[str] = set()
 
     def collection(self, username: str) -> Iterator[dict[str, Any]]:
         yield from self.items
+
+    def release(self, release_id: int, *, currency: str | None = None) -> dict[str, Any]:
+        self.release_calls.append((release_id, currency))
+        if release_id not in self.releases:
+            raise RuntimeError(f"no fixture for release {release_id}")
+        return self.releases[release_id]
 
     def download(self, url: str) -> bytes:
         self.downloads.append(url)
@@ -84,9 +101,12 @@ class FakeMusicBrainz:
 
     def __init__(self) -> None:
         self.lookups: list[str] = []
+        self.fail_names: set[str] = set()
 
     def search_artist(self, name: str) -> ArtistSort | None:
         self.lookups.append(name)
+        if name in self.fail_names:
+            return None
         slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
         path = FIXTURES / f"musicbrainz_artist_{slug}.json"
         if not path.is_file():
@@ -116,6 +136,8 @@ def sync_into(
     discogs: FakeDiscogs,
     musicbrainz: FakeMusicBrainz | None,
     config: ShelfConfig | None = None,
+    *,
+    enrich: bool = True,
 ) -> SyncResult:
     conn = db.connect(data_dir / "vinyl.db")
     try:
@@ -127,6 +149,7 @@ def sync_into(
             config=config or ShelfConfig(),
             art_dir=data_dir / "art",
             bundle_dir=data_dir / "bundle",
+            enrich=enrich,
         )
     finally:
         conn.close()

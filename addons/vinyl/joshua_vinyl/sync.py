@@ -1,15 +1,19 @@
-"""One sync: read the collection, derive the shelf data, cache art, write the bundle.
+"""One sync: read the collection, derive the shelf data, cache art, enrich, write the bundle.
 
 The steps, for each item in the Discogs collection:
 
 1. Normalize the Discogs item into an album row.
 2. Resolve the artist sort-name: the manual override, then the cache, then
    MusicBrainz. An artist MusicBrainz cannot match keeps the Discogs name as
-   its sort-name for this run and is tried again next time.
+   its sort-name for this run and is tried again next time. A classical
+   release files under its performer, the last credited artist, because
+   Discogs credits the composer first.
 3. Derive the traits, the shelf section, the facets, and the primary facet.
 4. Cache the thumbnail and the cover under the art directory, once.
 
-Then remove any album that left the collection, and write the bundle.
+Then remove any album that left the collection, fetch each release once for
+its tracklist, country, and marketplace summary, and write the bundle. A
+release that fails to fetch keeps what it had.
 """
 
 from __future__ import annotations
@@ -37,12 +41,15 @@ SOURCE_MUSICBRAINZ = "musicbrainz"
 SOURCE_UNRESOLVED = "unresolved"
 META_LAST_SYNC = "last_sync"
 META_LAST_RESULT = "last_result"
+CLASSICAL = "Classical"
 
 
 class CollectionSource(Protocol):
-    """What the sync needs from Discogs: the items and the image bytes."""
+    """What the sync needs from Discogs: the items, one release, and image bytes."""
 
     def collection(self, username: str) -> Iterable[dict[str, Any]]: ...
+
+    def release(self, release_id: int, *, currency: str | None = None) -> dict[str, Any]: ...
 
     def download(self, url: str) -> bytes: ...
 
@@ -63,6 +70,8 @@ class SyncResult:
     removed: int = 0
     art_cached: int = 0
     art_failed: int = 0
+    enriched: int = 0
+    enrich_failed: int = 0
     unresolved_artists: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -73,6 +82,8 @@ class SyncResult:
             "removed": self.removed,
             "art_cached": self.art_cached,
             "art_failed": self.art_failed,
+            "enriched": self.enriched,
+            "enrich_failed": self.enrich_failed,
             "unresolved_artists": list(self.unresolved_artists),
         }
 
@@ -96,10 +107,18 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
     A collection item wraps the release in ``basic_information``. A full
     release from ``/releases/{id}`` has the same fields at the top level,
     with ``images`` in place of ``thumb`` and ``cover_image``.
+
+    ``primary_artist`` is the first credit, which decides the compilation
+    trait. ``sort_artist`` is the credit the shelf files under: the same,
+    except that a classical release with more than one credit files under the
+    last one, the performer, because Discogs credits the composer first.
     """
     info = item.get("basic_information") or item
     artists = info.get("artists") or []
-    primary = strip_discogs_suffix(artists[0]["name"]) if artists else ""
+    names = [strip_discogs_suffix(artist["name"]) for artist in artists]
+    primary = names[0] if names else ""
+    genres = list(info.get("genres") or [])
+    sort_artist = names[-1] if CLASSICAL in genres and len(names) > 1 else primary
     labels = info.get("labels") or []
     label = labels[0].get("name") if labels else None
     catalog_no = labels[0].get("catno") if labels else None
@@ -120,6 +139,7 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
         "instance_id": item.get("instance_id"),
         "artist": _join_artists(artists) or primary,
         "primary_artist": primary,
+        "sort_artist": sort_artist,
         "title": info.get("title", ""),
         "year": int(year) if year else None,
         "label": label,
@@ -127,12 +147,41 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
         "format": format_text or None,
         "formats": formats,
         "country": info.get("country"),
-        "genres": list(info.get("genres") or []),
+        "genres": genres,
         "styles": list(info.get("styles") or []),
         "thumb_url": thumb_url or None,
         "cover_url": cover_url or None,
         "added_at": item.get("date_added"),
     }
+
+
+def tracks_of(release: dict[str, Any]) -> list[dict[str, Any]]:
+    """The tracklist as flat rows: ``position``, ``title``, ``duration``.
+
+    A heading or an index entry becomes a row with no position, and the
+    sub-tracks of an index follow it. A track credited to its own artist (a
+    compilation) keeps that credit in front of the title.
+    """
+    rows: list[dict[str, Any]] = []
+
+    def add(track: dict[str, Any]) -> None:
+        title = (track.get("title") or "").strip()
+        credit = _join_artists(track.get("artists") or [])
+        if credit:
+            title = f"{credit} – {title}"
+        rows.append(
+            {
+                "position": (track.get("position") or "").strip(),
+                "title": title,
+                "duration": (track.get("duration") or "").strip() or None,
+            }
+        )
+
+    for track in release.get("tracklist") or []:
+        add(track)
+        for sub in track.get("sub_tracks") or []:
+            add(sub)
+    return rows
 
 
 def resolve_artist_sort(
@@ -194,7 +243,7 @@ def album_from_item(
     release_id = fields["discogs_release_id"]
     key = str(release_id)
     sort_name, source = resolve_artist_sort(
-        conn, fields["primary_artist"], config, musicbrainz, now=now
+        conn, fields["sort_artist"], config, musicbrainz, now=now
     )
     traits = traits_of(fields["primary_artist"], fields["styles"], fields["formats"])
     section = config.overrides.section.get(key) or section_for(sort_name, traits, config.sections)
@@ -230,6 +279,30 @@ def album_from_item(
     }
 
 
+def enrich_album(
+    conn: sqlite3.Connection,
+    discogs: CollectionSource,
+    release_id: int,
+    *,
+    currency: str,
+    now: datetime,
+) -> None:
+    """Fetch one release and store its tracks, its country, and its market price."""
+    release = discogs.release(release_id, currency=currency)
+    db.replace_tracks(conn, release_id, tracks_of(release))
+    country = release.get("country")
+    if country:
+        db.set_album_country(conn, release_id, country)
+    db.put_price(
+        conn,
+        release_id,
+        lowest_price=release.get("lowest_price"),
+        currency=currency,
+        num_for_sale=release.get("num_for_sale"),
+        checked_at=now.isoformat(timespec="seconds"),
+    )
+
+
 def run_sync(
     conn: sqlite3.Connection,
     *,
@@ -239,16 +312,18 @@ def run_sync(
     config: ShelfConfig,
     art_dir: Path,
     bundle_dir: Path,
+    currency: str = "USD",
+    enrich: bool = True,
     now: datetime | None = None,
 ) -> SyncResult:
     """Run one full sync and write the bundle. Commits as it goes."""
     started = now or datetime.now(UTC)
     result = SyncResult(started_at=started.isoformat(timespec="seconds"))
-    seen: set[int] = set()
+    seen: list[int] = []
     for item in discogs.collection(username):
         album = album_from_item(conn, item, config, musicbrainz, now=started)
         release_id = album["discogs_release_id"]
-        seen.add(release_id)
+        seen.append(release_id)
         if album["artist_sort_source"] == SOURCE_UNRESOLVED:
             result.unresolved_artists.append(album["artist"])
         thumb_url = album.pop("thumb_url")
@@ -264,8 +339,18 @@ def run_sync(
             result.art_cached += int(downloaded)
         db.upsert_album(conn, album)
         conn.commit()
-    result.removed = db.delete_albums_not_in(conn, seen)
+    result.removed = db.delete_albums_not_in(conn, set(seen))
     result.count = len(seen)
+    conn.commit()
+    if enrich:
+        for release_id in seen:
+            try:
+                enrich_album(conn, discogs, release_id, currency=currency, now=started)
+                result.enriched += 1
+            except Exception:
+                logger.warning({"message": "release fetch failed", "release_id": release_id})
+                result.enrich_failed += 1
+            conn.commit()
     finished = datetime.now(UTC) if now is None else started
     result.finished_at = finished.isoformat(timespec="seconds")
     db.set_meta(conn, META_LAST_SYNC, result.finished_at)

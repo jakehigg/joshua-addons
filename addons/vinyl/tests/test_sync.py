@@ -23,6 +23,11 @@ def _index(data_dir: Path) -> dict:
     return json.loads((data_dir / "bundle" / "index.json").read_text(encoding="utf-8"))
 
 
+def _detail(data_dir: Path, release_id: int) -> dict:
+    path = data_dir / "bundle" / "detail" / f"{release_id}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _by_id(index: dict) -> dict[int, dict]:
     return {record["id"]: record for record in index["records"]}
 
@@ -33,6 +38,7 @@ def test_normalize_a_collection_item() -> None:
     assert fields["discogs_release_id"] == COLOR_BEFORE_THE_SUN
     assert fields["artist"] == "Coheed And Cambria"
     assert fields["primary_artist"] == "Coheed And Cambria"
+    assert fields["sort_artist"] == "Coheed And Cambria"
     assert fields["title"] == "The Color Before The Sun"
     assert fields["year"] == 2015
     assert fields["label"] == "300 Entertainment"
@@ -56,11 +62,32 @@ def test_normalize_a_full_release_uses_images_and_treats_year_zero_as_absent() -
     assert fields["country"] == release["country"]
 
 
-def test_normalize_keeps_the_credit_line_with_join_words() -> None:
+def test_a_classical_release_files_under_its_performer() -> None:
     release = load_fixture("discogs_release_gould_goldberg.json")
     fields = sync.normalize_item(release)
     assert fields["artist"] == "Bach / Glenn Gould"
     assert fields["primary_artist"] == "Johann Sebastian Bach"
+    assert fields["sort_artist"] == "Glenn Gould"
+
+
+def test_a_classical_release_with_one_credit_files_under_that_credit() -> None:
+    fields = sync.normalize_item(
+        {"id": 1, "title": "X", "genres": ["Classical"], "artists": [{"name": "Glenn Gould"}]}
+    )
+    assert fields["sort_artist"] == "Glenn Gould"
+
+
+def test_a_non_classical_release_with_many_credits_files_under_the_first() -> None:
+    fields = sync.normalize_item(
+        {
+            "id": 1,
+            "title": "X",
+            "genres": ["Jazz"],
+            "artists": [{"name": "Miles Davis", "join": "&"}, {"name": "John Coltrane"}],
+        }
+    )
+    assert fields["sort_artist"] == "Miles Davis"
+    assert fields["artist"] == "Miles Davis & John Coltrane"
 
 
 def test_normalize_a_release_with_no_labels_or_formats() -> None:
@@ -80,6 +107,31 @@ def test_a_catalog_number_of_none_is_absent() -> None:
     assert fields["catalog_no"] is None
 
 
+def test_tracks_of_a_plain_album() -> None:
+    rows = sync.tracks_of(load_fixture("discogs_release_dylan_highway61.json"))
+    assert len(rows) == 9
+    assert rows[0] == {"position": "A1", "title": "Like A Rolling Stone", "duration": "5:59"}
+
+
+def test_tracks_of_an_index_with_sub_tracks() -> None:
+    rows = sync.tracks_of(load_fixture("discogs_release_gould_goldberg.json"))
+    assert rows[0]["position"] == ""
+    assert rows[0]["title"].startswith("Variations Goldberg")
+    assert rows[0]["duration"] is None
+    assert [(r["position"], r["title"]) for r in rows[1:]] == [("A", "1 - 16"), ("B", "17 - 30")]
+
+
+def test_tracks_of_a_compilation_keep_each_track_credit() -> None:
+    rows = sync.tracks_of(load_fixture("discogs_release_various_nuggets.json"))
+    assert rows[0]["position"] == "A1"
+    assert rows[0]["title"].endswith(" – I Had Too Much To Dream (Last Night)")
+    assert " – " in rows[0]["title"]
+
+
+def test_tracks_of_nothing() -> None:
+    assert sync.tracks_of({}) == []
+
+
 def test_full_sync_files_every_record_where_the_house_rules_say(synced: Path) -> None:
     index = _index(synced)
     records = _by_id(index)
@@ -88,11 +140,13 @@ def test_full_sync_files_every_record_where_the_house_rules_say(synced: Path) ->
     assert records[BEATLES]["section"] == "B", "a leading The is ignored"
     assert records[COLOR_BEFORE_THE_SUN]["section"] == "C"
     assert records[CASH]["section"] == "C"
+    assert records[GOLDBERG]["section"] == "G", "classical files under the performer"
+    assert records[GOLDBERG]["artist_sort"] == "Gould, Glenn"
     assert records[NUGGETS]["section"] == "Compilations & Soundtracks"
     assert records[MORRICONE]["section"] == "Compilations & Soundtracks", (
         "a soundtrack by one composer is never filed under the composer"
     )
-    assert index["sections"] == ["B", "C", "D", "J", "Compilations & Soundtracks"]
+    assert index["sections"] == ["B", "C", "D", "G", "Compilations & Soundtracks"]
 
 
 def test_full_sync_derives_the_facets(synced: Path) -> None:
@@ -109,6 +163,64 @@ def test_full_sync_derives_the_facets(synced: Path) -> None:
     rock = index["facets"][0]
     assert rock["count"] == 7
     assert rock["styles"][0] == {"name": "Prog Rock", "count": 3}
+
+
+def test_full_sync_enriches_tracks_country_and_price(synced: Path) -> None:
+    dylan = _detail(synced, DYLAN)
+    assert len(dylan["tracks"]) == 9
+    assert dylan["tracks"][0]["title"] == "Like A Rolling Stone"
+    assert dylan["price"]["lowest"] == 7.74
+    assert dylan["price"]["currency"] == "USD"
+    assert dylan["price"]["for_sale"] == 10
+    assert dylan["price"]["checked_at"]
+    color = _detail(synced, COLOR_BEFORE_THE_SUN)
+    assert len(color["tracks"]) == 10, "a collection item gains its tracks from the release"
+    assert color["country"] == "US"
+    goldberg = _detail(synced, GOLDBERG)
+    assert len(goldberg["tracks"]) == 3
+    assert "price" not in goldberg, "no listing means no price, not zero"
+
+
+def test_full_sync_asks_for_prices_in_the_configured_currency(
+    data_dir: Path, fake_discogs: FakeDiscogs, fake_musicbrainz: FakeMusicBrainz
+) -> None:
+    conn = db.connect(data_dir / "vinyl.db")
+    sync.run_sync(
+        conn,
+        discogs=fake_discogs,
+        musicbrainz=fake_musicbrainz,
+        username="example-user",
+        config=ShelfConfig(),
+        art_dir=data_dir / "art",
+        bundle_dir=data_dir / "bundle",
+        currency="GBP",
+    )
+    conn.close()
+    assert fake_discogs.release_calls[0][1] == "GBP"
+    assert _detail(data_dir, DYLAN)["price"]["currency"] == "GBP"
+
+
+def test_a_failed_release_fetch_keeps_the_record_and_is_counted(
+    data_dir: Path, fake_musicbrainz: FakeMusicBrainz
+) -> None:
+    items = collection_items()[:2]
+    discogs = FakeDiscogs(items)
+    del discogs.releases[COLOR_BEFORE_THE_SUN]
+    result = sync_into(data_dir, discogs, fake_musicbrainz)
+    assert result.count == 2
+    assert result.enriched == 1
+    assert result.enrich_failed == 1
+    assert "tracks" not in _detail(data_dir, COLOR_BEFORE_THE_SUN)
+    assert COLOR_BEFORE_THE_SUN in _by_id(_index(data_dir))
+
+
+def test_enrichment_can_be_turned_off(
+    data_dir: Path, fake_discogs: FakeDiscogs, fake_musicbrainz: FakeMusicBrainz
+) -> None:
+    result = sync_into(data_dir, fake_discogs, fake_musicbrainz, enrich=False)
+    assert result.enriched == 0
+    assert fake_discogs.release_calls == []
+    assert "tracks" not in _detail(data_dir, DYLAN)
 
 
 def test_full_sync_caches_art_once(
@@ -133,6 +245,8 @@ def test_full_sync_resolves_each_artist_once_and_caches_it(
 ) -> None:
     sync_into(data_dir, fake_discogs, fake_musicbrainz)
     assert fake_musicbrainz.lookups.count("Coheed And Cambria") == 1
+    assert "Glenn Gould" in fake_musicbrainz.lookups
+    assert "Johann Sebastian Bach" not in fake_musicbrainz.lookups
     sync_into(data_dir, fake_discogs, fake_musicbrainz)
     assert fake_musicbrainz.lookups.count("Coheed And Cambria") == 1
     conn = db.connect(data_dir / "vinyl.db")
@@ -143,22 +257,21 @@ def test_full_sync_resolves_each_artist_once_and_caches_it(
     conn.close()
 
 
-def test_an_unresolved_artist_keeps_its_name_and_is_reported(synced: Path) -> None:
-    conn = db.connect(synced / "vinyl.db")
-    album = db.get_album(conn, GOLDBERG)
-    assert album is not None
-    assert album["artist_sort"] == "Johann Sebastian Bach"
-    assert album["artist_sort_source"] == sync.SOURCE_UNRESOLVED
-    assert db.get_artist(conn, "Johann Sebastian Bach") is None, "tried again next sync"
-    conn.close()
-
-
-def test_sync_result_lists_the_unresolved_artists(
+def test_an_unresolved_artist_keeps_its_name_and_is_reported(
     data_dir: Path, fake_discogs: FakeDiscogs, fake_musicbrainz: FakeMusicBrainz
 ) -> None:
+    fake_musicbrainz.fail_names.add("The Beatles")
     result = sync_into(data_dir, fake_discogs, fake_musicbrainz)
-    assert result.unresolved_artists == ["Bach / Glenn Gould"]
+    assert result.unresolved_artists == ["The Beatles"]
     assert result.as_dict()["count"] == 10
+    conn = db.connect(data_dir / "vinyl.db")
+    album = db.get_album(conn, BEATLES)
+    assert album is not None
+    assert album["artist_sort"] == "The Beatles"
+    assert album["artist_sort_source"] == sync.SOURCE_UNRESOLVED
+    assert album["shelf_section"] == "T"
+    assert db.get_artist(conn, "The Beatles") is None, "tried again next sync"
+    conn.close()
 
 
 def test_no_musicbrainz_client_means_every_artist_is_unresolved(
@@ -175,18 +288,18 @@ def test_overrides_win_over_musicbrainz_and_the_derived_rules(
 ) -> None:
     config = ShelfConfig(
         overrides=Overrides(
-            artist_sort={"Johann Sebastian Bach": "Gould, Glenn"},
+            artist_sort={"Glenn Gould": "Bach, Johann Sebastian"},
             section={str(NUGGETS): "N"},
             primary_facet={str(CASH): "Folk & World"},
         )
     )
     sync_into(data_dir, fake_discogs, fake_musicbrainz, config)
     records = _by_id(_index(data_dir))
-    assert records[GOLDBERG]["section"] == "G"
-    assert records[GOLDBERG]["artist_sort"] == "Gould, Glenn"
+    assert records[GOLDBERG]["section"] == "B"
+    assert records[GOLDBERG]["artist_sort"] == "Bach, Johann Sebastian"
     assert records[NUGGETS]["section"] == "N"
     assert records[CASH]["facet"] == "Folk & World"
-    assert "Johann Sebastian Bach" not in fake_musicbrainz.lookups
+    assert "Glenn Gould" not in fake_musicbrainz.lookups
 
 
 def test_split_special_sections_come_from_configuration(
@@ -211,12 +324,15 @@ def test_a_record_that_left_the_collection_is_removed(
 ) -> None:
     items = collection_items()
     sync_into(data_dir, FakeDiscogs(items), fake_musicbrainz)
-    (data_dir / "bundle" / "detail" / f"{DYLAN}.json").is_file()
+    assert (data_dir / "bundle" / "detail" / f"{DYLAN}.json").is_file()
     result = sync_into(data_dir, FakeDiscogs([i for i in items if i["id"] != DYLAN]), None)
     assert result.count == 9
     assert result.removed == 1
     assert DYLAN not in _by_id(_index(data_dir))
     assert not (data_dir / "bundle" / "detail" / f"{DYLAN}.json").exists()
+    conn = db.connect(data_dir / "vinyl.db")
+    assert db.list_tracks(conn, DYLAN) == []
+    conn.close()
 
 
 def test_a_failed_art_download_is_counted_and_the_record_still_lands(
@@ -241,9 +357,7 @@ def test_sync_records_the_last_run_in_meta_and_the_detail_files(synced: Path) ->
     assert last is not None
     datetime.fromisoformat(last)
     conn.close()
-    detail = json.loads(
-        (synced / "bundle" / "detail" / f"{MORRICONE}.json").read_text(encoding="utf-8")
-    )
+    detail = _detail(synced, MORRICONE)
     assert detail["section"] == "Compilations & Soundtracks"
     assert detail["soundtrack"] is True
     assert detail["compilation"] is True
@@ -267,3 +381,4 @@ def test_a_fixed_now_stamps_both_ends_of_the_result(
     )
     conn.close()
     assert result.started_at == result.finished_at == "2026-09-08T03:00:00+00:00"
+    assert _detail(data_dir, DYLAN)["price"]["checked_at"] == "2026-09-08T03:00:00+00:00"
