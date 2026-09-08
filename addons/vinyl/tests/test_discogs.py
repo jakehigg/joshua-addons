@@ -98,6 +98,21 @@ def test_a_4xx_raises_without_retry() -> None:
     assert sleeps == []
 
 
+def test_release_asks_for_the_price_in_a_currency() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"id": 7823049})
+
+    client = _client(handler)
+    client.release(7823049, currency="USD")
+    client.release(7823049)
+    assert seen[0].url.path == "/releases/7823049"
+    assert seen[0].url.params["curr_abbr"] == "USD"
+    assert "curr_abbr" not in seen[1].url.params
+
+
 def test_download_returns_the_bytes() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "i.discogs.com"

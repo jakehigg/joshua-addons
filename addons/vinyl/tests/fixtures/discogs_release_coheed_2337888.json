@@ -1,0 +1,791 @@
+{
+  "id": 2337888,
+  "status": "Accepted",
+  "year": 2010,
+  "resource_url": "https://api.discogs.com/releases/2337888",
+  "uri": "https://www.discogs.com/release/2337888-Coheed-And-Cambria-Year-Of-The-Black-Rainbow",
+  "artists": [
+    {
+      "name": "Coheed And Cambria",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 256629,
+      "resource_url": "https://api.discogs.com/artists/256629",
+      "thumbnail_url": "https://i.discogs.com/vkUPjwN9AEDNZ8GneuPG2RB1Gsm16Fl0QYave9l-ATE/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTI1NjYy/OS0xNjU5MjM0MjE1/LTU1ODguanBlZw.jpeg"
+    }
+  ],
+  "artists_sort": "Coheed And Cambria",
+  "labels": [
+    {
+      "name": "Columbia",
+      "catno": "88697 52095 1",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 1866,
+      "resource_url": "https://api.discogs.com/labels/1866",
+      "thumbnail_url": "https://i.discogs.com/JuO51-lZvasOtw8-yLUjsen-4O17uPH1A9SILCO-lG4/rs:fit/g:sm/q:90/h:300/w:299/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTE4NjYt/MTIzMzE5MzU1Ny5q/cGVn.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [
+    {
+      "name": "Sony Music Entertainment",
+      "catno": "",
+      "entity_type": "13",
+      "entity_type_name": "Phonographic Copyright (p)",
+      "id": 29073,
+      "resource_url": "https://api.discogs.com/labels/29073",
+      "thumbnail_url": "https://i.discogs.com/brqxJ0_7Bid9TdPXvDixDcKsKR49S1Tu2CJbq1H6qsI/rs:fit/g:sm/q:90/h:43/w:519/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI5MDcz/LTE3NTY5MTIzMzYt/MTIwNS5wbmc.jpeg"
+    },
+    {
+      "name": "Sony Music Entertainment",
+      "catno": "",
+      "entity_type": "14",
+      "entity_type_name": "Copyright (c)",
+      "id": 29073,
+      "resource_url": "https://api.discogs.com/labels/29073",
+      "thumbnail_url": "https://i.discogs.com/brqxJ0_7Bid9TdPXvDixDcKsKR49S1Tu2CJbq1H6qsI/rs:fit/g:sm/q:90/h:43/w:519/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI5MDcz/LTE3NTY5MTIzMzYt/MTIwNS5wbmc.jpeg"
+    },
+    {
+      "name": "Columbia Records",
+      "catno": "",
+      "entity_type": "9",
+      "entity_type_name": "Distributed By",
+      "id": 93330,
+      "resource_url": "https://api.discogs.com/labels/93330",
+      "thumbnail_url": "https://i.discogs.com/Fc3xZhx0_ME57o2yl1RIZGPAFJ9ObzPwoRiCQdQyd5g/rs:fit/g:sm/q:90/h:117/w:328/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTkzMzMw/LTE1MjY0ODU4MTgt/Mzk2Mi5qcGVn.jpeg"
+    },
+    {
+      "name": "The Bag.On.Line Adventures",
+      "catno": "",
+      "entity_type": "21",
+      "entity_type_name": "Published By",
+      "id": 348011,
+      "resource_url": "https://api.discogs.com/labels/348011"
+    },
+    {
+      "name": "Point Me At The Sky",
+      "catno": "",
+      "entity_type": "21",
+      "entity_type_name": "Published By",
+      "id": 348010,
+      "resource_url": "https://api.discogs.com/labels/348010"
+    },
+    {
+      "name": "Songs In The Key Of Mink",
+      "catno": "",
+      "entity_type": "21",
+      "entity_type_name": "Published By",
+      "id": 519135,
+      "resource_url": "https://api.discogs.com/labels/519135"
+    },
+    {
+      "name": "Joe's House Of Compression",
+      "catno": "",
+      "entity_type": "23",
+      "entity_type_name": "Recorded At",
+      "id": 335602,
+      "resource_url": "https://api.discogs.com/labels/335602"
+    },
+    {
+      "name": "Cold Crest",
+      "catno": "",
+      "entity_type": "23",
+      "entity_type_name": "Recorded At",
+      "id": 768456,
+      "resource_url": "https://api.discogs.com/labels/768456"
+    },
+    {
+      "name": "Joe's House Of Compression",
+      "catno": "",
+      "entity_type": "27",
+      "entity_type_name": "Mixed At",
+      "id": 335602,
+      "resource_url": "https://api.discogs.com/labels/335602"
+    },
+    {
+      "name": "Assault And Battery Studios",
+      "catno": "",
+      "entity_type": "27",
+      "entity_type_name": "Mixed At",
+      "id": 274648,
+      "resource_url": "https://api.discogs.com/labels/274648",
+      "thumbnail_url": "https://i.discogs.com/PVlIDguJyvWr3ck10Xe7lyLIWeFZj1crC2AvB0HTtlE/rs:fit/g:sm/q:90/h:272/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI3NDY0/OC0xMzk4Nzk3MjE0/LTk0MjEuanBlZw.jpeg"
+    },
+    {
+      "name": "Bernie Grundman Mastering",
+      "catno": "",
+      "entity_type": "29",
+      "entity_type_name": "Mastered At",
+      "id": 263896,
+      "resource_url": "https://api.discogs.com/labels/263896",
+      "thumbnail_url": "https://i.discogs.com/nsGBKV1E7CmO2wHP4oMbHuOfMxw-5FIZjetOKyez7GU/rs:fit/g:sm/q:90/h:182/w:383/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI2Mzg5/Ni0xMzE1MzQ3NDEy/LmpwZWc.jpeg"
+    },
+    {
+      "name": "Nashville Record Productions",
+      "catno": "",
+      "entity_type": "30",
+      "entity_type_name": "Lacquer Cut At",
+      "id": 301710,
+      "resource_url": "https://api.discogs.com/labels/301710",
+      "thumbnail_url": "https://i.discogs.com/IcalAteMbdmR9J0RZL7DNIgwoUFgumvzbzqKsx9Rve4/rs:fit/g:sm/q:90/h:253/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTMwMTcx/MC0xNjQwMzg4MTcx/LTYwMzAuanBlZw.jpeg"
+    },
+    {
+      "name": "United Record Pressing",
+      "catno": "",
+      "entity_type": "17",
+      "entity_type_name": "Pressed By",
+      "id": 238322,
+      "resource_url": "https://api.discogs.com/labels/238322",
+      "thumbnail_url": "https://i.discogs.com/wXejTcaBZif0vNl1Wx8ZmvUBcAwkQ21T3AduA-BjUg8/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTIzODMy/Mi0xNDk3Nzk0Njg4/LTg0MzAucG5n.jpeg"
+    }
+  ],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "2",
+      "descriptions": [
+        "LP",
+        "Album",
+        "Stereo"
+      ]
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 1196,
+    "want": 1372,
+    "rating": {
+      "count": 104,
+      "average": 4.28
+    },
+    "submitter": {
+      "username": "astampa",
+      "resource_url": "https://api.discogs.com/users/astampa"
+    },
+    "contributors": [
+      {
+        "username": "astampa",
+        "resource_url": "https://api.discogs.com/users/astampa"
+      },
+      {
+        "username": "AlDante",
+        "resource_url": "https://api.discogs.com/users/AlDante"
+      },
+      {
+        "username": "elCartucho",
+        "resource_url": "https://api.discogs.com/users/elCartucho"
+      },
+      {
+        "username": "nintendiaz",
+        "resource_url": "https://api.discogs.com/users/nintendiaz"
+      },
+      {
+        "username": "TVAvinyl",
+        "resource_url": "https://api.discogs.com/users/TVAvinyl"
+      },
+      {
+        "username": "Jakdbz20",
+        "resource_url": "https://api.discogs.com/users/Jakdbz20"
+      },
+      {
+        "username": "_goodbye_sky_harbor_",
+        "resource_url": "https://api.discogs.com/users/_goodbye_sky_harbor_"
+      },
+      {
+        "username": "ohitsmark",
+        "resource_url": "https://api.discogs.com/users/ohitsmark"
+      },
+      {
+        "username": "jwkedd",
+        "resource_url": "https://api.discogs.com/users/jwkedd"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 2,
+  "date_added": "2010-06-30T19:11:30-07:00",
+  "date_changed": "2024-01-02T10:24:09-08:00",
+  "num_for_sale": 5,
+  "lowest_price": 135.48,
+  "master_id": 264951,
+  "master_url": "https://api.discogs.com/masters/264951",
+  "title": "Year Of The Black Rainbow",
+  "country": "US",
+  "released": "2010",
+  "notes": "Track B2 is listed as \"This Scattered Symphony\" when it ought to be \"This Shattered Symphony\".",
+  "released_formatted": "2010",
+  "identifiers": [
+    {
+      "type": "Barcode",
+      "value": "8 8697-52095-1 4"
+    },
+    {
+      "type": "Rights Society",
+      "value": "BMI"
+    },
+    {
+      "type": "Rights Society",
+      "value": "SESAC"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "88697-52095-1-A WG/NRP Ⓤ",
+      "description": "Side A runout"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "88697-52095-1-B WG/NRP Ⓤ",
+      "description": "Side B runout"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "88697-52095-1-C WG/NRP Ⓤ",
+      "description": "Side C runout"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "88697-52095-1-D WG/NRP Ⓤ",
+      "description": "Side D runout"
+    }
+  ],
+  "videos": [
+    {
+      "uri": "https://www.youtube.com/watch?v=TT_PfSa_1-Y",
+      "title": "The Black Rainbow",
+      "description": "Provided to YouTube by Columbia\n\nThe Black Rainbow · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal, Guit",
+      "duration": 453,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=U9j5EzaVxbs",
+      "title": "The Broken",
+      "description": "Provided to YouTube by Columbia\n\nThe Broken · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal, Guitar, Ste",
+      "duration": 234,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=0FWAFW7htqk",
+      "title": "Guns of Summer",
+      "description": "Provided to YouTube by Columbia\n\nGuns of Summer · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal, Guitar,",
+      "duration": 287,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=D09xXWda6dQ",
+      "title": "Here We Are Juggernaut",
+      "description": "Provided to YouTube by Columbia\n\nHere We Are Juggernaut · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Columbia Records, a division of Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: C",
+      "duration": 225,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=c67eNkmHIu4",
+      "title": "Far",
+      "description": "Provided to YouTube by Columbia\n\nFar · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal, Guitar, Steel Guit",
+      "duration": 294,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=2Med-SZL9EU",
+      "title": "This Shattered Symphony",
+      "description": "Provided to YouTube by Columbia\n\nThis Shattered Symphony · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal",
+      "duration": 266,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=i6r007hFv4U",
+      "title": "World of Lines",
+      "description": "Provided to YouTube by Columbia\n\nWorld of Lines · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal, Guitar,",
+      "duration": 198,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=TcMUiPBDIfg",
+      "title": "Made Out of Nothing (All That I Am)",
+      "description": "Provided to YouTube by Columbia\n\nMade Out of Nothing (All That I Am) · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBack",
+      "duration": 280,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=2UtfwyNoqFA",
+      "title": "Pearl of the Stars",
+      "description": "Provided to YouTube by Columbia\n\nPearl of the Stars · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Columbia Records, a division of Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claud",
+      "duration": 305,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=GlAH2KaLU1c",
+      "title": "In the Flame of Error",
+      "description": "Provided to YouTube by Columbia\n\nIn the Flame of Error · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal, ",
+      "duration": 328,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=jjiWoEnTTmc",
+      "title": "When Skeletons Live",
+      "description": "Provided to YouTube by Columbia\n\nWhen Skeletons Live · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer, Lyricist: Claudio Sanchez\nBackground Vocal, Gu",
+      "duration": 257,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=sncHlkJAlG0",
+      "title": "One",
+      "description": "Provided to YouTube by Columbia\n\nOne · Coheed and Cambria\n\nYear Of The Black Rainbow\n\n℗ 2010 Sony Music Entertainment\n\nReleased on: 2010-04-13\n\nGuitar, Keyboards, Synthesizer, Vocal, Composer: Claudio Sanchez\nComposer, Mixing Engineer, Producer, Recording",
+      "duration": 115,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=cLFtM4GIRA4",
+      "title": "Coheed and Cambria - Here We Are Juggernaut (Official Music Video)",
+      "description": "Coheed and Cambria's official music video for 'Here We Are Juggernaut'. Click to listen to Coheed and Cambria on Spotify: http://smarturl.it/CandCSpotify?IQid=CohCamHWAJ\n\nAs featured on The Very Best of Coheed and Cambria. Click to buy the track or album ",
+      "duration": 229,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=DR_Nxk2BpWM",
+      "title": "Coheed and Cambria - The Broken (Official Music Video)",
+      "description": "Music video by Coheed and Cambria performing The Broken. (c) 2010 Sony Music Entertainment",
+      "duration": 241,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=hfSpQVINZvE",
+      "title": "Coheed and Cambria \"Far\"",
+      "description": "Director Aaron Hymes\nFrom the Album \"Year of the Black Rainbow\"\nItunes link\nhttp://itunes.apple.com/us/album/year-of-the-black-rainbow/id358553378",
+      "duration": 229,
+      "embed": true
+    }
+  ],
+  "genres": [
+    "Rock"
+  ],
+  "styles": [
+    "Prog Rock",
+    "Progressive Metal"
+  ],
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "title": "One",
+      "duration": ""
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "title": "The Broken",
+      "duration": ""
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "title": "Guns Of Summer",
+      "duration": ""
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "title": "Here We Are Juggernaut",
+      "duration": ""
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "title": "Far",
+      "duration": ""
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "title": "This Shattered Symphony",
+      "duration": ""
+    },
+    {
+      "position": "B3",
+      "type_": "track",
+      "title": "World Of Lines",
+      "duration": ""
+    },
+    {
+      "position": "C1",
+      "type_": "track",
+      "title": "Made Out Of Nothing (All That I Am)",
+      "duration": ""
+    },
+    {
+      "position": "C2",
+      "type_": "track",
+      "title": "Pearl Of The Stars",
+      "extraartists": [
+        {
+          "name": "Wes Styles",
+          "anv": "",
+          "join": "",
+          "role": "Keyboards [Additional]",
+          "tracks": "",
+          "id": 4121035,
+          "resource_url": "https://api.discogs.com/artists/4121035"
+        },
+        {
+          "name": "Claudia Sarne",
+          "anv": "",
+          "join": "",
+          "role": "Keyboards, Orchestrated By",
+          "tracks": "",
+          "id": 106258,
+          "resource_url": "https://api.discogs.com/artists/106258"
+        },
+        {
+          "name": "Brian Dembow",
+          "anv": "",
+          "join": "",
+          "role": "Viola",
+          "tracks": "",
+          "id": 399185,
+          "resource_url": "https://api.discogs.com/artists/399185"
+        }
+      ],
+      "duration": ""
+    },
+    {
+      "position": "D1",
+      "type_": "track",
+      "title": "In The Flame Of Error",
+      "duration": ""
+    },
+    {
+      "position": "D2",
+      "type_": "track",
+      "title": "When Skeletons Live",
+      "duration": ""
+    },
+    {
+      "position": "D3",
+      "type_": "track",
+      "title": "The Black Rainbow",
+      "duration": ""
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "Michael Todd",
+      "anv": "Michael Robert Todd",
+      "join": "",
+      "role": "Bass",
+      "tracks": "",
+      "id": 645574,
+      "resource_url": "https://api.discogs.com/artists/645574"
+    },
+    {
+      "name": "Bill Scoville",
+      "anv": "",
+      "join": "",
+      "role": "Design Concept [Art Conceptualized]",
+      "tracks": "",
+      "id": 1151738,
+      "resource_url": "https://api.discogs.com/artists/1151738"
+    },
+    {
+      "name": "Claudio Sanchez",
+      "anv": "",
+      "join": "",
+      "role": "Design Concept [Art Conceptualized]",
+      "tracks": "",
+      "id": 665877,
+      "resource_url": "https://api.discogs.com/artists/665877"
+    },
+    {
+      "name": "Bill Scoville",
+      "anv": "",
+      "join": "",
+      "role": "Design, Layout",
+      "tracks": "",
+      "id": 1151738,
+      "resource_url": "https://api.discogs.com/artists/1151738"
+    },
+    {
+      "name": "Chris Pennie",
+      "anv": "",
+      "join": "",
+      "role": "Drums, Percussion",
+      "tracks": "",
+      "id": 268634,
+      "resource_url": "https://api.discogs.com/artists/268634"
+    },
+    {
+      "name": "Dustin Mosley",
+      "anv": "",
+      "join": "",
+      "role": "Engineer [Additional Assistant]",
+      "tracks": "",
+      "id": 382227,
+      "resource_url": "https://api.discogs.com/artists/382227"
+    },
+    {
+      "name": "Jun Murakawa",
+      "anv": "",
+      "join": "",
+      "role": "Engineer [Assistant]",
+      "tracks": "",
+      "id": 378451,
+      "resource_url": "https://api.discogs.com/artists/378451"
+    },
+    {
+      "name": "Travis Stever",
+      "anv": "",
+      "join": "",
+      "role": "Guitar, Lap Steel Guitar, Backing Vocals",
+      "tracks": "",
+      "id": 665881,
+      "resource_url": "https://api.discogs.com/artists/665881"
+    },
+    {
+      "name": "Wes Garland",
+      "anv": "WG",
+      "join": "",
+      "role": "Lacquer Cut By",
+      "tracks": "",
+      "id": 2135761,
+      "resource_url": "https://api.discogs.com/artists/2135761"
+    },
+    {
+      "name": "Claudio Sanchez",
+      "anv": "",
+      "join": "",
+      "role": "Lyrics By, Concept By",
+      "tracks": "",
+      "id": 665877,
+      "resource_url": "https://api.discogs.com/artists/665877"
+    },
+    {
+      "name": "Brian Gardner",
+      "anv": "Brian \"Big Bass\" Gardner",
+      "join": "",
+      "role": "Mastered By",
+      "tracks": "",
+      "id": 70778,
+      "resource_url": "https://api.discogs.com/artists/70778"
+    },
+    {
+      "name": "Alan Moulder",
+      "anv": "",
+      "join": "",
+      "role": "Mixed By",
+      "tracks": "A4",
+      "id": 2768,
+      "resource_url": "https://api.discogs.com/artists/2768"
+    },
+    {
+      "name": "Atticus Ross",
+      "anv": "",
+      "join": "",
+      "role": "Mixed By",
+      "tracks": "A1 to A3, B1 to D3",
+      "id": 259284,
+      "resource_url": "https://api.discogs.com/artists/259284"
+    },
+    {
+      "name": "Joe Barresi",
+      "anv": "",
+      "join": "",
+      "role": "Mixed By",
+      "tracks": "A1 to A3, B1 to D3",
+      "id": 264654,
+      "resource_url": "https://api.discogs.com/artists/264654"
+    },
+    {
+      "name": "Catherine Marks",
+      "anv": "",
+      "join": "",
+      "role": "Mixed By [Assisted By]",
+      "tracks": "A4",
+      "id": 531177,
+      "resource_url": "https://api.discogs.com/artists/531177"
+    },
+    {
+      "name": "Atticus Ross",
+      "anv": "",
+      "join": "",
+      "role": "Music By",
+      "tracks": "A1, C2",
+      "id": 259284,
+      "resource_url": "https://api.discogs.com/artists/259284"
+    },
+    {
+      "name": "Claudio Sanchez",
+      "anv": "",
+      "join": "",
+      "role": "Music By",
+      "tracks": "A1, C2",
+      "id": 665877,
+      "resource_url": "https://api.discogs.com/artists/665877"
+    },
+    {
+      "name": "Coheed And Cambria",
+      "anv": "",
+      "join": "",
+      "role": "Music By",
+      "tracks": "A2 to C1, C3 to D3",
+      "id": 256629,
+      "resource_url": "https://api.discogs.com/artists/256629"
+    },
+    {
+      "name": "Atticus Ross",
+      "anv": "",
+      "join": "",
+      "role": "Producer, Recorded By",
+      "tracks": "",
+      "id": 259284,
+      "resource_url": "https://api.discogs.com/artists/259284"
+    },
+    {
+      "name": "Joe Barresi",
+      "anv": "",
+      "join": "",
+      "role": "Producer, Recorded By",
+      "tracks": "",
+      "id": 264654,
+      "resource_url": "https://api.discogs.com/artists/264654"
+    },
+    {
+      "name": "Mike Fasano",
+      "anv": "",
+      "join": "",
+      "role": "Technician [Drum]",
+      "tracks": "",
+      "id": 297469,
+      "resource_url": "https://api.discogs.com/artists/297469"
+    },
+    {
+      "name": "Dan Druff",
+      "anv": "",
+      "join": "",
+      "role": "Technician [Guitar]",
+      "tracks": "",
+      "id": 504415,
+      "resource_url": "https://api.discogs.com/artists/504415"
+    },
+    {
+      "name": "Claudio Sanchez",
+      "anv": "",
+      "join": "",
+      "role": "Vocals, Guitar, Keyboards, Synth",
+      "tracks": "",
+      "id": 665877,
+      "resource_url": "https://api.discogs.com/artists/665877"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/1PaB09AYNT5da5puR91nDmOUJhyfdSUmWVFehvXhRvQ/rs:fit/g:sm/q:90/h:300/w:300/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTI3Nzk1MDI0/Ny5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/1PaB09AYNT5da5puR91nDmOUJhyfdSUmWVFehvXhRvQ/rs:fit/g:sm/q:90/h:300/w:300/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTI3Nzk1MDI0/Ny5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/xYmRmkZRNa2HqMSgW91ZXuv57sheKfbFs5m7I1vURY0/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTI3Nzk1MDI0/Ny5qcGVn.jpeg",
+      "width": 300,
+      "height": 300
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/rakjxncGwMHj-rBxJKQLiKdlAB_bxdV3IqEmzLvQAUg/rs:fit/g:sm/q:90/h:594/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM4/Mi04MjQyLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/rakjxncGwMHj-rBxJKQLiKdlAB_bxdV3IqEmzLvQAUg/rs:fit/g:sm/q:90/h:594/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM4/Mi04MjQyLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/LZiKS_2GZKWtLeGlwRLHQxyQEJhulAyVwvVrmP-dNkA/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM4/Mi04MjQyLmpwZWc.jpeg",
+      "width": 600,
+      "height": 594
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/CSZMnR5eUB0bT4zZVh_v6hg2bvmI0H86zpbcn1cWOvc/rs:fit/g:sm/q:90/h:584/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM4/OC04NTgwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/CSZMnR5eUB0bT4zZVh_v6hg2bvmI0H86zpbcn1cWOvc/rs:fit/g:sm/q:90/h:584/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM4/OC04NTgwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/yW3OsYsjDCfVwrH5uNaX-VaeG6X1w0YPzPSuwPe22Io/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM4/OC04NTgwLmpwZWc.jpeg",
+      "width": 600,
+      "height": 584
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/yc8djCFuCVj4gHfByLDCkruxyWGSg0_eK2yafgMJdPs/rs:fit/g:sm/q:90/h:450/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTU2MDg1Mzkx/OS05MTkzLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/yc8djCFuCVj4gHfByLDCkruxyWGSg0_eK2yafgMJdPs/rs:fit/g:sm/q:90/h:450/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTU2MDg1Mzkx/OS05MTkzLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/DWuAoZ24KYHraZDsvFpO0W18rgIkHCvBNF34GIJWdl8/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTU2MDg1Mzkx/OS05MTkzLmpwZWc.jpeg",
+      "width": 600,
+      "height": 450
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/uQH0SbKmzrfV6Tjxo4e0EhJ6ZDAiGlv3vHJ7glZqtrM/rs:fit/g:sm/q:90/h:580/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM2/NS05NzUwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/uQH0SbKmzrfV6Tjxo4e0EhJ6ZDAiGlv3vHJ7glZqtrM/rs:fit/g:sm/q:90/h:580/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM2/NS05NzUwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/a5853qA9WF9VDb90UUMtfT2ZSV4F2sX7bKNH5Ssvmtg/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM2/NS05NzUwLmpwZWc.jpeg",
+      "width": 600,
+      "height": 580
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/l9R-f2_13r-s_slBEcWF4KTyOSrtoisihVF8tIjqTOs/rs:fit/g:sm/q:90/h:568/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM2/OC03ODY5LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/l9R-f2_13r-s_slBEcWF4KTyOSrtoisihVF8tIjqTOs/rs:fit/g:sm/q:90/h:568/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM2/OC03ODY5LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/TZxG29s5W-8nGp1u4TPlDozLQ_AsG6YBbd2kZ6BzId4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM2/OC03ODY5LmpwZWc.jpeg",
+      "width": 600,
+      "height": 568
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/XWS-hIAcNvR1MWgQGhhExqidqTFgCo0stbJRddGNLqI/rs:fit/g:sm/q:90/h:590/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM5/OS02NTg4LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/XWS-hIAcNvR1MWgQGhhExqidqTFgCo0stbJRddGNLqI/rs:fit/g:sm/q:90/h:590/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM5/OS02NTg4LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/CYP6grv0wRaLaxJhbxDDseITJ_3ITeVMOvvdfdK-t1w/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTM5/OS02NTg4LmpwZWc.jpeg",
+      "width": 600,
+      "height": 590
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/5ZU4rcj8fKM1w-Z07O_EHFBn2gxUhVUxmynmmR4JlG8/rs:fit/g:sm/q:90/h:587/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MS03OTAwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/5ZU4rcj8fKM1w-Z07O_EHFBn2gxUhVUxmynmmR4JlG8/rs:fit/g:sm/q:90/h:587/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MS03OTAwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/QIq6MmKl6yRnYWo_NwoBy9YgVhJR5wEeTk7xQaHD8Is/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MS03OTAwLmpwZWc.jpeg",
+      "width": 600,
+      "height": 587
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/c2YJOGS9C1_JZWy23bnzbHOlxzZ9ESOeajF1FHnSyzM/rs:fit/g:sm/q:90/h:583/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MC0xNjMwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/c2YJOGS9C1_JZWy23bnzbHOlxzZ9ESOeajF1FHnSyzM/rs:fit/g:sm/q:90/h:583/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MC0xNjMwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/Wisk59FpYT1tbVHF9Xg_tR4Dnq-DfaOGHkVD0Jpho2I/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MC0xNjMwLmpwZWc.jpeg",
+      "width": 600,
+      "height": 583
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/rYfy6Gp9cldLy7Dl2qt-bJjVwyYChFe6vlx9KPswsfk/rs:fit/g:sm/q:90/h:587/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MC02NjU4LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/rYfy6Gp9cldLy7Dl2qt-bJjVwyYChFe6vlx9KPswsfk/rs:fit/g:sm/q:90/h:587/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MC02NjU4LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/cD03tQZM_l4O-BBrb9WxuQjD5A34cW5LC_x6UAjPkko/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MC02NjU4LmpwZWc.jpeg",
+      "width": 600,
+      "height": 587
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/kK1qwj7E1vtIJIChxtPklhCjJDOSJRoYB6kiSDGLnq4/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MS03OTg0LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/kK1qwj7E1vtIJIChxtPklhCjJDOSJRoYB6kiSDGLnq4/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MS03OTg0LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/ThjOzrrW9RF-KeAuGkxP2o-YMpz_wa-3LJ53CMqwLZg/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/MS03OTg0LmpwZWc.jpeg",
+      "width": 600,
+      "height": 593
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/0gLXEGSewHmxodFmnuWxkRhKAfyv8Tf9PpiOgiW1ubI/rs:fit/g:sm/q:90/h:599/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/My05OTYzLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/0gLXEGSewHmxodFmnuWxkRhKAfyv8Tf9PpiOgiW1ubI/rs:fit/g:sm/q:90/h:599/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/My05OTYzLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/uXYuf_QZCAgE2AzZPRNql2Rso6n7mFczwvqfVbSi8QY/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTcwNDIxOTQw/My05OTYzLmpwZWc.jpeg",
+      "width": 600,
+      "height": 599
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/PpP_enxeBD6k741-jZak_wJQD0XE9jEylJOIEVRNyh4/rs:fit/g:sm/q:90/h:502/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTU4MDY4Nzgx/NC0yNTc5LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/PpP_enxeBD6k741-jZak_wJQD0XE9jEylJOIEVRNyh4/rs:fit/g:sm/q:90/h:502/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTU4MDY4Nzgx/NC0yNTc5LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/1aw8n_fkxYv4YTvLuwqX2tpQaPF4WkhLrdc_MN61Cjc/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTU4MDY4Nzgx/NC0yNTc5LmpwZWc.jpeg",
+      "width": 600,
+      "height": 502
+    }
+  ],
+  "thumb": "https://i.discogs.com/xYmRmkZRNa2HqMSgW91ZXuv57sheKfbFs5m7I1vURY0/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTI3Nzk1MDI0/Ny5qcGVn.jpeg",
+  "estimated_weight": 460,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

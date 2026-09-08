@@ -14,20 +14,22 @@ data directory is fully reconstructible, so you can delete it at any time.
 
 Open `http://<host>:8000/` on a device that can reach the container.
 
-- **Carousel.** Cover, title, artist, and year for each record. Swipe or use
-  the arrow keys.
+- **Shelf.** The covers stand in a 3D row. The one in front is the record in
+  hand, with its vinyl out of the sleeve, and the caption under the shelf
+  names it. Swipe, drag, use the arrow keys, or tap a cover to bring it
+  forward.
 - **Genre.** One tap on a genre is a complete filter. Inside a genre, the
   styles present in it are optional refinements. A record with no styles
   still shows under its genre.
 - **Search.** Matches the artist, the title, and the label as you type. A
   missing leading "The" still matches.
 - **Sort.** Shelf order (section, then artist), genre runs, release year, or
-  recently added. Dividers in the carousel show the section, the genre, or
-  the decade.
-- **Detail.** Tap a cover. The detail view shows the shelf section, the label
-  and catalog number, the format, the country, the genres and styles, and
-  the tracklist and the market price when the sync has them. A missing value
-  is absent, never zero.
+  recently added. The caption shows the section, the genre, the decade, or
+  the date added, to match.
+- **Detail.** Tap the record in hand, or "Flip it over". The detail view
+  shows the shelf section, the label and catalog number, the format, the
+  country, the genres and styles, the tracklist, and the lowest listed price
+  with the date it was checked. A missing value is absent, never zero.
 
 ## Shelf sections
 
@@ -37,6 +39,10 @@ B. The addon writes no name parser of its own. A compilation (credited to
 Various, or a `Compilation` format) and a soundtrack (a `Soundtrack` or
 `Score` style) go to one section after Z. A sort-name that starts with a
 digit or a symbol files under `#`, before A.
+
+A classical release files under its performer. Discogs credits the composer
+first (`Bach / Glenn Gould`), so a release in the Classical genre with more
+than one credit files under the last one: `Gould, Glenn`, section G.
 
 The sync asks MusicBrainz once for each artist and caches the answer. An
 artist MusicBrainz cannot match keeps the Discogs name as its sort-name for
@@ -67,9 +73,11 @@ docker compose -f addons/vinyl/docker-compose.yml exec vinyl python -m joshua_vi
 ```
 
 The sync makes one Discogs request for each page of the collection, two
-image downloads for each new record, and one MusicBrainz request for each
-new artist. It waits between requests to stay inside both rate limits, so a
-first sync of a few hundred records takes some minutes.
+image downloads for each new record, one MusicBrainz request for each new
+artist, and one Discogs request for each record to read its tracklist, its
+country, and its lowest listed price. It waits between requests to stay
+inside both rate limits, so a sync of a few hundred records takes some
+minutes. A record whose release request fails keeps what it had.
 
 ## Settings
 
@@ -79,6 +87,7 @@ first sync of a few hundred records takes some minutes.
 | `DISCOGS_TOKEN` | not set | A Discogs personal access token. The sync needs it. Without it, the nightly sync stays off and the addon serves the last bundle. |
 | `DISCOGS_USERNAME` | not set | The Discogs account whose collection to read. When it is not set, the sync asks Discogs which account the token belongs to. |
 | `VINYL_SYNC_TIME` | `03:00` | The local time of the nightly sync, as `HH:MM`. An empty value turns the schedule off. |
+| `VINYL_CURRENCY` | `USD` | The ISO currency code the market price is quoted in. |
 | `VINYL_DATA_DIR` | `/data` | Where the SQLite file, the art cache, the bundle, and `config.json` live. |
 | `VINYL_CONFIG` | `<VINYL_DATA_DIR>/config.json` | The shelf rules file (below). A missing file means the defaults. |
 | `VINYL_STATIC_DIR` | the package's `static/` directory | Where the page is served from. |

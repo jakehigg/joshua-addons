@@ -25,6 +25,8 @@ USER_AGENT_ENV = "VINYL_USER_AGENT"
 DEFAULT_USER_AGENT = "joshua-vinyl/0.1 (+https://github.com/jakehigg/joshua-addons)"
 SYNC_TIME_ENV = "VINYL_SYNC_TIME"
 DEFAULT_SYNC_TIME = "03:00"
+CURRENCY_ENV = "VINYL_CURRENCY"
+DEFAULT_CURRENCY = "USD"
 
 
 class Settings(BaseModel):
@@ -37,6 +39,7 @@ class Settings(BaseModel):
     discogs_username: str | None
     user_agent: str
     sync_time: str | None
+    currency: str
 
     @property
     def db_path(self) -> Path:
@@ -64,6 +67,7 @@ def settings_from_env() -> Settings:
         discogs_username=os.environ.get(USERNAME_ENV) or None,
         user_agent=os.environ.get(USER_AGENT_ENV) or DEFAULT_USER_AGENT,
         sync_time=sync_time,
+        currency=(os.environ.get(CURRENCY_ENV) or DEFAULT_CURRENCY).strip().upper(),
     )
 
 

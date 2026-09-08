@@ -99,6 +99,28 @@ def test_tracks_prices_and_tags_read_back(tmp_path: Path) -> None:
     assert [t["tag"] for t in db.list_tags(conn, 1)] == ["60s", "folk rock"]
 
 
+def test_replace_tracks_and_put_price_overwrite(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "vinyl.db")
+    db.upsert_album(conn, _album(1))
+    db.replace_tracks(conn, 1, [{"position": "A1", "title": "Old", "duration": "1:00"}])
+    db.replace_tracks(
+        conn,
+        1,
+        [
+            {"position": "", "title": "Side One", "duration": None},
+            {"position": "A1", "title": "New", "duration": "2:00"},
+        ],
+    )
+    assert [t["title"] for t in db.list_tracks(conn, 1)] == ["Side One", "New"]
+    db.put_price(conn, 1, lowest_price=9.5, currency="USD", num_for_sale=2, checked_at="t1")
+    db.put_price(conn, 1, lowest_price=None, currency="USD", num_for_sale=0, checked_at="t2")
+    price = db.get_price(conn, 1)
+    assert price["lowest_price"] is None
+    assert price["checked_at"] == "t2"
+    db.set_album_country(conn, 1, "Germany")
+    assert db.get_album(conn, 1)["country"] == "Germany"
+
+
 def test_artist_cache_round_trip(tmp_path: Path) -> None:
     conn = db.connect(tmp_path / "vinyl.db")
     assert db.get_artist(conn, "Bob Dylan") is None

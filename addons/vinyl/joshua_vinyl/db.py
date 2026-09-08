@@ -148,6 +148,38 @@ def list_tracks(conn: sqlite3.Connection, release_id: int) -> list[dict[str, Any
     return [dict(row) for row in rows]
 
 
+def replace_tracks(conn: sqlite3.Connection, release_id: int, tracks: list[dict[str, Any]]) -> None:
+    """Replace the tracklist of one release."""
+    conn.execute("DELETE FROM tracks WHERE release_id = ?", (release_id,))
+    conn.executemany(
+        "INSERT OR REPLACE INTO tracks (release_id, position, title, duration) VALUES (?, ?, ?, ?)",
+        [(release_id, t["position"], t["title"], t.get("duration")) for t in tracks],
+    )
+
+
+def set_album_country(conn: sqlite3.Connection, release_id: int, country: str) -> None:
+    conn.execute(
+        "UPDATE albums SET country = ? WHERE discogs_release_id = ?", (country, release_id)
+    )
+
+
+def put_price(
+    conn: sqlite3.Connection,
+    release_id: int,
+    *,
+    lowest_price: float | None,
+    currency: str | None,
+    num_for_sale: int | None,
+    checked_at: str,
+) -> None:
+    """Record the marketplace summary of one release, and when it was checked."""
+    conn.execute(
+        "INSERT OR REPLACE INTO prices (release_id, lowest_price, currency, num_for_sale,"
+        " checked_at) VALUES (?, ?, ?, ?, ?)",
+        (release_id, lowest_price, currency, num_for_sale, checked_at),
+    )
+
+
 def get_price(conn: sqlite3.Connection, release_id: int) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM prices WHERE release_id = ?", (release_id,)).fetchone()
     return dict(row) if row else None

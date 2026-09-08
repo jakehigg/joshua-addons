@@ -96,9 +96,13 @@ class DiscogsClient:
                 return
             page += 1
 
-    def release(self, release_id: int) -> dict[str, Any]:
-        """The full release: tracklist, country, images, and the marketplace summary."""
-        return self._get(f"/releases/{release_id}").json()
+    def release(self, release_id: int, *, currency: str | None = None) -> dict[str, Any]:
+        """The full release: tracklist, country, images, and the marketplace summary.
+
+        ``currency`` is the ISO code the ``lowest_price`` is quoted in.
+        """
+        params = {"curr_abbr": currency} if currency else None
+        return self._get(f"/releases/{release_id}", params).json()
 
     def download(self, url: str) -> bytes:
         """The bytes of an image URL from a Discogs response."""

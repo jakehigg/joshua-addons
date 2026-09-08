@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import httpx
-from conftest import load_fixture
+from conftest import load_fixture, release_fixtures
 from joshua_vinyl import cli, config
 from joshua_vinyl.discogs import DiscogsClient
 from joshua_vinyl.musicbrainz import MusicBrainzClient
@@ -21,6 +21,9 @@ def _discogs_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=load_fixture("discogs_collection_page1.json"))
     if request.url.host == "i.discogs.com":
         return httpx.Response(200, content=b"\xff\xd8jpeg")
+    if path.startswith("/releases/"):
+        release = release_fixtures().get(int(path.rsplit("/", 1)[1]))
+        return httpx.Response(200, json=release) if release else httpx.Response(404)
     return httpx.Response(404)
 
 
@@ -58,6 +61,11 @@ def test_sync_command_learns_the_username_from_the_token(monkeypatch, tmp_path: 
     assert index["count"] == 4
     assert {record["section"] for record in index["records"]} == {"C"}
     assert (tmp_path / "art" / "7590859-thumb.jpg").is_file()
+    detail = json.loads(
+        (tmp_path / "bundle" / "detail" / "7590859.json").read_text(encoding="utf-8")
+    )
+    assert len(detail["tracks"]) == 10
+    assert detail["price"]["currency"] == "USD"
 
 
 def test_sync_command_uses_a_configured_username(monkeypatch, tmp_path: Path) -> None:

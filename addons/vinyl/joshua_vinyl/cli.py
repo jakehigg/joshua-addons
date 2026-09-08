@@ -41,6 +41,7 @@ def sync_once(settings: Settings) -> SyncResult:
             config=config,
             art_dir=settings.art_dir,
             bundle_dir=settings.bundle_dir,
+            currency=settings.currency,
         )
     finally:
         conn.close()

@@ -31,6 +31,12 @@ def test_defaults_when_nothing_is_set(monkeypatch) -> None:
     assert settings.discogs_username is None
     assert settings.user_agent == config.DEFAULT_USER_AGENT
     assert settings.sync_time == config.DEFAULT_SYNC_TIME
+    assert settings.currency == "USD"
+
+
+def test_currency_is_upper_cased(monkeypatch) -> None:
+    monkeypatch.setenv(config.CURRENCY_ENV, " gbp ")
+    assert config.settings_from_env().currency == "GBP"
 
 
 def test_every_setting_reads_its_variable(monkeypatch, tmp_path: Path) -> None:

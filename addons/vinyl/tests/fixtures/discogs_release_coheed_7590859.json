@@ -1,0 +1,200 @@
+{
+  "id": 7590859,
+  "status": "Accepted",
+  "year": 2015,
+  "resource_url": "https://api.discogs.com/releases/7590859",
+  "uri": "https://www.discogs.com/release/7590859-Coheed-And-Cambria-The-Color-Before-The-Sun",
+  "artists": [
+    {
+      "name": "Coheed And Cambria",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 256629,
+      "resource_url": "https://api.discogs.com/artists/256629",
+      "thumbnail_url": "https://i.discogs.com/vkUPjwN9AEDNZ8GneuPG2RB1Gsm16Fl0QYave9l-ATE/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTI1NjYy/OS0xNjU5MjM0MjE1/LTU1ODguanBlZw.jpeg"
+    }
+  ],
+  "artists_sort": "Coheed And Cambria",
+  "labels": [
+    {
+      "name": "300 Entertainment",
+      "catno": "551821-1",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 758325,
+      "resource_url": "https://api.discogs.com/labels/758325",
+      "thumbnail_url": "https://i.discogs.com/GTjkiqDn2hiaYi0KF6BGYXq_CnCGr4ZsIIvNAtdOAO4/rs:fit/g:sm/q:90/h:600/w:598/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTc1ODMy/NS0xNDE1MDI1Njcx/LTYzOTMuanBlZw.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "1",
+      "descriptions": [
+        "LP",
+        "Album",
+        "Limited Edition",
+        "Picture Disc"
+      ]
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 324,
+    "want": 248,
+    "rating": {
+      "count": 20,
+      "average": 4.65
+    },
+    "submitter": {
+      "username": "GoVinylGo",
+      "resource_url": "https://api.discogs.com/users/GoVinylGo"
+    },
+    "contributors": [
+      {
+        "username": "GoVinylGo",
+        "resource_url": "https://api.discogs.com/users/GoVinylGo"
+      },
+      {
+        "username": "BurnYourWingsIV",
+        "resource_url": "https://api.discogs.com/users/BurnYourWingsIV"
+      },
+      {
+        "username": "lorren13",
+        "resource_url": "https://api.discogs.com/users/lorren13"
+      },
+      {
+        "username": "SeagullVinyl",
+        "resource_url": "https://api.discogs.com/users/SeagullVinyl"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 1,
+  "date_added": "2015-10-12T13:14:47-07:00",
+  "date_changed": "2017-05-03T15:30:00-07:00",
+  "num_for_sale": 1,
+  "lowest_price": 134.15,
+  "master_id": 897370,
+  "master_url": "https://api.discogs.com/masters/897370",
+  "title": "The Color Before The Sun",
+  "country": "US",
+  "released": "2015-10-16",
+  "notes": "Indie retail exclusive release.",
+  "released_formatted": "16 Oct 2015",
+  "identifiers": [
+    {
+      "type": "Barcode",
+      "value": "857561005971"
+    }
+  ],
+  "videos": [
+    {
+      "uri": "https://www.youtube.com/watch?v=5bvTqD37ALI",
+      "title": "Coheed and Cambria - The Color Before The Sun (Full Album)",
+      "description": "Entertainment purposes only. All rights and credit go to the band. \nCoheed and Cambria's newest album that came out on October 16, 2015. Their first non concept album. Be sure to buy the album to support the band!\nEnjoy!\n\n\n\nTrack Listing:\n\nIsland (0:00)\nE",
+      "duration": 2840,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=5bvTqD37ALI",
+      "title": "Coheed and Cambria - The Color Before The Sun (Full Album)",
+      "description": "Entertainment purposes only. All rights and credit go to the band. \nCoheed and Cambria's newest album that came out on October 16, 2015. Their first non concept album. Be sure to buy the album to support the band!\nEnjoy!\n\n\n\nTrack Listing:\n\nIsland (0:00)\nE",
+      "duration": 2840,
+      "embed": true
+    }
+  ],
+  "genres": [
+    "Rock"
+  ],
+  "styles": [],
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "title": "Island",
+      "duration": ""
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "title": "Eraser",
+      "duration": ""
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "title": "Colors",
+      "duration": ""
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "title": "Here To Mars",
+      "duration": ""
+    },
+    {
+      "position": "A5",
+      "type_": "track",
+      "title": "Ghost",
+      "duration": ""
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "title": "Atlas",
+      "duration": ""
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "title": "Young Love",
+      "duration": ""
+    },
+    {
+      "position": "B3",
+      "type_": "track",
+      "title": "You Got Spirit, Kid",
+      "duration": ""
+    },
+    {
+      "position": "B4",
+      "type_": "track",
+      "title": "The Audience",
+      "duration": ""
+    },
+    {
+      "position": "B5",
+      "type_": "track",
+      "title": "Peace To The Mountain",
+      "duration": ""
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/Z4FqDtACfiBLeDSzhoE7e42Pg-AsFv8u4O7KwineSr0/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS00MDY1LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/Z4FqDtACfiBLeDSzhoE7e42Pg-AsFv8u4O7KwineSr0/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS00MDY1LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/RR8hiY8QU3x1zBhxswRldnrFF8s60JyW2q3-8SG0soM/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS00MDY1LmpwZWc.jpeg",
+      "width": 600,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/SYX23moy5BHNinPJoaLj56B8Gpac9jZf0ahOBFgpZuc/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS03NjM3LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/SYX23moy5BHNinPJoaLj56B8Gpac9jZf0ahOBFgpZuc/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS03NjM3LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/RXh66HMu4EZ6EOs403BrLqsng0qx5JtGJDpsk93-PfE/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS03NjM3LmpwZWc.jpeg",
+      "width": 600,
+      "height": 600
+    }
+  ],
+  "thumb": "https://i.discogs.com/RR8hiY8QU3x1zBhxswRldnrFF8s60JyW2q3-8SG0soM/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS00MDY1LmpwZWc.jpeg",
+  "estimated_weight": 230,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}
