@@ -1,0 +1,496 @@
+{
+  "id": 24194891,
+  "status": "Accepted",
+  "year": 2022,
+  "resource_url": "https://api.discogs.com/releases/24194891",
+  "uri": "https://www.discogs.com/release/24194891-Johnny-Cash-At-Folsom-Prison",
+  "artists": [
+    {
+      "name": "Johnny Cash",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 135946,
+      "resource_url": "https://api.discogs.com/artists/135946",
+      "thumbnail_url": "https://i.discogs.com/D6Pkep6V3jhYkxT4ne48DtCoGVQ92G-NHGvE3qPrKww/rs:fit/g:sm/q:90/h:600/w:458/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTEzNTk0/Ni0xNzgwMTY3OTY0/LTc2ODcuanBlZw.jpeg"
+    }
+  ],
+  "artists_sort": "Johnny Cash",
+  "labels": [
+    {
+      "name": "Columbia",
+      "catno": "CS 9639",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 1866,
+      "resource_url": "https://api.discogs.com/labels/1866",
+      "thumbnail_url": "https://i.discogs.com/JuO51-lZvasOtw8-yLUjsen-4O17uPH1A9SILCO-lG4/rs:fit/g:sm/q:90/h:300/w:299/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTE4NjYt/MTIzMzE5MzU1Ny5q/cGVn.jpeg"
+    },
+    {
+      "name": "Legacy",
+      "catno": "19439764011",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 15491,
+      "resource_url": "https://api.discogs.com/labels/15491",
+      "thumbnail_url": "https://i.discogs.com/jk2im_GXsDlf_1qNdX0KOoZUX6ivAIvgJH0TEBVW7ck/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTE1NDkx/LTE0OTg4MzQ3MDgt/NzQwOS5wbmc.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [
+    {
+      "name": "Sony Music Entertainment",
+      "catno": "",
+      "entity_type": "9",
+      "entity_type_name": "Distributed By",
+      "id": 29073,
+      "resource_url": "https://api.discogs.com/labels/29073",
+      "thumbnail_url": "https://i.discogs.com/brqxJ0_7Bid9TdPXvDixDcKsKR49S1Tu2CJbq1H6qsI/rs:fit/g:sm/q:90/h:43/w:519/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI5MDcz/LTE3NTY5MTIzMzYt/MTIwNS5wbmc.jpeg"
+    },
+    {
+      "name": "Walmart",
+      "catno": "",
+      "entity_type": "42",
+      "entity_type_name": "Exclusive Retailer",
+      "id": 818363,
+      "resource_url": "https://api.discogs.com/labels/818363",
+      "thumbnail_url": "https://i.discogs.com/qyqHlc-iyWL5AF3xvjQtgEOgBrP3bxs2_ZljcGz2wxI/rs:fit/g:sm/q:90/h:337/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTgxODM2/My0xNzQxNDU1Mzk2/LTM5NDEucG5n.jpeg"
+    },
+    {
+      "name": "Sony Music Entertainment",
+      "catno": "",
+      "entity_type": "14",
+      "entity_type_name": "Copyright (c)",
+      "id": 29073,
+      "resource_url": "https://api.discogs.com/labels/29073",
+      "thumbnail_url": "https://i.discogs.com/brqxJ0_7Bid9TdPXvDixDcKsKR49S1Tu2CJbq1H6qsI/rs:fit/g:sm/q:90/h:43/w:519/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI5MDcz/LTE3NTY5MTIzMzYt/MTIwNS5wbmc.jpeg"
+    },
+    {
+      "name": "Sony Music Entertainment",
+      "catno": "",
+      "entity_type": "13",
+      "entity_type_name": "Phonographic Copyright (p)",
+      "id": 29073,
+      "resource_url": "https://api.discogs.com/labels/29073",
+      "thumbnail_url": "https://i.discogs.com/brqxJ0_7Bid9TdPXvDixDcKsKR49S1Tu2CJbq1H6qsI/rs:fit/g:sm/q:90/h:43/w:519/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI5MDcz/LTE3NTY5MTIzMzYt/MTIwNS5wbmc.jpeg"
+    },
+    {
+      "name": "MPO",
+      "catno": "",
+      "entity_type": "17",
+      "entity_type_name": "Pressed By",
+      "id": 56025,
+      "resource_url": "https://api.discogs.com/labels/56025",
+      "thumbnail_url": "https://i.discogs.com/ESRU3eTUmc1632Us6_7LBipnaQGV6lJe-D5nyFxssyw/rs:fit/g:sm/q:90/h:336/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTU2MDI1/LTEzMTQ2OTg5ODQu/anBlZw.jpeg"
+    },
+    {
+      "name": "Cohearent Audio",
+      "catno": "",
+      "entity_type": "29",
+      "entity_type_name": "Mastered At",
+      "id": 304129,
+      "resource_url": "https://api.discogs.com/labels/304129",
+      "thumbnail_url": "https://i.discogs.com/H8xY-vGU9MTMRVPEF9XuqiPNCbc8PEKGwBIRCwtmO6Y/rs:fit/g:sm/q:90/h:325/w:348/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTMwNDEy/OS0xMzMzMzg4MzY4/LmpwZWc.jpeg"
+    },
+    {
+      "name": "Folsom Prison",
+      "catno": "",
+      "entity_type": "23",
+      "entity_type_name": "Recorded At",
+      "id": 382926,
+      "resource_url": "https://api.discogs.com/labels/382926"
+    }
+  ],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "1",
+      "descriptions": [
+        "LP",
+        "Album",
+        "Reissue",
+        "Stereo"
+      ],
+      "text": "Silver"
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 1793,
+    "want": 486,
+    "rating": {
+      "count": 83,
+      "average": 4.64
+    },
+    "submitter": {
+      "username": "Freddyc481",
+      "resource_url": "https://api.discogs.com/users/Freddyc481"
+    },
+    "contributors": [
+      {
+        "username": "Freddyc481",
+        "resource_url": "https://api.discogs.com/users/Freddyc481"
+      },
+      {
+        "username": "Martin35",
+        "resource_url": "https://api.discogs.com/users/Martin35"
+      },
+      {
+        "username": "wherecashisking",
+        "resource_url": "https://api.discogs.com/users/wherecashisking"
+      },
+      {
+        "username": "MaloKiin",
+        "resource_url": "https://api.discogs.com/users/MaloKiin"
+      },
+      {
+        "username": "PFLawson",
+        "resource_url": "https://api.discogs.com/users/PFLawson"
+      },
+      {
+        "username": "MrShocktime",
+        "resource_url": "https://api.discogs.com/users/MrShocktime"
+      },
+      {
+        "username": "camster",
+        "resource_url": "https://api.discogs.com/users/camster"
+      },
+      {
+        "username": "ColtanW",
+        "resource_url": "https://api.discogs.com/users/ColtanW"
+      },
+      {
+        "username": "KeithLivesMedia",
+        "resource_url": "https://api.discogs.com/users/KeithLivesMedia"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 1,
+  "date_added": "2022-08-13T18:33:44-07:00",
+  "date_changed": "2023-02-17T15:13:35-08:00",
+  "num_for_sale": 6,
+  "lowest_price": 27.52,
+  "master_id": 27795,
+  "master_url": "https://api.discogs.com/masters/27795",
+  "title": "At Folsom Prison",
+  "country": "US",
+  "released": "2022-08-19",
+  "notes": "Walmart exclusive on silver vinyl.\n\"Pressed By\" and \"Lacquer\" credits based on matrix data.\nRunouts are etched except for MDO string which is stamped. \"KPG\" looks like \"KM\" as described on Kevin Gray's artist page.\n",
+  "released_formatted": "19 Aug 2022",
+  "identifiers": [
+    {
+      "type": "Barcode",
+      "value": "194399825419"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "XSM 136060",
+      "description": "A-side label"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "XSM 136061",
+      "description": "B-side label"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "20-0201 / 19439764011 A [MPO logo]® 22 276423 [scratch out] KPG@CA",
+      "description": "A-side runout"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "20-0201 / 19439764011 B [MPO logo]® 22 276735 [scratch out] KPG@CA"
+    }
+  ],
+  "videos": [
+    {
+      "uri": "https://www.youtube.com/watch?v=0VZuA7iJY4Y",
+      "title": "Cocaine Blues (Live at Folsom State Prison, Folsom, CA - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nCocaine Blues (Live at Folsom State Prison, Folsom, CA - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1968-05-01\n\nComposer,",
+      "duration": 184,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=0GM-1N8TfHE",
+      "title": "I Still Miss Someone (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nI Still Miss Someone (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 196",
+      "duration": 97,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=sbMirPYzthY",
+      "title": "Johnny Cash - 25 Minutes to Go (Official Audio)",
+      "description": "Official audio for \"25 Minutes to Go\" by Johnny Cash\nListen to Johnny Cash: https://JohnnyCash.lnk.to/listenYD\n\nSubscribe to the official Johnny Cash YouTube channel: https://JohnnyCash.lnk.to/subscribeYD\n\nWatch more of Johnny Cash's music videos: https:/",
+      "duration": 212,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=WkMB3RitBSE",
+      "title": "Orange Blossom Special (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nOrange Blossom Special (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1",
+      "duration": 182,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=c0OSboEOtRQ",
+      "title": "The Long Black Veil (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nThe Long Black Veil (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1968",
+      "duration": 240,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=0JUSmwGl4T4",
+      "title": "Send a Picture of Mother (Live at Folsom State Prison, Folsom, CA - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nSend a Picture of Mother (Live at Folsom State Prison, Folsom, CA - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1968-05-01",
+      "duration": 131,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=ZEvuwiCa9RA",
+      "title": "The Wall (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nThe Wall (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968) · Johnny Cash\n\nAt Folsom Prison (Legacy Edition)\n\n℗ Originally Released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on",
+      "duration": 115,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=jeudEqVhJOM",
+      "title": "Dirty Old Egg-Suckin' Dog (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nDirty Old Egg-Suckin' Dog (Live at Folsom State Prison, Folsom, CA (1st Show) - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally Released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on",
+      "duration": 77,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=q3wyAzjlE9Y",
+      "title": "Flushed from the Bathroom of Your Heart (Live at Folsom State Prison, Folsom, CA - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nFlushed from the Bathroom of Your Heart (Live at Folsom State Prison, Folsom, CA - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased",
+      "duration": 162,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=FPynO42XFRw",
+      "title": "Jackson (Live at Folsom State Prison, Folsom, CA - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nJackson (Live at Folsom State Prison, Folsom, CA - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1968-05-01\n\nComposer, Lyric",
+      "duration": 177,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Mqe2kcRZo5I",
+      "title": "Give My Love to Rose (Live at Folsom State Prison, Folsom, CA - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nGive My Love to Rose (Live at Folsom State Prison, Folsom, CA - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1968-05-01\n\nVo",
+      "duration": 163,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=SLfxsneyfnY",
+      "title": "Green, Green Grass of Home (Live at Folsom State Prison, Folsom, CA - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nGreen, Green Grass of Home (Live at Folsom State Prison, Folsom, CA - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1968-05-",
+      "duration": 183,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=fGMVRoXelNs",
+      "title": "Greystone Chapel (Live at Folsom State Prison, Folsom, CA - January 1968)",
+      "description": "Provided to YouTube by Columbia/Legacy\n\nGreystone Chapel (Live at Folsom State Prison, Folsom, CA - January 1968) · Johnny Cash\n\nAt Folsom Prison\n\n℗ Originally released 1968. All rights reserved by Sony Music Entertainment\n\nReleased on: 1968-05-01\n\nCompos",
+      "duration": 346,
+      "embed": true
+    }
+  ],
+  "genres": [
+    "Folk, World, & Country"
+  ],
+  "styles": [
+    "Country"
+  ],
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "title": "Folsom Prison Blues",
+      "duration": ""
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "title": "Dark As The Dungeon",
+      "duration": ""
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "title": "I Still Miss Someone",
+      "duration": ""
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "title": "Cocaine Blues",
+      "duration": ""
+    },
+    {
+      "position": "A5",
+      "type_": "track",
+      "title": "25 Minutes To Go",
+      "duration": ""
+    },
+    {
+      "position": "A6",
+      "type_": "track",
+      "title": "Orange Blossom Special",
+      "duration": ""
+    },
+    {
+      "position": "A7",
+      "type_": "track",
+      "title": "The Long Black Veil",
+      "duration": ""
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "title": "Send A Picture Of Mother",
+      "duration": ""
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "title": "The Wall",
+      "duration": ""
+    },
+    {
+      "position": "B3",
+      "type_": "track",
+      "title": "Dirty Old Egg-Sucking Dog",
+      "duration": ""
+    },
+    {
+      "position": "B4",
+      "type_": "track",
+      "title": "Flushed From The Bathroom Of Your Heart",
+      "duration": ""
+    },
+    {
+      "position": "B5",
+      "type_": "track",
+      "title": "Jackson",
+      "duration": ""
+    },
+    {
+      "position": "B6",
+      "type_": "track",
+      "title": "Give My Love To Rose",
+      "duration": ""
+    },
+    {
+      "position": "B7",
+      "type_": "track",
+      "title": "I Got Stripes",
+      "duration": ""
+    },
+    {
+      "position": "B8",
+      "type_": "track",
+      "title": "Green, Green Grass Of Home",
+      "duration": ""
+    },
+    {
+      "position": "B9",
+      "type_": "track",
+      "title": "Greystone Chapel",
+      "duration": ""
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "Kevin Gray",
+      "anv": "KPG",
+      "join": "",
+      "role": "Lacquer Cut By",
+      "tracks": "",
+      "id": 312098,
+      "resource_url": "https://api.discogs.com/artists/312098"
+    },
+    {
+      "name": "Bob Johnston",
+      "anv": "",
+      "join": "",
+      "role": "Producer",
+      "tracks": "",
+      "id": 241543,
+      "resource_url": "https://api.discogs.com/artists/241543"
+    },
+    {
+      "name": "Johnny Cash",
+      "anv": "",
+      "join": "",
+      "role": "Sleeve Notes",
+      "tracks": "",
+      "id": 135946,
+      "resource_url": "https://api.discogs.com/artists/135946"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/WK-m9kbrk2KaGhbesU6Glr_LWKwVfvHvCqth2i2Su7M/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgw/OTgtMzMwMy5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/WK-m9kbrk2KaGhbesU6Glr_LWKwVfvHvCqth2i2Su7M/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgw/OTgtMzMwMy5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/DE8lDw-nNAXHnuGCU5I8A4sE0Q1O9EPbEmr-Qp3r8hs/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgw/OTgtMzMwMy5qcGVn.jpeg",
+      "width": 600,
+      "height": 593
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/e7g_cfh9v6FmwaclAOXi2hDen2bH3b4FSuVWYsZ9w3c/rs:fit/g:sm/q:90/h:600/w:572/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgx/MDktNTM1Ni5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/e7g_cfh9v6FmwaclAOXi2hDen2bH3b4FSuVWYsZ9w3c/rs:fit/g:sm/q:90/h:600/w:572/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgx/MDktNTM1Ni5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/6_2g09eu5qPlQuXIXbaJRHWECsvqV8j1zL-QDQ56bhk/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgx/MDktNTM1Ni5qcGVn.jpeg",
+      "width": 572,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/tcAFAPRXRW9xYu-Mn2qseuD9Ni7dZIfiG-XjPNuTEj8/rs:fit/g:sm/q:90/h:600/w:593/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTg0/NzMtOTc5My5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/tcAFAPRXRW9xYu-Mn2qseuD9Ni7dZIfiG-XjPNuTEj8/rs:fit/g:sm/q:90/h:600/w:593/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTg0/NzMtOTc5My5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/LieL-XCJVukt_tgOCwQniZTmJUbnr0rvYjxcNbjOvOI/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTg0/NzMtOTc5My5qcGVn.jpeg",
+      "width": 593,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/OiVkSHa587az7A92AgA44G5kq7YfQ7imI_DrC2-law4/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgx/MTctNjYyMS5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/OiVkSHa587az7A92AgA44G5kq7YfQ7imI_DrC2-law4/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgx/MTctNjYyMS5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/0FkxVohzQxOCHEp3N7mrEPyIr8ocMUrcHiJVWjOiWac/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgx/MTctNjYyMS5qcGVn.jpeg",
+      "width": 600,
+      "height": 597
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/Ue70TKb_-NA2C4i7MRTQyQRTf0fWaruyfC7UYpR9evU/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2Njg5Njc5/NTAtNzk0OS5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/Ue70TKb_-NA2C4i7MRTQyQRTf0fWaruyfC7UYpR9evU/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2Njg5Njc5/NTAtNzk0OS5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/YQTPI5CEWRIERQo55v_jQa4LQKBxUFMscJbLSK15N7M/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2Njg5Njc5/NTAtNzk0OS5qcGVn.jpeg",
+      "width": 597,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/oascKtGfdDu7KozZbjgPA67rrJbiDYgYILh_EKuPUng/rs:fit/g:sm/q:90/h:600/w:451/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NzA3OTUx/MTEtNzYyOS5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/oascKtGfdDu7KozZbjgPA67rrJbiDYgYILh_EKuPUng/rs:fit/g:sm/q:90/h:600/w:451/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NzA3OTUx/MTEtNzYyOS5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/Gr3Cu9FN9JQjFRQa8Y9nRjBZwDCmGx1BRuzOkE8MJH4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NzA3OTUx/MTEtNzYyOS5qcGVn.jpeg",
+      "width": 451,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/M-6reFss5clAW3LW8aLX1fylnfgv1WGm-tudpxv8Vp0/rs:fit/g:sm/q:90/h:447/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NzY2NzU1/ODAtNTExNC5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/M-6reFss5clAW3LW8aLX1fylnfgv1WGm-tudpxv8Vp0/rs:fit/g:sm/q:90/h:447/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NzY2NzU1/ODAtNTExNC5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/-r2_SWFRh34EeV41sLmAL3ilRRMAknVtBCx6e4NplJE/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NzY2NzU1/ODAtNTExNC5qcGVn.jpeg",
+      "width": 600,
+      "height": 447
+    }
+  ],
+  "thumb": "https://i.discogs.com/DE8lDw-nNAXHnuGCU5I8A4sE0Q1O9EPbEmr-Qp3r8hs/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI0MTk0/ODkxLTE2NjA5NTgw/OTgtMzMwMy5qcGVn.jpeg",
+  "estimated_weight": 230,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

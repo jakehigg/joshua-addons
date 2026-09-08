@@ -1,0 +1,1184 @@
+{
+  "id": 2025582,
+  "status": "Accepted",
+  "year": 1972,
+  "resource_url": "https://api.discogs.com/releases/2025582",
+  "uri": "https://www.discogs.com/release/2025582-Various-Nuggets-Original-Artyfacts-From-The-First-Psychedelic-Era-1965-1968",
+  "artists": [
+    {
+      "name": "Various",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 194,
+      "resource_url": "https://api.discogs.com/artists/194"
+    }
+  ],
+  "artists_sort": "Various",
+  "labels": [
+    {
+      "name": "Elektra",
+      "catno": "7E-2006",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 651,
+      "resource_url": "https://api.discogs.com/labels/651",
+      "thumbnail_url": "https://i.discogs.com/7IF4_7mC2pKLD1z0VwHX7dQwilfeiq4zBww61ijrzXw/rs:fit/g:sm/q:90/h:400/w:400/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTY1MS0x/NjYwMjQ3ODcwLTUw/MDQuanBlZw.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [
+    {
+      "name": "Elektra Records",
+      "catno": "",
+      "entity_type": "13",
+      "entity_type_name": "Phonographic Copyright (p)",
+      "id": 36195,
+      "resource_url": "https://api.discogs.com/labels/36195",
+      "thumbnail_url": "https://i.discogs.com/2AB3hgRiawOH1kMkb2nl7bOTyw1cmBTM4gcKU03npVQ/rs:fit/g:sm/q:90/h:600/w:494/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTM2MTk1/LTE3NDI0MjY2NDUt/MTAwMy5qcGVn.jpeg"
+    },
+    {
+      "name": "Elektra Records",
+      "catno": "",
+      "entity_type": "14",
+      "entity_type_name": "Copyright (c)",
+      "id": 36195,
+      "resource_url": "https://api.discogs.com/labels/36195",
+      "thumbnail_url": "https://i.discogs.com/2AB3hgRiawOH1kMkb2nl7bOTyw1cmBTM4gcKU03npVQ/rs:fit/g:sm/q:90/h:600/w:494/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTM2MTk1/LTE3NDI0MjY2NDUt/MTAwMy5qcGVn.jpeg"
+    },
+    {
+      "name": "Elektra Sound Recorders",
+      "catno": "",
+      "entity_type": "30",
+      "entity_type_name": "Lacquer Cut At",
+      "id": 268773,
+      "resource_url": "https://api.discogs.com/labels/268773",
+      "thumbnail_url": "https://i.discogs.com/a-L-XLX1_NUbXb6DuoB83StJyhnMG0w2Son0j_omblw/rs:fit/g:sm/q:90/h:358/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI2ODc3/My0xMzYzNzAwNTA4/LTg3MDAuanBlZw.jpeg"
+    },
+    {
+      "name": "Columbia Records Pressing Plant, Pitman",
+      "catno": "",
+      "entity_type": "17",
+      "entity_type_name": "Pressed By",
+      "id": 447694,
+      "resource_url": "https://api.discogs.com/labels/447694",
+      "thumbnail_url": "https://i.discogs.com/wBWbBFOUkrSdKRV0SZ5BnJd4BHbnh6JtHDUy3MT6h4s/rs:fit/g:sm/q:90/h:216/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTQ0NzY5/NC0xMzk1MzQzMzg3/LTU3NDguanBlZw.jpeg"
+    }
+  ],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "2",
+      "descriptions": [
+        "LP",
+        "Compilation"
+      ],
+      "text": "Pitman Press"
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 1066,
+    "want": 1459,
+    "rating": {
+      "count": 146,
+      "average": 4.68
+    },
+    "submitter": {
+      "username": "rhythmoflife.se",
+      "resource_url": "https://api.discogs.com/users/rhythmoflife.se"
+    },
+    "contributors": [
+      {
+        "username": "rhythmoflife.se",
+        "resource_url": "https://api.discogs.com/users/rhythmoflife.se"
+      },
+      {
+        "username": "kotzkarnickel",
+        "resource_url": "https://api.discogs.com/users/kotzkarnickel"
+      },
+      {
+        "username": "e-kartoffel",
+        "resource_url": "https://api.discogs.com/users/e-kartoffel"
+      },
+      {
+        "username": "marcelrecords",
+        "resource_url": "https://api.discogs.com/users/marcelrecords"
+      },
+      {
+        "username": "avalon67",
+        "resource_url": "https://api.discogs.com/users/avalon67"
+      },
+      {
+        "username": "tosca-records",
+        "resource_url": "https://api.discogs.com/users/tosca-records"
+      },
+      {
+        "username": "discosanddragons",
+        "resource_url": "https://api.discogs.com/users/discosanddragons"
+      },
+      {
+        "username": "n0r",
+        "resource_url": "https://api.discogs.com/users/n0r"
+      },
+      {
+        "username": "DiscogsUpdateBot",
+        "resource_url": "https://api.discogs.com/users/DiscogsUpdateBot"
+      },
+      {
+        "username": "othall",
+        "resource_url": "https://api.discogs.com/users/othall"
+      },
+      {
+        "username": "facelift53",
+        "resource_url": "https://api.discogs.com/users/facelift53"
+      },
+      {
+        "username": "smile-lab",
+        "resource_url": "https://api.discogs.com/users/smile-lab"
+      },
+      {
+        "username": "Showbiz_Kid",
+        "resource_url": "https://api.discogs.com/users/Showbiz_Kid"
+      },
+      {
+        "username": "rdvriese",
+        "resource_url": "https://api.discogs.com/users/rdvriese"
+      },
+      {
+        "username": "FPL",
+        "resource_url": "https://api.discogs.com/users/FPL"
+      },
+      {
+        "username": "gilaga.music",
+        "resource_url": "https://api.discogs.com/users/gilaga.music"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 2,
+  "date_added": "2009-12-01T09:28:27-08:00",
+  "date_changed": "2023-05-24T13:32:05-07:00",
+  "num_for_sale": 15,
+  "lowest_price": 69.77,
+  "master_id": 85910,
+  "master_url": "https://api.discogs.com/masters/85910",
+  "title": "Nuggets: Original Artyfacts From The First Psychedelic Era 1965-1968",
+  "country": "US",
+  "released": "1972",
+  "notes": "[l=Columbia Records Pressing Plant, Pitman] pressing denoted by \"CP\" etch in runouts.\nReleased in a gatefold cover, comes with 'Something out of the ordinary' Elektra company inners. \n'Butterfly' labels.\n\n℗ & © 1972 by Elektra Records\n\nRecord 1 plays sides A & D, record 2 plays sides B & C (Automatic Sequence) ",
+  "released_formatted": "1972",
+  "identifiers": [
+    {
+      "type": "Matrix / Runout",
+      "value": "7E-2006 A-1 - CP MM ESR",
+      "description": "Side A, runout etched"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "7E-2006 B-1 - CP MM ESR",
+      "description": "Side B, runout etched"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "7E-2006 C - CP MM ESR",
+      "description": "Side C, runout etched"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "7E-2006 D-1 - CP MM ESR",
+      "description": "Side D, runout etched"
+    }
+  ],
+  "videos": [
+    {
+      "uri": "https://www.youtube.com/watch?v=OUJlD5QQNSM",
+      "title": "Screaming Lord Sutch ► She Was A Cheat [HQ Audio] 1966",
+      "description": "LYRICS\n\nJust let my baby \nTry not to care\nGot a mountain of misery\nJust to much to bear\n\nHer kiss like honey\nSo warm and sweet\nHer heart deceived me\nShe was a cheat\n\nBlonde hair can fool you\nBlue eyes can too\nCruel lips can tell black lies\nBreak your hear",
+      "duration": 205,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=xmhyerDCzTU",
+      "title": "I Had Too Much to Dream (Last Night)",
+      "description": "Provided to YouTube by The Orchard Enterprises\n\nI Had Too Much to Dream (Last Night) · The Electric Prunes\n\nHalloween a Go-Go\n\n℗ 2008 Wicked Cool Records\n\nReleased on: 2008-09-16\n\nMusic Publisher: Reprise\n\nAuto-generated by YouTube.",
+      "duration": 177,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Pvhbm3AKgMI",
+      "title": "Dirty Water",
+      "description": "Provided to YouTube by Redeye Worldwide\n\nDirty Water · The Standells\n\nDirty Water / Twitchin'\n\n℗ Sundazed Music Inc.\n\nReleased on: 1966-01-01\n\nArtist: The Standells\n\nAuto-generated by YouTube.",
+      "duration": 170,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=bU1GQLsTfm0",
+      "title": "Night Time",
+      "description": "Provided to YouTube by Legacy/Epic Associated\n\nNight Time · The Strangeloves\n\nI Want Candy: The Best Of The Strangeloves\n\n℗ Originally released 1965. All rights reserved by Epic Records, a division of Sony Music Entertainment\n\nReleased on: 1995-06-06\n\n",
+      "duration": 204,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=_4FsMlzPwT8",
+      "title": "Lies",
+      "description": "Provided to YouTube by Redeye Worldwide\n\nLies · The Knickerbockers\n\nChallenge Recordings\n\n℗ Sundazed Music Inc.\n\nReleased on: 2015-11-27\n\nArtist: The Knickerbockers\n\nAuto-generated by YouTube.",
+      "duration": 169,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=ZGgagOlf1ys",
+      "title": "The Vagrants - \"Respect\" - Original Compilation LP - HQ",
+      "description": "TheVRP Archives - Original Compilation Pressing - \"Various ‎– Nuggets: Original Artyfacts From The First Psychedelic Era 1965-1968\" - Elektra Records - 1972 - 7E-2006\n\nNewly Restored and Processed for Maximum Musical Integrity\n\nNo copyright infringeme",
+      "duration": 135,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=CjE0zaDpSuU",
+      "title": "No Time Like The Right Time",
+      "description": "Provided to YouTube by Universal Music Group\n\nNo Time Like The Right Time · The Blues Project\n\nAnthology\n\n℗ A Verve Label Group Release; ℗ 1967 UMG Recordings, Inc.\n\nReleased on: 1997-01-01\n\nProducer: Tom Wilson\nComposer  Lyricist: Al Kooper\n\nAuto-ge",
+      "duration": 165,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=qD_HZ_hrd0o",
+      "title": "Oh Yeah",
+      "description": "Provided to YouTube by Rhino Atlantic\n\nOh Yeah · The Shadows Of Knight\n\nGloria\n\n℗ 1966 Atlantic Recording Corp. for the US and WEA International for the world outside the United States.\n\nBand  Member: Dan Baughman\nBand  Member: David Wolinski\nBand  Mem",
+      "duration": 169,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=aKZ1NYmgDHc",
+      "title": "Pushin' Too Hard",
+      "description": "Provided to YouTube by The Orchard Enterprises\n\nPushin' Too Hard · The Seeds\n\nThe Seeds\n\n℗ 1987 GNP Crescendo Record Co., Inc.\n\nReleased on: 2005-06-13\n\nAuto-generated by YouTube.",
+      "duration": 159,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=L40j1fPz0AA",
+      "title": "Moulty",
+      "description": "Provided to YouTube by Believe SAS\n\nMoulty · The Barbarians\n\nRock & Roll Mashup, Vol. 5\n\n℗ Big A Media\n\nReleased on: 2014-09-22\n\nComposer: Victor Moulton\nMusic Publisher: D.R\n\nAuto-generated by YouTube.",
+      "duration": 155,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=PO6DsuthDMY",
+      "title": "Don't Look Back",
+      "description": "Provided to YouTube by Sony Music Entertainment\n\nDon't Look Back · The Remains\n\nThe Remains\n\n℗ Originally released 1966. All rights reserved by Epic Records, a division of Sony Music Entertainment\n\nProducer: Ted Cooper\nComposer, Lyricist: Billy Vera\nPr",
+      "duration": 159,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=HCz2BrSZEgU",
+      "title": "Invitation to Cry (Mono)",
+      "description": "Provided to YouTube by Sony Music Entertainment\n\nInvitation to Cry (Mono) · The Magicians\n\nAn Invitation to Cry: The Best of the Magicians\n\n℗ Originally released 1965. All rights reserved by Columbia Records, a division of Sony Music Entertainment\n\nCom",
+      "duration": 176,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=k-SFlqARmvc",
+      "title": "Liar, Liar",
+      "description": "Provided to YouTube by Ingrooves\n\nLiar, Liar · The Castaways\n\n20th Century Rocks: 60's Rock Bands - Wild Thing\n\nReleased on: 2001-07-01\n\nAuto-generated by YouTube.",
+      "duration": 111,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=YIVpHNEPzDM",
+      "title": "You're Gonna Miss Me",
+      "description": "Provided to YouTube by The Orchard Enterprises\n\nYou're Gonna Miss Me · 13th Floor Elevators · Erickson\n\nThe Psychedelic Sounds of the 13th Floor Elevators\n\n℗ 1966 Contact\n\nReleased on: 2012-10-01\n\nAuto-generated by YouTube.",
+      "duration": 147,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=ojH8eczSnDM",
+      "title": "Psychotic Reaction (Unedited Version)",
+      "description": "Provided to YouTube by Universal Music Group\n\nPsychotic Reaction (Unedited Version) · Count Five\n\nDouble Whammy! A 1960s Garage Rock Rave-Up\n\n℗ 2020 Craft Recordings., Distributed by Concord.\n\nReleased on: 2020-10-30\n\nProducer, Recording  Producer: Joe",
+      "duration": 194,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=xT0wMtVP2TM",
+      "title": "The Leaves Hey Joe",
+      "description": "Psychedelic 1960's The Leaves Hey Joe from 'The Nugget's collection",
+      "duration": 172,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=xT0wMtVP2TM",
+      "title": "The Leaves Hey Joe",
+      "description": "Psychedelic 1960's The Leaves Hey Joe from 'The Nugget's collection",
+      "duration": 172,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=edlkT4dR7Vk",
+      "title": "[Just Like] Romeo & Juliet",
+      "description": "Provided to YouTube by Redeye Distribution\n\n[Just Like] Romeo & Juliet · Michael & The Messengers\n\nMy Record Collection: The 60's\n\n℗ 2010 Jobete Music Co Inc/ Stoe Agate Music Corp\n\nReleased on: 2011-06-30\n\nComposer: B.Hamilton, F. Gorman,\nMusic Publis",
+      "duration": 118,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=dqc9Qnh9HLI",
+      "title": "Sugar & Spice",
+      "description": "Provided to YouTube by Sony Music Entertainment\n\nSugar & Spice · Cryan' Shames\n\nSugar & Spice (A Collection)\n\n℗ Originally released 1966. All rights reserved by Columbia Records, a division of Sony Music Entertainment\n\nComposer, Lyricist: F. Nightingal",
+      "duration": 149,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Jlv13cEDfA8",
+      "title": "Baby Please Don't Go",
+      "description": "Provided to YouTube by Mainstream Records\n\nBaby Please Don't Go · Amboy Dukes Featuring Ted Nugent\n\nJourney To The Center Of The Mind\n\n℗ 1968 Mainstream Records\n\nReleased on: 1968-05-08\n\nAuto-generated by YouTube.",
+      "duration": 339,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=c1_3g_UM_F0",
+      "title": "Tobacco Road",
+      "description": "Provided to YouTube by Universal Music Group\n\nTobacco Road · The Blues Magoos\n\nPsychedelic Lollipop\n\n℗ 1966 The Island Def Jam Music Group\n\nReleased on: 1966-01-01\n\nComposer  Lyricist: John D. Loudermilk\n\nAuto-generated by YouTube.",
+      "duration": 281,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=-qiHMUuRx8c",
+      "title": "Let's Talk About Girls",
+      "description": "Provided to YouTube by Universal Music Group\n\nLet's Talk About Girls · The Chocolate Watch Band\n\nNo Way Out\n\n℗ 1967 Universal Music Enterprises, a Division of UMG Recordings, Inc.\n\nReleased on: 2010-01-01\n\nComposer  Lyricist: Manny Freiser\n\nAuto-genera",
+      "duration": 165,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=EGXulLtrefc",
+      "title": "Sit Down I Think I Love You",
+      "description": "Provided to YouTube by Rhino\n\nSit Down I Think I Love You · The Mojo Men\n\nSan Francisco Nuggets\n\n℗ 1967 Reprise Records\n\nWriter: Stephen Stills\n\nAuto-generated by YouTube.",
+      "duration": 143,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=N9Osz7q_xgA",
+      "title": "Run Run Run",
+      "description": "Provided to YouTube by Sony Music Entertainment\n\nRun Run Run · The Third Rail\n\nID Music\n\n℗ Originally released 1967. All rights reserved by Epic Records, a division of Sony Music Entertainment\n\nA&r  Coordinator: Ted Cooper\nConductor, Arranger: Al Gorgo",
+      "duration": 119,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=81skBnAAdcQ",
+      "title": "My World Fell Down",
+      "description": "Provided to YouTube by Sony Music Entertainment\n\nMy World Fell Down · Sagittarius\n\nPresent Tense (Expanded Edition)\n\n℗ Originally released 1968. All rights reserved by Columbia Records, a division of Sony Music Entertainment\n\nReleased on: 1997-11-21\n\nP",
+      "duration": 175,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=JD8t1DWwnRk",
+      "title": "Open My Eyes",
+      "description": "Provided to YouTube by The Orchard Enterprises\n\nOpen My Eyes · Nazz\n\nNazz\n\n℗ 2018 Purple Pyramid Records, a division of Cleopatra Records, Inc.\n\nReleased on: 1968-07-01\n\nMusic  Publisher: EMI Music Publishing\n\nAuto-generated by YouTube.",
+      "duration": 165,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=ea0MsvbrNxA",
+      "title": "Farmer John",
+      "description": "Provided to YouTube by Ingrooves\n\nFarmer John · The Premiers\n\n60's Jukebox Hits - Vol. 1\n\nReleased on: 2005-01-01\n\nAuto-generated by YouTube.",
+      "duration": 135,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=-qgWiq53ybw",
+      "title": "Chocolate Watch Band - Let's Talk About Girls (1967)",
+      "description": "Album: Nuggets: Original Artyfacts From The First Psychedelic Era 1965-1968 (compilation 1972)\nElektra ‎– 7E-2006 \nvinyl rip",
+      "duration": 164,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=hjefLTYI4MQ",
+      "title": "Thirteenth Floor Elevators - You're Gonna Miss Me",
+      "description": "Nuggets: Original Artyfacts from the First Psychedelic Era, 1965-1968\n1972 Compilation Album",
+      "duration": 150,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=acH-grMCW48",
+      "title": "The Trip",
+      "description": "Provided to YouTube by The Orchard Enterprises\n\nThe Trip · Kim Fowley\n\nKing of the Creeps: Lost Treasures from the Vaults 1959-1969, Vol. 3\n\n℗ 2012 Norton Records Inc\n\nReleased on: 2012-11-27\n\nMusic Publisher: ZULU PUBLISHING CO, BMI\n\nAuto-generated by Yo",
+      "duration": 118,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Kk2YTPCtCNg",
+      "title": "The Little Black Egg",
+      "description": "Provided to YouTube by CDBaby\n\nThe Little Black Egg · The Nightcrawlers\n\nThe Nightcrawlers\n\n℗ 2019 Peter Thomason\n\nReleased on: 2019-02-22\n\nAuto-generated by YouTube.",
+      "duration": 207,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Ne_XRS10glc",
+      "title": "The Daily Flash ★Jack Of Diamonds",
+      "description": "",
+      "duration": 158,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=mXTsE0fnNLk",
+      "title": "Follow Me",
+      "description": "Provided to YouTube by Universal Music Group\n\nFollow Me · Lyme & Cybelle\n\nHappy Together: The Very Best Of White Whale Records\n\n℗ 1966 Varese Sarabande, Distributed by Concord.\n\nReleased on: 1999-08-10\n\nProducer: Bones Howe\nConductor: Bob Thompson\nCompose",
+      "duration": 151,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=HTqLHtZF6TE",
+      "title": "The E Types - Put the clock back on the wall",
+      "description": "This is an A-side single to \"4th Street” and was written by Alan Gordon and Gary Bonner. \nThis 45 was released in 1967 by Tower Records, and the catalog # is 325.",
+      "duration": 142,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=ljGGZV0KaEc",
+      "title": "Palace Guard - Falling Sugar",
+      "description": " ",
+      "duration": 130,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=hTpqWkFw7bg",
+      "title": "The Humane Society - Knock, Knock",
+      "description": "60's Garage band from Simi Valley, CA (1967)",
+      "duration": 172,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=mPmyr7XVn60",
+      "title": "The Groupies - Primitive (1966)",
+      "description": "The Groupies - Primitive - 1966\n\nWhat I don't know can never hurt me\nI live a life that's working for me\nWhat I respect you just can't see\nWhat you expect I'll never be\n\nPrimitive that's how I'll live\nPrimitive I'll take what you give\nCause I love and I l",
+      "duration": 229,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=NuDKraCIr2s",
+      "title": "You Ain't Tuff",
+      "description": "Provided to YouTube by The Orchard Enterprises\n\nYou Ain't Tuff · The Uniques\n\nUniquely Yours\n\n℗ 1990 © Originally Released 1966 © Paula Records. WARNING: All Rights Reserved. Unauthorized duplication is a violation of applicable laws.\n\nReleased on: 1966-1",
+      "duration": 139,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=vy7jIgaWPLk",
+      "title": "Unrelated Segments -Story Of My Life.*****(lyrics).📌",
+      "description": "The Unrelated Segments were an American garage rock band from Taylor, Michigan, that were active between 1966 and 1969. The group was a popular musical act in Michigan, achieving regional acclaim for their song, \"Story of My Life\".The nucleus of the Unrel",
+      "duration": 162,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=swa0o-zFGQQ",
+      "title": "The Brigands - (Would I still be) her big man",
+      "description": "This is a B-side single to “I'm A Patient Man” and is written by K. Resnick, A. Resnick.\nThe 45 was released in 1966 by Epic Records and the catalog # is 5-10011.\nThis group is from New York.",
+      "duration": 139,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=9mh4X1fSdpM",
+      "title": "Wailers - Out Of Our Tree",
+      "description": "Etiquette 21 - Tacoma WA 1965\nCOUNTDOWN: 200 Greatest US Garage/Teenbeat/Psych 45:s. Number 128\n\n101. Jack & The Beanstalks - So Many Times\n102. King Bees - I Want My Baby\n103. Third Booth - I Need Love\n104. Rogues - You Better Look Now\n105. Humane Societ",
+      "duration": 214,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=lexScf9gNSY",
+      "title": "Harbinger Complex - I Think I'm Down (1966)",
+      "description": "Harbinger Complex - I Think I'm Down - 1966\n\nI want to continue but I can't go on\nI just close my eyes and pretend I'm gone\n'cause when I woke up and know I found\nMyself but my girl she's nowhere around\n\nHelp me Lord I think I'm down\nMy legs are dragging ",
+      "duration": 152,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=1X3BnvG4pxA",
+      "title": "Dovers - What Am I Going To Do",
+      "description": "Miramar Records 118  Santa Barbara California 1965. Two-sider.\n100 Greatest US Garage/Teenbeat/Psych 45:s. Number four.\n\nCOUNTDOWN: The 100(ish) Greatest US Garage/Teenbeat/Psych 45:s of the 60's\n(Some two-siders posted where noted)\n\n1 Aardvarks - I'm Hig",
+      "duration": 161,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=xXq9dKRHscQ",
+      "title": "The Charlatans - codine",
+      "description": "the amazing charlatans\nbig beat records 1996",
+      "duration": 146,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=bDE6NUDpcBc",
+      "title": "THE MYSTERY TREND -  Johnny Was A Good Boy",
+      "description": "THE MYSTERY TREND -  Johnny Was A Good Boy\n7\" single a side A House On The Hill (1967)",
+      "duration": 156,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=oNBuejDyMek",
+      "title": "1966 Clefs Of Lavender Hill - Stop! - Get A Ticket (mono 45)",
+      "description": "Only Hot 100 charted release for the Miami group.\n\nPop Chart Peaks: Cash Box 72, Record World 77, Billboard 80\n\nTransferred from mono 45 single Date 2-1510 (originally issued on Thames LH-100) - Stop! - Get A Ticket (Travers-Coventry) by Clefs Of Lavender",
+      "duration": 148,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=MKiAUYIL0QA",
+      "title": "The Other Half - Mr. Pharmacist (1966)",
+      "description": " ",
+      "duration": 153,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=VePosHR0xWk",
+      "title": "Richard & The Young Lions - Open Up Your Door (Dan's 2024 Stereo Mix)",
+      "description": "Newark, New Jersey garage rock back who recorded this, their biggest hit, in 1966.  Another cool request from a listener, this record even in mono was pristine in its original sound.  Excellent bass, mid range, and highs!  As such, mixing to stereo was a ",
+      "duration": 165,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Obu25RFoWAU",
+      "title": "Mindrocker",
+      "description": "Provided to YouTube by The Orchard Enterprises\n\nMindrocker · Fenwyck\n\nMindrocker\n\n℗ 2019 Sony/ATV Nashville\n\nReleased on: 2019-08-16\n\nAuto-generated by YouTube.",
+      "duration": 180,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=uJJxlrYWQQo",
+      "title": "The Rumors - Hold Me Now (1965)",
+      "description": "The Rumors from Los Angeles, California. (c) 1965 Gemcor Records.\n\n#60s #garagerock",
+      "duration": 150,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=kQZNwQE3C5M",
+      "title": "Love's Gone Bad",
+      "description": "Provided to YouTube by Universal Music Group\n\nLove's Gone Bad · The Underdogs\n\nThe Complete Motown Singles Vol. 7: 1967\n\n℗ 1967 Motown Records, a Division of UMG Recordings, Inc.\n\nReleased on: 2007-07-31\n\nComposer Lyricist: Brian Holland\nComposer Lyricist",
+      "duration": 148,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=EHpb87XsMA0",
+      "title": "Gonn - Blackout Of Gretely   ...1966",
+      "description": "Gonn – Blackout Of Gretely  …1966\nGONN is a 1960s American garage rock band from Keokuk, Iowa who released only two singles in 1966-67, however the band also recorded numerous other tracks that have since been collected and released on three retrospective",
+      "duration": 271,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=FS7sRfknXXQ",
+      "title": "Davie Allan & the Arrows - Blues' Theme (1967)",
+      "description": "Davie Allan & the Arrows - Blues' Theme - 1967",
+      "duration": 132,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Gf78ol1YwXE",
+      "title": "N̤ṳg̤g̤e̤t̤s-O̤r̤i̤g̤inal  A̤r̤t̤yf̤a̤cts from the F̤i̤r̤s̤t̤ P̤s̤y̤c̤hedelic  E̤ra 1965 1968 -Box",
+      "description": "",
+      "duration": 0,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=Gf78ol1YwXE",
+      "title": "N̤ṳg̤g̤e̤t̤s-O̤r̤i̤g̤inal  A̤r̤t̤yf̤a̤cts from the F̤i̤r̤s̤t̤ P̤s̤y̤c̤hedelic  E̤ra 1965 1968 -Box",
+      "description": "",
+      "duration": 0,
+      "embed": true
+    }
+  ],
+  "genres": [
+    "Rock"
+  ],
+  "styles": [
+    "Garage Rock",
+    "Psychedelic Rock"
+  ],
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Electric Prunes",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252529,
+          "resource_url": "https://api.discogs.com/artists/252529"
+        }
+      ],
+      "title": "I Had Too Much To Dream (Last Night)",
+      "duration": "2:55"
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Standells",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252505,
+          "resource_url": "https://api.discogs.com/artists/252505"
+        }
+      ],
+      "title": "Dirty Water",
+      "duration": "2:47"
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Strangeloves",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252478,
+          "resource_url": "https://api.discogs.com/artists/252478"
+        }
+      ],
+      "title": "Night Time",
+      "duration": "3:05"
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Knickerbockers",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252509,
+          "resource_url": "https://api.discogs.com/artists/252509"
+        }
+      ],
+      "title": "Lies",
+      "duration": "2:41"
+    },
+    {
+      "position": "A5",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Vagrants",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252516,
+          "resource_url": "https://api.discogs.com/artists/252516"
+        }
+      ],
+      "title": "Respect",
+      "duration": "2:13"
+    },
+    {
+      "position": "A6",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "Mouse (4)",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 174696,
+          "resource_url": "https://api.discogs.com/artists/174696"
+        }
+      ],
+      "title": "A Public Execution",
+      "duration": "2:43"
+    },
+    {
+      "position": "A7",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Blues Project",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252489,
+          "resource_url": "https://api.discogs.com/artists/252489"
+        }
+      ],
+      "title": "No Time Like The Right Time",
+      "duration": "2:49"
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Shadows Of Knight",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252459,
+          "resource_url": "https://api.discogs.com/artists/252459"
+        }
+      ],
+      "title": "Oh Yeah",
+      "duration": "2:44"
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Seeds",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252524,
+          "resource_url": "https://api.discogs.com/artists/252524"
+        }
+      ],
+      "title": "Pushin' Too Hard",
+      "duration": "3:03"
+    },
+    {
+      "position": "B3",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Barbarians",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252510,
+          "resource_url": "https://api.discogs.com/artists/252510"
+        }
+      ],
+      "title": "Moulty",
+      "duration": "2:29"
+    },
+    {
+      "position": "B4",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Remains",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252483,
+          "resource_url": "https://api.discogs.com/artists/252483"
+        }
+      ],
+      "title": "Don't Look Back",
+      "duration": "2:35"
+    },
+    {
+      "position": "B5",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Magicians",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252469,
+          "resource_url": "https://api.discogs.com/artists/252469"
+        }
+      ],
+      "title": "Invitation To Cry",
+      "duration": "2:55"
+    },
+    {
+      "position": "B6",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Castaways",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252504,
+          "resource_url": "https://api.discogs.com/artists/252504"
+        }
+      ],
+      "title": "Liar, Liar",
+      "duration": "1:52"
+    },
+    {
+      "position": "B7",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "13th Floor Elevators",
+          "anv": "The Thirteenth Floor Elevators",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 304455,
+          "resource_url": "https://api.discogs.com/artists/304455"
+        }
+      ],
+      "title": "You're Gonna Miss Me",
+      "duration": "2:24"
+    },
+    {
+      "position": "C1",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "Count Five",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252463,
+          "resource_url": "https://api.discogs.com/artists/252463"
+        }
+      ],
+      "title": "Psychotic Reaction",
+      "duration": "2:56"
+    },
+    {
+      "position": "C2",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Leaves",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252497,
+          "resource_url": "https://api.discogs.com/artists/252497"
+        }
+      ],
+      "title": "Hey Joe",
+      "duration": "2:47"
+    },
+    {
+      "position": "C3",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "Michael & The Messengers",
+          "anv": "Michael And The Messengers",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252506,
+          "resource_url": "https://api.discogs.com/artists/252506"
+        }
+      ],
+      "title": "Just Like Romeo And Juliet",
+      "duration": "2:06"
+    },
+    {
+      "position": "C4",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Cryan' Shames",
+          "anv": "The Cryan Shames",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 849505,
+          "resource_url": "https://api.discogs.com/artists/849505"
+        }
+      ],
+      "title": "Sugar And Spice",
+      "duration": "2:26"
+    },
+    {
+      "position": "C5",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Amboy Dukes",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252486,
+          "resource_url": "https://api.discogs.com/artists/252486"
+        }
+      ],
+      "title": "Baby Please Don't Go",
+      "duration": "5:32"
+    },
+    {
+      "position": "C6",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "Blues Magoos",
+          "anv": "The Blues Magoos",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 135923,
+          "resource_url": "https://api.discogs.com/artists/135923"
+        }
+      ],
+      "title": "Tobacco Road",
+      "duration": "4:39"
+    },
+    {
+      "position": "D1",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Chocolate Watchband",
+          "anv": "Chocolate Watch Band",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252498,
+          "resource_url": "https://api.discogs.com/artists/252498"
+        }
+      ],
+      "title": "Let's Talk About Girls",
+      "duration": "2:41"
+    },
+    {
+      "position": "D2",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Mojo Men",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252492,
+          "resource_url": "https://api.discogs.com/artists/252492"
+        }
+      ],
+      "title": "Sit Down I Think I Love You",
+      "duration": "2:16"
+    },
+    {
+      "position": "D3",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Third Rail",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252520,
+          "resource_url": "https://api.discogs.com/artists/252520"
+        }
+      ],
+      "title": "Run Run Run",
+      "duration": "2:00"
+    },
+    {
+      "position": "D4",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "Sagittarius (2)",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 270699,
+          "resource_url": "https://api.discogs.com/artists/270699"
+        }
+      ],
+      "title": "My World Fell Down",
+      "duration": "3:45"
+    },
+    {
+      "position": "D5",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "Nazz",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252535,
+          "resource_url": "https://api.discogs.com/artists/252535"
+        }
+      ],
+      "title": "Open My Eyes",
+      "duration": "2:48"
+    },
+    {
+      "position": "D6",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Premiers",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252490,
+          "resource_url": "https://api.discogs.com/artists/252490"
+        }
+      ],
+      "title": "Farmer John",
+      "duration": "3:46"
+    },
+    {
+      "position": "D7",
+      "type_": "track",
+      "artists": [
+        {
+          "name": "The Magic Mushrooms",
+          "anv": "",
+          "join": "",
+          "role": "",
+          "tracks": "",
+          "id": 252533,
+          "resource_url": "https://api.discogs.com/artists/252533"
+        }
+      ],
+      "title": "It's-A-Happening",
+      "duration": "2:40"
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "Robert L. Heimall",
+      "anv": "",
+      "join": "",
+      "role": "Art Direction",
+      "tracks": "",
+      "id": 465931,
+      "resource_url": "https://api.discogs.com/artists/465931"
+    },
+    {
+      "name": "Abe Gurvin",
+      "anv": "",
+      "join": "",
+      "role": "Artwork [Cover Art]",
+      "tracks": "",
+      "id": 2100229,
+      "resource_url": "https://api.discogs.com/artists/2100229"
+    },
+    {
+      "name": "Lenny Kaye",
+      "anv": "",
+      "join": "",
+      "role": "Compilation Producer, Compiled By [Programmed], Liner Notes [Annotated By]",
+      "tracks": "",
+      "id": 227730,
+      "resource_url": "https://api.discogs.com/artists/227730"
+    },
+    {
+      "name": "Jac Holzman",
+      "anv": "",
+      "join": "",
+      "role": "Concept By",
+      "tracks": "",
+      "id": 275444,
+      "resource_url": "https://api.discogs.com/artists/275444"
+    },
+    {
+      "name": "Michael Kapp",
+      "anv": "",
+      "join": "",
+      "role": "Coordinator [Legal]",
+      "tracks": "",
+      "id": 320441,
+      "resource_url": "https://api.discogs.com/artists/320441"
+    },
+    {
+      "name": "Mike Martin (48)",
+      "anv": "MM",
+      "join": "",
+      "role": "Lacquer Cut By",
+      "tracks": "",
+      "id": 12550934,
+      "resource_url": "https://api.discogs.com/artists/12550934"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/dGoeJPNbq4cL0MocTJbhYXiADBaT4tX2lH7TFdGJtMA/rs:fit/g:sm/q:90/h:599/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg3/OC0xNjYzLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/dGoeJPNbq4cL0MocTJbhYXiADBaT4tX2lH7TFdGJtMA/rs:fit/g:sm/q:90/h:599/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg3/OC0xNjYzLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/aoHu9_GGQjT6qUiWm80Dd3tBnRB6WwZzxb0r6U1S4YM/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg3/OC0xNjYzLmpwZWc.jpeg",
+      "width": 600,
+      "height": 599
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/K6gcOePgXHWM1U8eaKZVwQzLoGdnY-PnvZk87F2eN3M/rs:fit/g:sm/q:90/h:600/w:595/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ1MDUzMjA3/MC0yNDIwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/K6gcOePgXHWM1U8eaKZVwQzLoGdnY-PnvZk87F2eN3M/rs:fit/g:sm/q:90/h:600/w:595/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ1MDUzMjA3/MC0yNDIwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/AAl2P2D7gMWpmqqyrZWYpAxq8VOtGo0OHbuJIDkcp3k/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ1MDUzMjA3/MC0yNDIwLmpwZWc.jpeg",
+      "width": 595,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/ugSOeYV53_141hdoY3Ckfjk_oz-YESn-TyeYjePZkO8/rs:fit/g:sm/q:90/h:600/w:572/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ1MDUzMjA3/NS02MDMwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/ugSOeYV53_141hdoY3Ckfjk_oz-YESn-TyeYjePZkO8/rs:fit/g:sm/q:90/h:600/w:572/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ1MDUzMjA3/NS02MDMwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/fSBLxgPFbBEjmgTFkhjY4m4_AngLmdRhaO4415cU0bc/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ1MDUzMjA3/NS02MDMwLmpwZWc.jpeg",
+      "width": 572,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/6tkAclIRI3tqLDpcBY4w5ZYlPXZpQbA5pXFswNEFHhQ/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg4/NS03NjI1LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/6tkAclIRI3tqLDpcBY4w5ZYlPXZpQbA5pXFswNEFHhQ/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg4/NS03NjI1LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/b0w8xOcEYQLt-tjCTKOPldh_VFdz8SZQp8J2U99_qY8/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg4/NS03NjI1LmpwZWc.jpeg",
+      "width": 597,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/XVSEaiSguE_Pkn0IjGR_voGvJr09JqoPIQAS09sRWWU/rs:fit/g:sm/q:90/h:600/w:595/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg4/OS00Njk2LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/XVSEaiSguE_Pkn0IjGR_voGvJr09JqoPIQAS09sRWWU/rs:fit/g:sm/q:90/h:600/w:595/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg4/OS00Njk2LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/bxkn-S1EEKrXO8bVrjGRG80Z2PL3ZL3zlXycZlvDwcc/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg4/OS00Njk2LmpwZWc.jpeg",
+      "width": 595,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/11Kir0SG8Hu5z2DCXZHpZPchhercLAQu060PbzBkvCI/rs:fit/g:sm/q:90/h:599/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg5/NS00MTU4LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/11Kir0SG8Hu5z2DCXZHpZPchhercLAQu060PbzBkvCI/rs:fit/g:sm/q:90/h:599/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg5/NS00MTU4LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/1XdG89-prKqddCyPp9JTW3jjU3AkJN3mSI4cxiJHiMc/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg5/NS00MTU4LmpwZWc.jpeg",
+      "width": 600,
+      "height": 599
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/2w4WxYow0-1g48X1hbFamKPGSIZNFwafb5MhHtLQ90Q/rs:fit/g:sm/q:90/h:600/w:599/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjkw/NS01NzAxLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/2w4WxYow0-1g48X1hbFamKPGSIZNFwafb5MhHtLQ90Q/rs:fit/g:sm/q:90/h:600/w:599/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjkw/NS01NzAxLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/ZdXsRDGAWivRmwFAhqt2zCBWXBv_JMf-xllqZ6EnV4c/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjkw/NS01NzAxLmpwZWc.jpeg",
+      "width": 599,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/kvt-hEnh-pqiqReN804tvtydyVCP-i1fzO0jxYJJNSc/rs:fit/g:sm/q:90/h:600/w:598/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjkx/MS03Mzk4LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/kvt-hEnh-pqiqReN804tvtydyVCP-i1fzO0jxYJJNSc/rs:fit/g:sm/q:90/h:600/w:598/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjkx/MS03Mzk4LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/689zgpXDG8kGS_Vghfb05zNKjZzlsFDeBPmAizzF3H4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjkx/MS03Mzk4LmpwZWc.jpeg",
+      "width": 598,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/4QKA409qy_JEDpCXFhfbVkq6CFfiDxntk6bhuzzmXto/rs:fit/g:sm/q:90/h:598/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ0NDA1OTgw/Mi01ODUxLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/4QKA409qy_JEDpCXFhfbVkq6CFfiDxntk6bhuzzmXto/rs:fit/g:sm/q:90/h:598/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ0NDA1OTgw/Mi01ODUxLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/gSG2cVzw3dB1bBtcoIYuJ4QrqCyiqQ-nXzMO32W_2es/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQ0NDA1OTgw/Mi01ODUxLmpwZWc.jpeg",
+      "width": 600,
+      "height": 598
+    }
+  ],
+  "thumb": "https://i.discogs.com/aoHu9_GGQjT6qUiWm80Dd3tBnRB6WwZzxb0r6U1S4YM/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIwMjU1/ODItMTQxMTk0Mjg3/OC0xNjYzLmpwZWc.jpeg",
+  "estimated_weight": 460,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

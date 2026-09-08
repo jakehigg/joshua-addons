@@ -1,0 +1,293 @@
+{
+  "id": 33300852,
+  "status": "Accepted",
+  "year": 0,
+  "resource_url": "https://api.discogs.com/releases/33300852",
+  "uri": "https://www.discogs.com/release/33300852-The-Beatles-Abbey-Road",
+  "artists": [
+    {
+      "name": "The Beatles",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 82730,
+      "resource_url": "https://api.discogs.com/artists/82730",
+      "thumbnail_url": "https://i.discogs.com/txwfZBYDvdK2_f0o4rsQXNbsGS4IQS9U0LmGybWMLh8/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTgyNzMw/LTE0MTk3MTQ5ODgt/OTY3NS5qcGVn.jpeg"
+    }
+  ],
+  "artists_sort": "Beatles, The",
+  "labels": [
+    {
+      "name": "Apple Records",
+      "catno": "S0-383",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 25693,
+      "resource_url": "https://api.discogs.com/labels/25693",
+      "thumbnail_url": "https://i.discogs.com/-8y5EP9e3iReEkjpgSA5UbWbIMWobsFcRpc_yX6Lczs/rs:fit/g:sm/q:90/h:253/w:245/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI1Njkz/LTExMzgwMjc3MjUu/anBlZw.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [
+    {
+      "name": "E.M.I. Records",
+      "catno": "",
+      "entity_type": "4",
+      "entity_type_name": "Record Company",
+      "id": 217094,
+      "resource_url": "https://api.discogs.com/labels/217094",
+      "thumbnail_url": "https://i.discogs.com/EUz4vsXl88Bf5bQDFdkNVQeCmEXMcF0mb-Y1Sx-BzV4/rs:fit/g:sm/q:90/h:226/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTIxNzA5/NC0xNTczMzMzODM2/LTU2NjcuanBlZw.jpeg"
+    }
+  ],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "1",
+      "descriptions": [
+        "LP"
+      ]
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 75,
+    "want": 219,
+    "rating": {
+      "count": 5,
+      "average": 4.6
+    },
+    "submitter": {
+      "username": "renzevdsluis",
+      "resource_url": "https://api.discogs.com/users/renzevdsluis"
+    },
+    "contributors": [
+      {
+        "username": "renzevdsluis",
+        "resource_url": "https://api.discogs.com/users/renzevdsluis"
+      },
+      {
+        "username": "glennas94",
+        "resource_url": "https://api.discogs.com/users/glennas94"
+      },
+      {
+        "username": "templar53",
+        "resource_url": "https://api.discogs.com/users/templar53"
+      },
+      {
+        "username": "seehaas",
+        "resource_url": "https://api.discogs.com/users/seehaas"
+      },
+      {
+        "username": "LolH",
+        "resource_url": "https://api.discogs.com/users/LolH"
+      },
+      {
+        "username": "ggggreenisaac",
+        "resource_url": "https://api.discogs.com/users/ggggreenisaac"
+      },
+      {
+        "username": "fearious",
+        "resource_url": "https://api.discogs.com/users/fearious"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 1,
+  "date_added": "2025-03-03T02:40:17-08:00",
+  "date_changed": "2026-04-21T12:37:44-07:00",
+  "num_for_sale": 0,
+  "lowest_price": null,
+  "master_id": 24047,
+  "master_url": "https://api.discogs.com/masters/24047",
+  "title": "Abbey Road",
+  "country": "US",
+  "identifiers": [],
+  "videos": [
+    {
+      "uri": "https://www.youtube.com/watch?v=G7gYbyIJVkY",
+      "title": "Beatles - 1st  UK press - Abbey Road - side 1",
+      "description": "https://www.thebeatles.com/albums  -  https://www.youtube.com/@vinylwhatapassion     -                        COPYRIGHT BELONGS TO THE LEGITIMATE OWNERS, \nif this video is ever monetized it will always be in favor of the Copyright owners, not mine\n\nThere'",
+      "duration": 0,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=uN8cR4ra8ic",
+      "title": "Beatles - 1st  UK press - Abbey Road - side 2",
+      "description": "https://www.thebeatles.com/albums  -  https://www.youtube.com/@vinylwhatapassion     -                        COPYRIGHT BELONGS TO THE LEGITIMATE OWNERS, \nif this video is ever monetized it will always be in favor of the Copyright owners, not mine\n\nThere'",
+      "duration": 0,
+      "embed": true
+    }
+  ],
+  "genres": [
+    "Rock",
+    "Pop"
+  ],
+  "styles": [
+    "Pop Rock"
+  ],
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "title": "Come Together",
+      "duration": "4:16"
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "title": "Something",
+      "duration": "2:59"
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "title": "Maxwell's Silver Hammer",
+      "duration": "3:24"
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "title": "Oh! Darling",
+      "duration": "3:28"
+    },
+    {
+      "position": "A5",
+      "type_": "track",
+      "title": "Octopus's Garden",
+      "duration": "2:49"
+    },
+    {
+      "position": "A6",
+      "type_": "track",
+      "title": "I Want You (She's So Heavy)",
+      "duration": "7:49"
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "title": "Here Comes The Sun",
+      "duration": "3:04"
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "title": "Because",
+      "duration": "2:45"
+    },
+    {
+      "position": "B3",
+      "type_": "track",
+      "title": "You Never Give Me Your Money",
+      "duration": "3:57"
+    },
+    {
+      "position": "B4",
+      "type_": "track",
+      "title": "Sun King",
+      "duration": "2:31"
+    },
+    {
+      "position": "B5",
+      "type_": "track",
+      "title": "Mean Mr. Mustard",
+      "duration": "1:06"
+    },
+    {
+      "position": "B6",
+      "type_": "track",
+      "title": "Polythene Pam",
+      "duration": "1:13"
+    },
+    {
+      "position": "B7",
+      "type_": "track",
+      "title": "She Came In Through The Bathroom Window",
+      "duration": "1:58"
+    },
+    {
+      "position": "B8",
+      "type_": "track",
+      "title": "Golden Slumbers",
+      "duration": "1:31"
+    },
+    {
+      "position": "B9",
+      "type_": "track",
+      "title": "Carry That Weight",
+      "duration": "1:37"
+    },
+    {
+      "position": "B10",
+      "type_": "track",
+      "title": "The End",
+      "duration": "2:04"
+    },
+    {
+      "position": "B11",
+      "type_": "track",
+      "title": "Her Majesty",
+      "duration": "0:23"
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "George Harrison",
+      "anv": "",
+      "join": "",
+      "role": "Written-By",
+      "tracks": "A2, B1",
+      "id": 243955,
+      "resource_url": "https://api.discogs.com/artists/243955"
+    },
+    {
+      "name": "Lennon-McCartney",
+      "anv": "",
+      "join": "",
+      "role": "Written-By",
+      "tracks": "A1, A3, A4, A6,B2, B3 to B11",
+      "id": 779927,
+      "resource_url": "https://api.discogs.com/artists/779927"
+    },
+    {
+      "name": "Richard Starkey",
+      "anv": "",
+      "join": "",
+      "role": "Written-By",
+      "tracks": "A5",
+      "id": 298525,
+      "resource_url": "https://api.discogs.com/artists/298525"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/xa8sN1Tbv7GYnMyyZHjbW8lz703dKiKFm86j55dieKw/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NDYwOTU2/NjQtNDQxNy5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/xa8sN1Tbv7GYnMyyZHjbW8lz703dKiKFm86j55dieKw/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NDYwOTU2/NjQtNDQxNy5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/dHfhMLwLoURjA4x4W4B1cXsbTTdFXt2tHFTfRz6Zwqw/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NDYwOTU2/NjQtNDQxNy5qcGVn.jpeg",
+      "width": 600,
+      "height": 597
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/TSlud8qJmEWVIx5Z45GvqZZ1lkhebPg7YUm-DuRSdAA/rs:fit/g:sm/q:90/h:600/w:569/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NTAyNTU2/MTYtNzQzNS5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/TSlud8qJmEWVIx5Z45GvqZZ1lkhebPg7YUm-DuRSdAA/rs:fit/g:sm/q:90/h:600/w:569/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NTAyNTU2/MTYtNzQzNS5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/K1iqpNKtCfDvt12NsOniRoXnCmUfF5-fP8BRM5VWPAI/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NTAyNTU2/MTYtNzQzNS5qcGVn.jpeg",
+      "width": 569,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/hEGkg_9-hNijTLXE-ngep8zbTl1HC3xqZ2UlEPaG6cI/rs:fit/g:sm/q:90/h:600/w:337/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NTAyNTU2/MTYtMTEwMC5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/hEGkg_9-hNijTLXE-ngep8zbTl1HC3xqZ2UlEPaG6cI/rs:fit/g:sm/q:90/h:600/w:337/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NTAyNTU2/MTYtMTEwMC5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/bIoJtr6nMbLEFJcYsnHaPax9qLAht4ZvH64pU1X4cI8/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NTAyNTU2/MTYtMTEwMC5qcGVn.jpeg",
+      "width": 337,
+      "height": 600
+    }
+  ],
+  "thumb": "https://i.discogs.com/dHfhMLwLoURjA4x4W4B1cXsbTTdFXt2tHFTfRz6Zwqw/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMzMzAw/ODUyLTE3NDYwOTU2/NjQtNDQxNy5qcGVn.jpeg",
+  "estimated_weight": 230,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

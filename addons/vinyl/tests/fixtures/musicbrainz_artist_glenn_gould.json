@@ -1,0 +1,176 @@
+{
+  "created": "2026-09-08T06:16:57.133Z",
+  "count": 2,
+  "offset": 0,
+  "artists": [
+    {
+      "id": "7002bf88-1269-4965-a772-4ba1e7a91eaa",
+      "type": "Person",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "score": 100,
+      "gender-id": "36d3d30a-839d-3eda-8cb3-29be4384e4a9",
+      "name": "Glenn Gould",
+      "sort-name": "Gould, Glenn",
+      "gender": "male",
+      "country": "CA",
+      "area": {
+        "id": "71bbafaa-e825-3e15-8ca9-017dcad1748b",
+        "type": "Country",
+        "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+        "name": "Canada",
+        "sort-name": "Canada",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "begin-area": {
+        "id": "74b24e62-d2fe-42d2-9d96-31f2da756c77",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "Toronto",
+        "sort-name": "Toronto",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "end-area": {
+        "id": "74b24e62-d2fe-42d2-9d96-31f2da756c77",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "Toronto",
+        "sort-name": "Toronto",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "disambiguation": "pianist",
+      "ipis": [
+        "00012425137"
+      ],
+      "isnis": [
+        "0000000110269386"
+      ],
+      "life-span": {
+        "begin": "1932-09-25",
+        "end": "1982-10-04",
+        "ended": true
+      },
+      "aliases": [
+        {
+          "sort-name": "グレン・グールド",
+          "name": "グレン・グールド",
+          "locale": "ja",
+          "type": null,
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Qlenn Quld",
+          "name": "Qlenn Quld",
+          "locale": "az",
+          "type": null,
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Glenn Herbert Gold",
+          "type-id": "d4dcd0c0-b341-3612-a332-c0ce797b25cf",
+          "name": "Glenn Herbert Gold",
+          "locale": "en",
+          "type": "Legal name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": "1939"
+        },
+        {
+          "sort-name": "1)Glenn Gould",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "1)Glenn Gould",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Gould, Glenn Herbert",
+          "type-id": "d4dcd0c0-b341-3612-a332-c0ce797b25cf",
+          "name": "Glenn Herbert Gould",
+          "locale": "en",
+          "type": "Legal name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Glen Gould",
+          "name": "Glen Gould",
+          "locale": null,
+          "type": null,
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        }
+      ],
+      "tags": [
+        {
+          "count": 4,
+          "name": "classical"
+        },
+        {
+          "count": 3,
+          "name": "pianist"
+        },
+        {
+          "count": 2,
+          "name": "baroque"
+        },
+        {
+          "count": 1,
+          "name": "performer"
+        },
+        {
+          "count": -1,
+          "name": "bach goldberg variations"
+        },
+        {
+          "count": -1,
+          "name": "bwv 988"
+        },
+        {
+          "count": -1,
+          "name": "bach the goldberg variations"
+        },
+        {
+          "count": -1,
+          "name": "brahms"
+        },
+        {
+          "count": -1,
+          "name": "gould inventions"
+        },
+        {
+          "count": 0,
+          "name": "canadian pianist"
+        },
+        {
+          "count": 0,
+          "name": "western classical"
+        }
+      ]
+    },
+    {
+      "id": "98f78b2c-bcef-42aa-8a50-b3346fbe4340",
+      "type": "Other",
+      "type-id": "ac897045-5043-3294-969b-187360e45d86",
+      "score": 62,
+      "name": "The Glenn Gould School",
+      "sort-name": "Glenn Gould School, The",
+      "life-span": {
+        "ended": null
+      }
+    }
+  ]
+}

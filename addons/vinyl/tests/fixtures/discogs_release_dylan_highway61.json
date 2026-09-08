@@ -1,0 +1,418 @@
+{
+  "id": 7823049,
+  "status": "Accepted",
+  "year": 1965,
+  "resource_url": "https://api.discogs.com/releases/7823049",
+  "uri": "https://www.discogs.com/release/7823049-Bob-Dylan-Highway-61-Revisited",
+  "artists": [
+    {
+      "name": "Bob Dylan",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 59792,
+      "resource_url": "https://api.discogs.com/artists/59792",
+      "thumbnail_url": "https://i.discogs.com/idpUoDEyOMpDxVY4t4WXST1lSxw7nJr4bw7lH9t746A/rs:fit/g:sm/q:90/h:600/w:475/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTU5Nzky/LTE2ODk5NTUxNjMt/OTkzOC5qcGVn.jpeg"
+    }
+  ],
+  "artists_sort": "Bob Dylan",
+  "labels": [
+    {
+      "name": "Columbia",
+      "catno": "CL 2389",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 1866,
+      "resource_url": "https://api.discogs.com/labels/1866",
+      "thumbnail_url": "https://i.discogs.com/JuO51-lZvasOtw8-yLUjsen-4O17uPH1A9SILCO-lG4/rs:fit/g:sm/q:90/h:300/w:299/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTE4NjYt/MTIzMzE5MzU1Ny5q/cGVn.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [
+    {
+      "name": "Customatrix",
+      "catno": "",
+      "entity_type": "44",
+      "entity_type_name": "Plated At",
+      "id": 586613,
+      "resource_url": "https://api.discogs.com/labels/586613",
+      "thumbnail_url": "https://i.discogs.com/LiE-B7ojg3c5y6MjWhT1mxNVst27bYOmGZyVCBx8Ljo/rs:fit/g:sm/q:90/h:203/w:176/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTU4NjYx/My0xNzYwNTM1MzEw/LTk2NTAuanBlZw.jpeg"
+    },
+    {
+      "name": "M. Witmark & Sons",
+      "catno": "",
+      "entity_type": "21",
+      "entity_type_name": "Published By",
+      "id": 271984,
+      "resource_url": "https://api.discogs.com/labels/271984",
+      "thumbnail_url": "https://i.discogs.com/qYSwMO4zJsZ1hlLylT2my9f97ElDj_xubt3twuUw5Mk/rs:fit/g:sm/q:90/h:269/w:450/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI3MTk4/NC0xNTk5NDEwODM3/LTM5ODYuanBlZw.jpeg"
+    },
+    {
+      "name": "Bob Dylan",
+      "catno": "",
+      "entity_type": "14",
+      "entity_type_name": "Copyright (c)",
+      "id": 331493,
+      "resource_url": "https://api.discogs.com/labels/331493"
+    }
+  ],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "1",
+      "descriptions": [
+        "LP",
+        "Album",
+        "Mono"
+      ]
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 594,
+    "want": 885,
+    "rating": {
+      "count": 54,
+      "average": 4.56
+    },
+    "submitter": {
+      "username": "ostiarius",
+      "resource_url": "https://api.discogs.com/users/ostiarius"
+    },
+    "contributors": [
+      {
+        "username": "ostiarius",
+        "resource_url": "https://api.discogs.com/users/ostiarius"
+      },
+      {
+        "username": "Lou2413",
+        "resource_url": "https://api.discogs.com/users/Lou2413"
+      },
+      {
+        "username": "SJH",
+        "resource_url": "https://api.discogs.com/users/SJH"
+      },
+      {
+        "username": "tedweddell",
+        "resource_url": "https://api.discogs.com/users/tedweddell"
+      },
+      {
+        "username": "Jakes_Records_FL",
+        "resource_url": "https://api.discogs.com/users/Jakes_Records_FL"
+      },
+      {
+        "username": "Da.Da",
+        "resource_url": "https://api.discogs.com/users/Da.Da"
+      },
+      {
+        "username": "berothbr",
+        "resource_url": "https://api.discogs.com/users/berothbr"
+      },
+      {
+        "username": "Stathisan",
+        "resource_url": "https://api.discogs.com/users/Stathisan"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 1,
+  "date_added": "2015-12-07T13:17:32-08:00",
+  "date_changed": "2026-03-16T05:54:49-07:00",
+  "num_for_sale": 10,
+  "lowest_price": 7.74,
+  "master_id": 3986,
+  "master_url": "https://api.discogs.com/masters/3986",
+  "title": "Highway 61 Revisited",
+  "country": "US",
+  "released": "1965-08-30",
+  "notes": "\"Nonbreakable\" under A & B-side label.\n\"Meaningless\" printed in sleeve notes.\n\"4\" printed on bottom right of back of the sleeve.\n\nRunouts are stamped; some '-' appear etched\n",
+  "released_formatted": "30 Aug 1965",
+  "identifiers": [
+    {
+      "type": "Rights Society",
+      "value": "ASCAP"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "XLP 110638",
+      "description": "A Side label"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "XLP 110639",
+      "description": "B Side label"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "o XLP110638-1B",
+      "description": "A Side, variant 1"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "o XLP110639-1B-",
+      "description": "B Side, variant 1"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "o XLP110638-1B-",
+      "description": "A Side, variant 2"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "o XLP110639-1H-",
+      "description": "B Side, variant 2"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "o XLP110638-1B-",
+      "description": "A Side, variant 3"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "o XLP110639-1B",
+      "description": "B Side, variant 3"
+    }
+  ],
+  "videos": [
+    {
+      "uri": "https://www.youtube.com/watch?v=8PP2MjP84Gw",
+      "title": "Bob Dylan - Highway 61 Revisited [Full Album]",
+      "description": "Bob Dylan - Highway 61 Revisited (1965)\n\n1. \"Like a Rolling Stone\"\n2. \"Tombstone Blues\"\n3. \"It Takes a Lot to Laugh, It Takes a Train to Cry\"\n4. \"From a Buick 6\"\n5. \"Ballad of a Thin Man\"\n6. \"Queen Jane Approximately\"\n7. \"Highway 61 Revisited\" \n8. \"Just L",
+      "duration": 0,
+      "embed": true
+    }
+  ],
+  "genres": [
+    "Rock"
+  ],
+  "styles": [
+    "Folk Rock",
+    "Blues Rock"
+  ],
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "title": "Like A Rolling Stone",
+      "extraartists": [
+        {
+          "name": "Tom Wilson (2)",
+          "anv": "",
+          "join": "",
+          "role": "Producer",
+          "tracks": "",
+          "id": 253021,
+          "resource_url": "https://api.discogs.com/artists/253021"
+        }
+      ],
+      "duration": "5:59"
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "title": "Tombstone Blues",
+      "duration": "5:53"
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "title": "It Takes A Lot To Laugh, It Takes A Train To Cry",
+      "duration": "3:25"
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "title": "From A Buick 6",
+      "duration": "3:06"
+    },
+    {
+      "position": "A5",
+      "type_": "track",
+      "title": "Ballad Of A Thin Man",
+      "duration": "5:48"
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "title": "Queen Jane Approximately",
+      "duration": "4:57"
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "title": "Highway 61 Revisited",
+      "duration": "3:15"
+    },
+    {
+      "position": "B3",
+      "type_": "track",
+      "title": "Just Like Tom Thumb's Blues",
+      "duration": "5:08"
+    },
+    {
+      "position": "B4",
+      "type_": "track",
+      "title": "Desolation Row",
+      "duration": "11:18"
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "Harvey Goldstein",
+      "anv": "",
+      "join": "",
+      "role": "Bass",
+      "tracks": "",
+      "id": 264363,
+      "resource_url": "https://api.discogs.com/artists/264363"
+    },
+    {
+      "name": "Russ Savakus",
+      "anv": "",
+      "join": "",
+      "role": "Bass",
+      "tracks": "",
+      "id": 264360,
+      "resource_url": "https://api.discogs.com/artists/264360"
+    },
+    {
+      "name": "Bobby Gregg",
+      "anv": "",
+      "join": "",
+      "role": "Drums",
+      "tracks": "",
+      "id": 264362,
+      "resource_url": "https://api.discogs.com/artists/264362"
+    },
+    {
+      "name": "Charlie McCoy",
+      "anv": "Charley McCoy",
+      "join": "",
+      "role": "Guitar",
+      "tracks": "",
+      "id": 264361,
+      "resource_url": "https://api.discogs.com/artists/264361"
+    },
+    {
+      "name": "Mike Bloomfield",
+      "anv": "Michael Bloomfield",
+      "join": "",
+      "role": "Guitar",
+      "tracks": "",
+      "id": 258121,
+      "resource_url": "https://api.discogs.com/artists/258121"
+    },
+    {
+      "name": "Bob Dylan",
+      "anv": "",
+      "join": "",
+      "role": "Guitar, Harmonica, Piano, Sounds [Police Car]",
+      "tracks": "",
+      "id": 59792,
+      "resource_url": "https://api.discogs.com/artists/59792"
+    },
+    {
+      "name": "Bob Dylan",
+      "anv": "",
+      "join": "",
+      "role": "Liner Notes",
+      "tracks": "",
+      "id": 59792,
+      "resource_url": "https://api.discogs.com/artists/59792"
+    },
+    {
+      "name": "Al Kooper",
+      "anv": "Alan Kooper",
+      "join": "",
+      "role": "Organ, Piano",
+      "tracks": "",
+      "id": 255185,
+      "resource_url": "https://api.discogs.com/artists/255185"
+    },
+    {
+      "name": "Daniel Kramer (2)",
+      "anv": "",
+      "join": "",
+      "role": "Photography By [Cover]",
+      "tracks": "",
+      "id": 2235515,
+      "resource_url": "https://api.discogs.com/artists/2235515"
+    },
+    {
+      "name": "Frank Owens",
+      "anv": "",
+      "join": "",
+      "role": "Piano",
+      "tracks": "",
+      "id": 264359,
+      "resource_url": "https://api.discogs.com/artists/264359"
+    },
+    {
+      "name": "Paul Griffin",
+      "anv": "",
+      "join": "",
+      "role": "Piano, Organ",
+      "tracks": "",
+      "id": 211614,
+      "resource_url": "https://api.discogs.com/artists/211614"
+    },
+    {
+      "name": "Bob Johnston",
+      "anv": "",
+      "join": "",
+      "role": "Producer",
+      "tracks": "",
+      "id": 241543,
+      "resource_url": "https://api.discogs.com/artists/241543"
+    },
+    {
+      "name": "Bob Dylan",
+      "anv": "B. Dylan",
+      "join": "",
+      "role": "Written-By",
+      "tracks": "",
+      "id": 59792,
+      "resource_url": "https://api.discogs.com/artists/59792"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/LN9byatFOoRqAQ9Qty-sSwMMd6Tu-IIPDfmLkhyc-Ko/rs:fit/g:sm/q:90/h:591/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/Ni04MjQ0LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/LN9byatFOoRqAQ9Qty-sSwMMd6Tu-IIPDfmLkhyc-Ko/rs:fit/g:sm/q:90/h:591/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/Ni04MjQ0LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/avezJXnmNad-Bc-0D_wMrOPlJJ6zRc2ymiuhGu41BHI/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/Ni04MjQ0LmpwZWc.jpeg",
+      "width": 600,
+      "height": 591
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/Ddkc1HU9ecqBFU4gYC8hiBjZXkVnoFx0_et3YcmoahQ/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/Ny01MzA0LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/Ddkc1HU9ecqBFU4gYC8hiBjZXkVnoFx0_et3YcmoahQ/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/Ny01MzA0LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/3sGdnAmOH8u1UoKVH7fLta4IZHlAZ45cQDcBbn7N5js/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/Ny01MzA0LmpwZWc.jpeg",
+      "width": 600,
+      "height": 597
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/jywF59HqMr_7pAaFG21WchKY1FyO1u36Mj65b-kTWts/rs:fit/g:sm/q:90/h:600/w:598/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/OS04NDE2LmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/jywF59HqMr_7pAaFG21WchKY1FyO1u36Mj65b-kTWts/rs:fit/g:sm/q:90/h:600/w:598/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/OS04NDE2LmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/EMh0m3oEUWVx4VMiCL_PWwyiKzliC6qPaR55s-6p614/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/OS04NDE2LmpwZWc.jpeg",
+      "width": 598,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/REthpugFR-pdE6oN7OzQurZonFgv9x3s5RkAapYjqsk/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY3/MS0xMDUwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/REthpugFR-pdE6oN7OzQurZonFgv9x3s5RkAapYjqsk/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY3/MS0xMDUwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/WLRtbxMSGXAejR_xFZifkHMPoaIxV9ScSQ_mWodqzV4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY3/MS0xMDUwLmpwZWc.jpeg",
+      "width": 597,
+      "height": 600
+    }
+  ],
+  "thumb": "https://i.discogs.com/avezJXnmNad-Bc-0D_wMrOPlJJ6zRc2ymiuhGu41BHI/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc4MjMw/NDktMTU2MTE4MDY2/Ni04MjQ0LmpwZWc.jpeg",
+  "estimated_weight": 230,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

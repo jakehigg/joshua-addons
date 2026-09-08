@@ -1,0 +1,315 @@
+{
+  "created": "2026-09-08T06:17:39.581Z",
+  "count": 15,
+  "offset": 0,
+  "artists": [
+    {
+      "id": "d43d12a1-2dc9-4257-a2fd-0a3bb1081b86",
+      "type": "Person",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "score": 100,
+      "gender-id": "36d3d30a-839d-3eda-8cb3-29be4384e4a9",
+      "name": "Johnny Cash",
+      "sort-name": "Cash, Johnny",
+      "gender": "male",
+      "country": "US",
+      "area": {
+        "id": "489ce91b-6658-3307-9877-795b68554c98",
+        "type": "Country",
+        "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+        "name": "United States",
+        "sort-name": "United States",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "begin-area": {
+        "id": "7f8e9d30-1e5f-48aa-8d12-8f8dcd178461",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "Kingsland",
+        "sort-name": "Kingsland",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "end-area": {
+        "id": "e68879f9-bd95-41ff-96ba-c082ff37cc74",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "Nashville",
+        "sort-name": "Nashville",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "disambiguation": "country music legend",
+      "ipis": [
+        "00005462217"
+      ],
+      "isnis": [
+        "0000000108823456"
+      ],
+      "life-span": {
+        "begin": "1932-02-26",
+        "end": "2003-09-12",
+        "ended": true
+      },
+      "aliases": [
+        {
+          "sort-name": "Jonny Cash",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Jonny Cash",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Johhny Cash",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Johhny Cash",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Cash, J. R.",
+          "type-id": "d4dcd0c0-b341-3612-a332-c0ce797b25cf",
+          "name": "J. R. Cash",
+          "locale": null,
+          "type": "Legal name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Cash, John R.",
+          "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+          "name": "John R. Cash",
+          "locale": null,
+          "type": "Artist name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        }
+      ],
+      "tags": [
+        {
+          "count": 0,
+          "name": "rock"
+        },
+        {
+          "count": 7,
+          "name": "folk"
+        },
+        {
+          "count": 0,
+          "name": "american"
+        },
+        {
+          "count": 5,
+          "name": "blues"
+        },
+        {
+          "count": 0,
+          "name": "singer-songwriter"
+        },
+        {
+          "count": 9,
+          "name": "rockabilly"
+        },
+        {
+          "count": 27,
+          "name": "country"
+        },
+        {
+          "count": 5,
+          "name": "americana"
+        },
+        {
+          "count": 0,
+          "name": "classic rock"
+        },
+        {
+          "count": 0,
+          "name": "spoken word"
+        },
+        {
+          "count": 0,
+          "name": "contemporary folk"
+        },
+        {
+          "count": 3,
+          "name": "gospel"
+        },
+        {
+          "count": 0,
+          "name": "country pop"
+        },
+        {
+          "count": 3,
+          "name": "rock and roll"
+        },
+        {
+          "count": 4,
+          "name": "outlaw country"
+        },
+        {
+          "count": 0,
+          "name": "traditional folk"
+        },
+        {
+          "count": 1,
+          "name": "composers"
+        },
+        {
+          "count": 0,
+          "name": "traditional country"
+        },
+        {
+          "count": 0,
+          "name": "favorite"
+        },
+        {
+          "count": 1,
+          "name": "gospel music"
+        },
+        {
+          "count": 1,
+          "name": "classic country"
+        },
+        {
+          "count": 1,
+          "name": "singers"
+        },
+        {
+          "count": 1,
+          "name": "country music"
+        },
+        {
+          "count": 1,
+          "name": "guitarists"
+        },
+        {
+          "count": -1,
+          "name": "death by diabetes"
+        },
+        {
+          "count": 6,
+          "name": "country gospel"
+        },
+        {
+          "count": 0,
+          "name": "little"
+        },
+        {
+          "count": 0,
+          "name": "cowboy"
+        },
+        {
+          "count": 0,
+          "name": "osteraker"
+        },
+        {
+          "count": 1,
+          "name": "traditional folk music"
+        },
+        {
+          "count": 0,
+          "name": "johnny cash rock island"
+        },
+        {
+          "count": 1,
+          "name": "lyricists"
+        },
+        {
+          "count": 0,
+          "name": "arkansas country"
+        },
+        {
+          "count": 1,
+          "name": "harmonica players"
+        }
+      ]
+    },
+    {
+      "id": "7ca319e6-164e-4acb-8f20-31173c5e30a2",
+      "type": "Group",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "score": 57,
+      "name": "Johnny Cash Roadshow",
+      "sort-name": "Johnny Cash Roadshow",
+      "isnis": [
+        "0000000469211156"
+      ],
+      "life-span": {
+        "ended": null
+      }
+    },
+    {
+      "id": "42ae45dd-a580-4643-a410-aa78c24d2ae1",
+      "type": "Group",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "score": 56,
+      "name": "Bastard Sons of Johnny Cash",
+      "sort-name": "Bastard Sons of Johnny Cash",
+      "country": "US",
+      "area": {
+        "id": "489ce91b-6658-3307-9877-795b68554c98",
+        "type": "Country",
+        "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+        "name": "United States",
+        "sort-name": "United States",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "begin-area": {
+        "id": "82f3a697-ba65-404d-a1ed-360147af7d10",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "San Diego",
+        "sort-name": "San Diego",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "isnis": [
+        "0000000471008368"
+      ],
+      "life-span": {
+        "begin": "1995",
+        "ended": null
+      }
+    },
+    {
+      "id": "c1f4d8d0-9d6e-4c26-9cee-3094e22f3e22",
+      "type": "Group",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "score": 56,
+      "name": "Fake Johnny Cash",
+      "sort-name": "Fake Johnny Cash",
+      "life-span": {
+        "ended": null
+      }
+    },
+    {
+      "id": "72cd037b-0132-4c2c-83b8-0abf5997b67c",
+      "type": "Group",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "score": 56,
+      "name": "The Johnny Cash Family",
+      "sort-name": "Johnny Cash Family, The",
+      "isnis": [
+        "0000000475460909"
+      ],
+      "life-span": {
+        "ended": null
+      }
+    }
+  ]
+}

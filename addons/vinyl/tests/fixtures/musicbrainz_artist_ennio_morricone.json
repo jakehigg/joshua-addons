@@ -1,0 +1,686 @@
+{
+  "created": "2026-09-08T06:16:53.330Z",
+  "count": 2,
+  "offset": 0,
+  "artists": [
+    {
+      "id": "a16e47f5-aa54-47fe-87e4-bb8af91a9fdd",
+      "type": "Person",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "score": 100,
+      "gender-id": "36d3d30a-839d-3eda-8cb3-29be4384e4a9",
+      "name": "Ennio Morricone",
+      "sort-name": "Morricone, Ennio",
+      "gender": "male",
+      "country": "IT",
+      "area": {
+        "id": "c6500277-9a3d-349b-bf30-41afdbf42add",
+        "type": "Country",
+        "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+        "name": "Italy",
+        "sort-name": "Italy",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "begin-area": {
+        "id": "dccd77b2-bd3d-49eb-a98f-fd58e87f481e",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "Roma",
+        "sort-name": "Roma",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "end-area": {
+        "id": "dccd77b2-bd3d-49eb-a98f-fd58e87f481e",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "Roma",
+        "sort-name": "Roma",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "disambiguation": "Italian classical and score composer",
+      "ipis": [
+        "00021552128"
+      ],
+      "isnis": [
+        "0000000121225602",
+        "0000000368638409",
+        "0000000368638417"
+      ],
+      "life-span": {
+        "begin": "1928-11-10",
+        "end": "2020-07-06",
+        "ended": true
+      },
+      "aliases": [
+        {
+          "sort-name": "Maricone, Ennio",
+          "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+          "name": "Ennio Maricone",
+          "locale": "en",
+          "type": "Artist name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Morrican",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Morrican",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "エンニオ・モリコーネ",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "エンニオ・モリコーネ",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Savio, Dan",
+          "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+          "name": "Dan Savio",
+          "locale": null,
+          "type": "Artist name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Nichols, Leo",
+          "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+          "name": "Leo Nichols",
+          "locale": null,
+          "type": "Artist name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Morricone, Ennio",
+          "type-id": "d4dcd0c0-b341-3612-a332-c0ce797b25cf",
+          "name": "Ennio Morricone",
+          "locale": null,
+          "type": "Legal name",
+          "primary": null,
+          "begin-date": "1928-11-10",
+          "end-date": null
+        },
+        {
+          "sort-name": "Dansavio",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Dansavio",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Maestro Ennio Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Maestro Ennio Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Leo Nicols",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Leo Nicols",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Marricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Marricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Leo Nicholls",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Leo Nicholls",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Morricono",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Morricono",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Dan Savvio",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Dan Savvio",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Enio Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Enio Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Leon Nichols",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Leon Nichols",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Leo Nichol",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Leo Nichol",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Dann Savio",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Dann Savio",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Dan Sawio",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Dan Sawio",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Dan Savvo",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Dan Savvo",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Leo Nickols",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Leo Nickols",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Leo Nicchols",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Leo Nicchols",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Enno Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Enno Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "E. Moriccone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "E. Moriccone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Moricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Moricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Mozzicone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Mozzicone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Dan Saivo",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Dan Saivo",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Dan Savo",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Dan Savo",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Den Savio",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Den Savio",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Don Savio",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Don Savio",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Marcone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Marcone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Morricone Orchestra",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Morricone Orchestra",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Enrico Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Enrico Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Morriconne",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Morriconne",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "E.Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "E.Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ernio Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ernio Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Enio Moricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Enio Moricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        }
+      ],
+      "tags": [
+        {
+          "count": 1,
+          "name": "rock"
+        },
+        {
+          "count": 5,
+          "name": "soundtrack"
+        },
+        {
+          "count": 3,
+          "name": "classical"
+        },
+        {
+          "count": 1,
+          "name": "pop"
+        },
+        {
+          "count": 1,
+          "name": "jazz"
+        },
+        {
+          "count": -1,
+          "name": "orchestral"
+        },
+        {
+          "count": 2,
+          "name": "italian"
+        },
+        {
+          "count": 0,
+          "name": "soundtrack composer"
+        },
+        {
+          "count": -1,
+          "name": "score"
+        },
+        {
+          "count": 3,
+          "name": "composer"
+        },
+        {
+          "count": -2,
+          "name": "lounge"
+        },
+        {
+          "count": 1,
+          "name": "avant-garde"
+        },
+        {
+          "count": 3,
+          "name": "film score"
+        },
+        {
+          "count": 0,
+          "name": "european"
+        },
+        {
+          "count": 3,
+          "name": "film soundtrack"
+        },
+        {
+          "count": 0,
+          "name": "easy listening soundtracks and musicals"
+        },
+        {
+          "count": 0,
+          "name": "film composer"
+        },
+        {
+          "count": 0,
+          "name": "soundtracks"
+        },
+        {
+          "count": 6,
+          "name": "modern classical"
+        },
+        {
+          "count": -2,
+          "name": "library music"
+        },
+        {
+          "count": 3,
+          "name": "spaghetti western"
+        },
+        {
+          "count": -2,
+          "name": "gui la testa"
+        },
+        {
+          "count": 3,
+          "name": "television music"
+        },
+        {
+          "count": 0,
+          "name": "television composer"
+        },
+        {
+          "count": 1,
+          "name": "orchestral soundtrack"
+        },
+        {
+          "count": 2,
+          "name": "cinematic classical"
+        },
+        {
+          "count": -1,
+          "name": "the scarlet and the black"
+        },
+        {
+          "count": -1,
+          "name": "72 meters"
+        },
+        {
+          "count": 1,
+          "name": "italian soundtrack"
+        },
+        {
+          "count": 0,
+          "name": "2008 universal fire victim"
+        },
+        {
+          "count": 1,
+          "name": "absolute music"
+        },
+        {
+          "count": 1,
+          "name": "classic soundtrack"
+        },
+        {
+          "count": 1,
+          "name": "vintage italian soundtrack"
+        }
+      ]
+    },
+    {
+      "id": "b3f9ebd3-a377-4f85-98bb-ac0a9fbad725",
+      "type": "Orchestra",
+      "type-id": "a0b36c92-3eb1-3839-a4f9-4799823f54a5",
+      "score": 60,
+      "name": "The Ennio Morricone Orchestra",
+      "sort-name": "Morricone, Ennio, Orchestra, The",
+      "country": "IT",
+      "area": {
+        "id": "c6500277-9a3d-349b-bf30-41afdbf42add",
+        "type": "Country",
+        "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+        "name": "Italy",
+        "sort-name": "Italy",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "begin-area": {
+        "id": "c6500277-9a3d-349b-bf30-41afdbf42add",
+        "type": "Country",
+        "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+        "name": "Italy",
+        "sort-name": "Italy",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "disambiguation": "Italian symphonic orchestra",
+      "isnis": [
+        "0000000107093092"
+      ],
+      "life-span": {
+        "ended": null
+      },
+      "aliases": [
+        {
+          "sort-name": "Morricone, Ennio, e la sua orchestra",
+          "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+          "name": "Ennio Morricone e la sua orchestra",
+          "locale": "it",
+          "type": "Artist name",
+          "primary": true,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Morricone, Ennio, Orchestra, The",
+          "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+          "name": "The Ennio Morricone Orchestra",
+          "locale": null,
+          "type": "Artist name",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Morricone orchestre",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Morricone orchestre",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Morricone orquestra",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Morricone orquestra",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Morricone",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Morricone",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Ennio Morricone Orchestra",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Ennio Morricone Orchestra",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Morricone Orchestra",
+          "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+          "name": "Morricone Orchestra",
+          "locale": null,
+          "type": "Search hint",
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,330 @@
+{
+  "id": 11059794,
+  "status": "Accepted",
+  "year": 1977,
+  "resource_url": "https://api.discogs.com/releases/11059794",
+  "uri": "https://www.discogs.com/release/11059794-Bach-Glenn-Gould-Variations-Goldberg",
+  "artists": [
+    {
+      "name": "Johann Sebastian Bach",
+      "anv": "Bach",
+      "join": "/",
+      "role": "",
+      "tracks": "",
+      "id": 95537,
+      "resource_url": "https://api.discogs.com/artists/95537",
+      "thumbnail_url": "https://i.discogs.com/-_zVaRMNL6wRFRhZGMFdZkb4gllke5-RPdHjYZ1A8gk/rs:fit/g:sm/q:90/h:591/w:480/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTk1NTM3/LTEzOTkzODM0ODQt/NjQyOS5qcGVn.jpeg"
+    },
+    {
+      "name": "Glenn Gould",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 517160,
+      "resource_url": "https://api.discogs.com/artists/517160",
+      "thumbnail_url": "https://i.discogs.com/pGfp6xcujWpvZ2OVacoMarwMd-lj_HMLLnBtsBCRykw/rs:fit/g:sm/q:90/h:600/w:480/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTUxNzE2/MC0xNjYyNzQ2NzA3/LTI1NTQuanBlZw.jpeg"
+    }
+  ],
+  "artists_sort": "Johann Sebastian Bach / Glenn Gould",
+  "labels": [
+    {
+      "name": "CBS Masterworks",
+      "catno": "CBS 75692",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 46453,
+      "resource_url": "https://api.discogs.com/labels/46453",
+      "thumbnail_url": "https://i.discogs.com/8WzVRMPAA4DWLRGt8vRIbLzRXXGnSt7XoMgD32QsepE/rs:fit/g:sm/q:90/h:600/w:537/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTQ2NDUz/LTE1NjEyNzYzMDMt/ODIxMC5qcGVn.jpeg"
+    },
+    {
+      "name": "CBS",
+      "catno": "CBS 75692",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 3072,
+      "resource_url": "https://api.discogs.com/labels/3072",
+      "thumbnail_url": "https://i.discogs.com/hdVZgS3PfiBkq73WsshirotfASFz8DqOTLbenaLJ--I/rs:fit/g:sm/q:90/h:428/w:436/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTMwNzIt/MTIzNTE0NjI5My5q/cGVn.jpeg"
+    },
+    {
+      "name": "CBS",
+      "catno": "CBS 75.692",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 3072,
+      "resource_url": "https://api.discogs.com/labels/3072",
+      "thumbnail_url": "https://i.discogs.com/hdVZgS3PfiBkq73WsshirotfASFz8DqOTLbenaLJ--I/rs:fit/g:sm/q:90/h:428/w:436/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTMwNzIt/MTIzNTE0NjI5My5q/cGVn.jpeg"
+    }
+  ],
+  "series": [
+    {
+      "name": "Grands Interprètes",
+      "catno": "",
+      "entity_type": "2",
+      "entity_type_name": "Series",
+      "id": 373210,
+      "resource_url": "https://api.discogs.com/labels/373210",
+      "thumbnail_url": "https://i.discogs.com/xFaRSL6Wn_et3qpUMpqnjwfxXUspy3oMQhXacgz-Jh4/rs:fit/g:sm/q:90/h:281/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTM3MzIx/MC0xNDUyODcyMzM2/LTg4NzYuanBlZw.jpeg"
+    }
+  ],
+  "companies": [
+    {
+      "name": "CBS Inc.",
+      "catno": "",
+      "entity_type": "13",
+      "entity_type_name": "Phonographic Copyright (p)",
+      "id": 211334,
+      "resource_url": "https://api.discogs.com/labels/211334",
+      "thumbnail_url": "https://i.discogs.com/rdTxtYxA-MAPh0OPIDley7EiO7NaLmgz7Rpp7xuzkgA/rs:fit/g:sm/q:90/h:225/w:225/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTIxMTMz/NC0xNDg2NDIyMDYw/LTExMzguanBlZw.jpeg"
+    },
+    {
+      "name": "Columbia 30th Street Studio",
+      "catno": "",
+      "entity_type": "23",
+      "entity_type_name": "Recorded At",
+      "id": 285739,
+      "resource_url": "https://api.discogs.com/labels/285739",
+      "thumbnail_url": "https://i.discogs.com/-gW5ijR6srAUUPJ_XUwTZrq1f2mMD0ZQvBS5KHEikg8/rs:fit/g:sm/q:90/h:431/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI4NTcz/OS0xMzYwOTE1NTc0/LTUzMjIuanBlZw.jpeg"
+    },
+    {
+      "name": "Pathé Marconi EMI, Chatou",
+      "catno": "304838",
+      "entity_type": "17",
+      "entity_type_name": "Pressed By",
+      "id": 407953,
+      "resource_url": "https://api.discogs.com/labels/407953",
+      "thumbnail_url": "https://i.discogs.com/fBV2Ce2BMWVk8q0DQZPm_OJYKMWZ9Az9jaUwFmIYDzA/rs:fit/g:sm/q:90/h:375/w:500/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTQwNzk1/My0xMzYyNzQ1NDAw/LTc4MzEuanBlZw.jpeg"
+    },
+    {
+      "name": "Pathé Marconi EMI, Chatou",
+      "catno": "304839",
+      "entity_type": "17",
+      "entity_type_name": "Pressed By",
+      "id": 407953,
+      "resource_url": "https://api.discogs.com/labels/407953",
+      "thumbnail_url": "https://i.discogs.com/fBV2Ce2BMWVk8q0DQZPm_OJYKMWZ9Az9jaUwFmIYDzA/rs:fit/g:sm/q:90/h:375/w:500/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTQwNzk1/My0xMzYyNzQ1NDAw/LTc4MzEuanBlZw.jpeg"
+    },
+    {
+      "name": "Glory, Asnières",
+      "catno": "",
+      "entity_type": "19",
+      "entity_type_name": "Printed By",
+      "id": 422496,
+      "resource_url": "https://api.discogs.com/labels/422496",
+      "thumbnail_url": "https://i.discogs.com/eRjaQnD07wRO5zGj4vf-rnU__GvJjAT1Q-KLilu0olA/rs:fit/g:sm/q:90/h:350/w:350/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTQyMjQ5/Ni0xMzk3MDUyMzYx/LTMyNjYuanBlZw.jpeg"
+    }
+  ],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "1",
+      "descriptions": [
+        "LP",
+        "Album",
+        "Reissue",
+        "Stereo"
+      ],
+      "text": "Gatefold"
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 32,
+    "want": 53,
+    "rating": {
+      "count": 2,
+      "average": 5.0
+    },
+    "submitter": {
+      "username": "marcuzan",
+      "resource_url": "https://api.discogs.com/users/marcuzan"
+    },
+    "contributors": [
+      {
+        "username": "marcuzan",
+        "resource_url": "https://api.discogs.com/users/marcuzan"
+      },
+      {
+        "username": "M3acull",
+        "resource_url": "https://api.discogs.com/users/M3acull"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 1,
+  "date_added": "2017-10-27T05:59:06-07:00",
+  "date_changed": "2025-11-01T10:00:20-07:00",
+  "num_for_sale": 0,
+  "lowest_price": null,
+  "master_id": 261784,
+  "master_url": "https://api.discogs.com/masters/261784",
+  "title": "Variations Goldberg",
+  "country": "France",
+  "released": "1977",
+  "notes": "Circa 1977 version with K stickered price code (hiding the 1975 printed price code).\n\nChatou runouts are from 1975.\n\nCover and labels read \"stereo\" but the music plays definitely mono.\n\nRecorded at 30th Street Studio, New York City, June 10, 14 & 16, 1955\n\nⓅ 1975 CBS Inc.\n",
+  "released_formatted": "1977",
+  "identifiers": [
+    {
+      "type": "Matrix / Runout",
+      "value": "yPartx 79.931",
+      "description": "Side A label"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "yPartx 79.932",
+      "description": "Side B label"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "M6 304838 3 YPARTX 79931 21",
+      "description": "Side A runout stamped"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "M6 304839 3 YPARTX 79932 21",
+      "description": "Side B runout stamped"
+    },
+    {
+      "type": "Other",
+      "value": "D.P.",
+      "description": "Public Domain"
+    },
+    {
+      "type": "Price Code",
+      "value": "K",
+      "description": "sticker"
+    }
+  ],
+  "videos": [],
+  "genres": [
+    "Classical"
+  ],
+  "styles": [
+    "Baroque",
+    "Theme With Variations",
+    "Piano"
+  ],
+  "tracklist": [
+    {
+      "position": "",
+      "type_": "index",
+      "title": "Variations Goldberg, Aria Et 30 Variations, BWV 988",
+      "duration": "",
+      "sub_tracks": [
+        {
+          "position": "A",
+          "type_": "track",
+          "title": "1 - 16",
+          "duration": "16:25"
+        },
+        {
+          "position": "B",
+          "type_": "track",
+          "title": "17 - 30",
+          "duration": "21:56"
+        }
+      ]
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "Johann Sebastian Bach",
+      "anv": "",
+      "join": "",
+      "role": "Composed By",
+      "tracks": "",
+      "id": 95537,
+      "resource_url": "https://api.discogs.com/artists/95537"
+    },
+    {
+      "name": "Olivier Alain",
+      "anv": "",
+      "join": "",
+      "role": "Liner Notes",
+      "tracks": "",
+      "id": 986213,
+      "resource_url": "https://api.discogs.com/artists/986213"
+    },
+    {
+      "name": "Don Hunstein",
+      "anv": "Hunstein",
+      "join": "",
+      "role": "Photography By",
+      "tracks": "",
+      "id": 1905443,
+      "resource_url": "https://api.discogs.com/artists/1905443"
+    },
+    {
+      "name": "Glenn Gould",
+      "anv": "",
+      "join": "",
+      "role": "Piano",
+      "tracks": "",
+      "id": 517160,
+      "resource_url": "https://api.discogs.com/artists/517160"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/87pex7SrYitBEbYOlG0ZMC0aLTxaXoEODwuen2Ip_Z8/rs:fit/g:sm/q:90/h:595/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjAtODAzNy5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/87pex7SrYitBEbYOlG0ZMC0aLTxaXoEODwuen2Ip_Z8/rs:fit/g:sm/q:90/h:595/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjAtODAzNy5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/as-R98kJfoXSsfAYwYRhGVNYLjHxYrZPg5F4r6H9y5c/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjAtODAzNy5qcGVn.jpeg",
+      "width": 600,
+      "height": 595
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/bJ_dPd_lT022g2zqLXzZbMMC2VWnqyNFQhUGLTzm8Q0/rs:fit/g:sm/q:90/h:585/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjYtNjc5MC5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/bJ_dPd_lT022g2zqLXzZbMMC2VWnqyNFQhUGLTzm8Q0/rs:fit/g:sm/q:90/h:585/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjYtNjc5MC5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/maUnYZIa3L_43QSaZvKLd_hGqRLpToOmjKV98cEfa5U/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjYtNjc5MC5qcGVn.jpeg",
+      "width": 600,
+      "height": 585
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/9x9dfMRM9kl1ZIlnI9gjTaLXjWmJP6gPhyePkvMIusQ/rs:fit/g:sm/q:90/h:577/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjctNjA0NS5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/9x9dfMRM9kl1ZIlnI9gjTaLXjWmJP6gPhyePkvMIusQ/rs:fit/g:sm/q:90/h:577/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjctNjA0NS5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/o4EkbwQhPuLCFHzceA8Pbvpc-2xXz47N8qorr7rF704/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjctNjA0NS5qcGVn.jpeg",
+      "width": 600,
+      "height": 577
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/PgLp_ssQLM7MhOwC72xgEp66RWCntgteWsa7rS2slOg/rs:fit/g:sm/q:90/h:595/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MzItMTU5My5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/PgLp_ssQLM7MhOwC72xgEp66RWCntgteWsa7rS2slOg/rs:fit/g:sm/q:90/h:595/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MzItMTU5My5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/FH3OzHkPF0Go1mbfkU8iYP9Kj0T_bJ6Mctkj13PeuJI/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MzItMTU5My5qcGVn.jpeg",
+      "width": 600,
+      "height": 595
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/pJ7AysQIfD5Z476EAqEkoE6zgh7EAPVXINJBDlPDANc/rs:fit/g:sm/q:90/h:245/w:249/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MzYtNzQ2MC5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/pJ7AysQIfD5Z476EAqEkoE6zgh7EAPVXINJBDlPDANc/rs:fit/g:sm/q:90/h:245/w:249/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MzYtNzQ2MC5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/vGdKnXKOBUTcuelJzP0zdjRd3TS7aobHijs01F9-H1Y/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MzYtNzQ2MC5qcGVn.jpeg",
+      "width": 249,
+      "height": 245
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/c-N1qxiTQAWjyPv_P-myeiv_LjCLDLZ0CYWD15Vns4c/rs:fit/g:sm/q:90/h:600/w:594/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/NDItODM0NC5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/c-N1qxiTQAWjyPv_P-myeiv_LjCLDLZ0CYWD15Vns4c/rs:fit/g:sm/q:90/h:600/w:594/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/NDItODM0NC5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/lUjO6tQCc0YT_a8Yz3OvXCwb3OpsrxpdQS_6pN5yFbc/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/NDItODM0NC5qcGVn.jpeg",
+      "width": 594,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/kVVJbFlX3-ZHj0kDPTwrfcx-ykiSuhJSDpLAQwKmdBQ/rs:fit/g:sm/q:90/h:594/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/NDItOTU2MS5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/kVVJbFlX3-ZHj0kDPTwrfcx-ykiSuhJSDpLAQwKmdBQ/rs:fit/g:sm/q:90/h:594/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/NDItOTU2MS5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/gOAHQ6Ih34bm1eHvmG_e2_uJMfI-Wot2GKaJXYkwbn0/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/NDItOTU2MS5qcGVn.jpeg",
+      "width": 600,
+      "height": 594
+    }
+  ],
+  "thumb": "https://i.discogs.com/as-R98kJfoXSsfAYwYRhGVNYLjHxYrZPg5F4r6H9y5c/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMDU5/Nzk0LTE1MDkxMDk4/MjAtODAzNy5qcGVn.jpeg",
+  "estimated_weight": 230,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

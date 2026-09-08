@@ -1,0 +1,239 @@
+{
+  "pagination": {
+    "page": 1,
+    "pages": 1,
+    "per_page": 100,
+    "items": 4,
+    "urls": {}
+  },
+  "releases": [
+    {
+      "id": 7590859,
+      "instance_id": 2182183467,
+      "date_added": "2026-09-07T21:33:18-07:00",
+      "rating": 0,
+      "basic_information": {
+        "id": 7590859,
+        "master_id": 897370,
+        "master_url": "https://api.discogs.com/masters/897370",
+        "resource_url": "https://api.discogs.com/releases/7590859",
+        "thumb": "https://i.discogs.com/RR8hiY8QU3x1zBhxswRldnrFF8s60JyW2q3-8SG0soM/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS00MDY1LmpwZWc.jpeg",
+        "cover_image": "https://i.discogs.com/Z4FqDtACfiBLeDSzhoE7e42Pg-AsFv8u4O7KwineSr0/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTc1OTA4/NTktMTQ0NTA5ODAz/MS00MDY1LmpwZWc.jpeg",
+        "title": "The Color Before The Sun",
+        "year": 2015,
+        "formats": [
+          {
+            "name": "Vinyl",
+            "qty": "1",
+            "descriptions": [
+              "LP",
+              "Album",
+              "Limited Edition",
+              "Picture Disc"
+            ]
+          }
+        ],
+        "labels": [
+          {
+            "name": "300 Entertainment",
+            "catno": "551821-1",
+            "entity_type": "1",
+            "entity_type_name": "Label",
+            "id": 758325,
+            "resource_url": "https://api.discogs.com/labels/758325"
+          }
+        ],
+        "artists": [
+          {
+            "name": "Coheed And Cambria",
+            "anv": "",
+            "join": "",
+            "role": "",
+            "tracks": "",
+            "id": 256629,
+            "resource_url": "https://api.discogs.com/artists/256629"
+          }
+        ],
+        "genres": [
+          "Rock"
+        ],
+        "styles": []
+      },
+      "folder_id": 1
+    },
+    {
+      "id": 3940397,
+      "instance_id": 2182183235,
+      "date_added": "2026-09-07T21:30:58-07:00",
+      "rating": 0,
+      "basic_information": {
+        "id": 3940397,
+        "master_id": 479627,
+        "master_url": "https://api.discogs.com/masters/479627",
+        "resource_url": "https://api.discogs.com/releases/3940397",
+        "thumb": "https://i.discogs.com/-Xqpoaa6Bnl2jAX5_d8QGgf5N-VU7L546y3uz-YNTt8/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTM5NDAz/OTctMTM0OTk0MzE2/MS01Mzk0LmpwZWc.jpeg",
+        "cover_image": "https://i.discogs.com/mW08PpxH3Is-Vg0WFackjb-dlPgqwu1SONefpBVw2rw/rs:fit/g:sm/q:90/h:600/w:587/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTM5NDAz/OTctMTM0OTk0MzE2/MS01Mzk0LmpwZWc.jpeg",
+        "title": "The Afterman: Ascension",
+        "year": 2012,
+        "formats": [
+          {
+            "name": "Vinyl",
+            "qty": "1",
+            "descriptions": [
+              "LP",
+              "Album",
+              "Stereo"
+            ]
+          },
+          {
+            "name": "CD",
+            "qty": "1",
+            "descriptions": [
+              "Album",
+              "Stereo"
+            ]
+          }
+        ],
+        "labels": [
+          {
+            "name": "Everything Evil Records",
+            "catno": "HHI001V",
+            "entity_type": "1",
+            "entity_type_name": "Label",
+            "id": 452426,
+            "resource_url": "https://api.discogs.com/labels/452426"
+          }
+        ],
+        "artists": [
+          {
+            "name": "Coheed And Cambria",
+            "anv": "",
+            "join": "",
+            "role": "",
+            "tracks": "",
+            "id": 256629,
+            "resource_url": "https://api.discogs.com/artists/256629"
+          }
+        ],
+        "genres": [
+          "Rock"
+        ],
+        "styles": [
+          "Prog Rock",
+          "Alternative Rock"
+        ]
+      },
+      "folder_id": 1
+    },
+    {
+      "id": 1633083,
+      "instance_id": 2182182973,
+      "date_added": "2026-09-07T21:28:36-07:00",
+      "rating": 0,
+      "basic_information": {
+        "id": 1633083,
+        "master_id": 106919,
+        "master_url": "https://api.discogs.com/masters/106919",
+        "resource_url": "https://api.discogs.com/releases/1633083",
+        "thumb": "https://i.discogs.com/92W8YH_JbDUnWQGmArSdc0IsCIaju-ATHaSLO6qq9Us/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE2MzMw/ODMtMTY4MjIxNDUy/MC04NjA0LmpwZWc.jpeg",
+        "cover_image": "https://i.discogs.com/6ednggLc4mGSKrS-F01n0C7wA-ahXEt_qZbHS2yvD20/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE2MzMw/ODMtMTY4MjIxNDUy/MC04NjA0LmpwZWc.jpeg",
+        "title": "The Second Stage Turbine Blade",
+        "year": 2002,
+        "formats": [
+          {
+            "name": "Vinyl",
+            "qty": "1",
+            "descriptions": [
+              "LP",
+              "Album"
+            ]
+          }
+        ],
+        "labels": [
+          {
+            "name": "Defiance Records (2)",
+            "catno": "XXXV",
+            "entity_type": "1",
+            "entity_type_name": "Label",
+            "id": 55956,
+            "resource_url": "https://api.discogs.com/labels/55956"
+          }
+        ],
+        "artists": [
+          {
+            "name": "Coheed And Cambria",
+            "anv": "",
+            "join": "",
+            "role": "",
+            "tracks": "",
+            "id": 256629,
+            "resource_url": "https://api.discogs.com/artists/256629"
+          }
+        ],
+        "genres": [
+          "Rock"
+        ],
+        "styles": [
+          "Prog Rock"
+        ]
+      },
+      "folder_id": 1
+    },
+    {
+      "id": 2337888,
+      "instance_id": 2182182595,
+      "date_added": "2026-09-07T21:25:02-07:00",
+      "rating": 0,
+      "basic_information": {
+        "id": 2337888,
+        "master_id": 264951,
+        "master_url": "https://api.discogs.com/masters/264951",
+        "resource_url": "https://api.discogs.com/releases/2337888",
+        "thumb": "https://i.discogs.com/xYmRmkZRNa2HqMSgW91ZXuv57sheKfbFs5m7I1vURY0/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTI3Nzk1MDI0/Ny5qcGVn.jpeg",
+        "cover_image": "https://i.discogs.com/1PaB09AYNT5da5puR91nDmOUJhyfdSUmWVFehvXhRvQ/rs:fit/g:sm/q:90/h:300/w:300/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTIzMzc4/ODgtMTI3Nzk1MDI0/Ny5qcGVn.jpeg",
+        "title": "Year Of The Black Rainbow",
+        "year": 2010,
+        "formats": [
+          {
+            "name": "Vinyl",
+            "qty": "2",
+            "descriptions": [
+              "LP",
+              "Album",
+              "Stereo"
+            ]
+          }
+        ],
+        "labels": [
+          {
+            "name": "Columbia",
+            "catno": "88697 52095 1",
+            "entity_type": "1",
+            "entity_type_name": "Label",
+            "id": 1866,
+            "resource_url": "https://api.discogs.com/labels/1866"
+          }
+        ],
+        "artists": [
+          {
+            "name": "Coheed And Cambria",
+            "anv": "",
+            "join": "",
+            "role": "",
+            "tracks": "",
+            "id": 256629,
+            "resource_url": "https://api.discogs.com/artists/256629"
+          }
+        ],
+        "genres": [
+          "Rock"
+        ],
+        "styles": [
+          "Prog Rock",
+          "Progressive Metal"
+        ]
+      },
+      "folder_id": 1
+    }
+  ]
+}
