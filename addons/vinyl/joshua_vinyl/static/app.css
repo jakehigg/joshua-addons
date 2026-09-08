@@ -1,0 +1,321 @@
+:root {
+  --bg: #14110f;
+  --bg-raised: #1f1b18;
+  --bg-chip: #2a2521;
+  --ink: #f2ebe3;
+  --ink-dim: #a99f94;
+  --accent: #d9683f;
+  --accent-ink: #14110f;
+  --line: #3a332d;
+  --card: clamp(180px, 62vw, 340px);
+  --radius: 10px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+button, input, select {
+  font: inherit;
+  color: inherit;
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 8px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.count {
+  margin: 2px 0 0;
+  color: var(--ink-dim);
+  font-size: 0.9rem;
+}
+
+.tools {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 320px;
+  max-width: 560px;
+}
+
+.tools input,
+.tools select {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.tools input { flex: 1 1 auto; }
+.tools input:focus, .tools select:focus, .chip:focus-visible, .card:focus-visible, .carousel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.filters {
+  padding: 4px 20px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  flex: 0 0 auto;
+  background: var(--bg-chip);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.chip small {
+  color: var(--ink-dim);
+  margin-left: 6px;
+}
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.chip[aria-pressed="true"] small { color: var(--accent-ink); opacity: 0.8; }
+.chips-styles .chip { font-size: 0.9rem; padding: 4px 10px; }
+
+.active {
+  color: var(--ink-dim);
+  font-size: 0.9rem;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+}
+
+.carousel {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  padding: 18px calc(50vw - var(--card) / 2) 28px;
+  scrollbar-width: none;
+}
+.carousel::-webkit-scrollbar { display: none; }
+
+.card {
+  flex: 0 0 var(--card);
+  scroll-snap-align: center;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.card .cover {
+  width: var(--card);
+  height: var(--card);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  display: block;
+  object-fit: cover;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  transition: transform 160ms ease;
+}
+.card:hover .cover, .card:focus-visible .cover { transform: translateY(-4px); }
+
+.card .cover.missing {
+  display: grid;
+  place-items: center;
+  color: var(--ink-dim);
+  font-size: 0.9rem;
+  border: 1px dashed var(--line);
+}
+
+.card .title {
+  margin: 12px 0 2px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card .meta {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.divider {
+  flex: 0 0 auto;
+  scroll-snap-align: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  margin: 0 4px 60px;
+  border-left: 2px solid var(--line);
+  border-right: 2px solid var(--line);
+  background: var(--bg-raised);
+  border-radius: 6px;
+}
+.divider span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: var(--ink-dim);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.empty {
+  text-align: center;
+  color: var(--ink-dim);
+  padding: 40px 20px;
+}
+
+.detail {
+  border: none;
+  border-radius: 16px;
+  background: var(--bg-raised);
+  color: var(--ink);
+  padding: 0;
+  width: min(92vw, 720px);
+  max-height: 90dvh;
+}
+.detail::backdrop { background: rgba(0, 0, 0, 0.7); }
+
+.detail .close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  color: var(--ink);
+  border-radius: 999px;
+  width: 36px;
+  height: 36px;
+  font-size: 1.4rem;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.detail-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+@media (min-width: 640px) {
+  .detail-body { grid-template-columns: 300px 1fr; }
+}
+
+.detail-body .cover {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: var(--bg);
+  display: block;
+}
+.detail-body .cover.missing {
+  display: grid;
+  place-items: center;
+  color: var(--ink-dim);
+}
+
+.info { padding: 18px 20px 24px; }
+.info h2 { margin: 0 0 4px; font-size: 1.35rem; line-height: 1.2; }
+.info .artist { margin: 0 0 12px; color: var(--ink-dim); font-size: 1.05rem; }
+
+.section {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  margin-bottom: 14px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+}
+.facts dt { color: var(--ink-dim); }
+.facts dd { margin: 0; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.tag {
+  background: var(--bg-chip);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.85rem;
+}
+
+.tracks { margin: 0; padding: 0; list-style: none; font-size: 0.95rem; }
+.tracks li {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+.tracks .pos { color: var(--ink-dim); min-width: 2.2em; }
+.tracks .dur { color: var(--ink-dim); margin-left: auto; }
+
+.price { margin: 0 0 10px; font-size: 0.95rem; }
+.price small { color: var(--ink-dim); display: block; }
