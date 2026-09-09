@@ -236,10 +236,10 @@ button, input, select { font: inherit; color: inherit; }
 
 .crate { position: relative; }
 
-/* The section letter, thrown across the covers. It rises while the row is
-   travelling and sinks when it stops, so a fast scrub always says roughly
-   where you are without anyone reading a single sleeve. It sits in front:
-   behind, an unbroken row of sleeves hides every part of it. */
+/* The section letter, thrown across the covers. It rises under one of the two
+   speed controls and sinks the moment the finger comes off, so a scrub always
+   says roughly where you are without anyone reading a single sleeve. It sits in
+   front: behind, an unbroken row of sleeves hides every part of it. */
 .marker {
   position: absolute;
   inset: 0;
@@ -269,7 +269,10 @@ button, input, select { font: inherit; color: inherit; }
   text-align: center;
   text-transform: uppercase;
 }
-body.is-moving .marker { opacity: 0.26; transform: translateY(0) scale(1); }
+/* Only at speed, not on every step. Flipping one cover at a time is slow
+   enough to read the caption, and a letter thrown across the art then is
+   just in the way. */
+body.is-fast .marker { opacity: 0.26; transform: translateY(0) scale(1); }
 
 /* The speed-scrub gutters. Holding a finger in one travels the crate on its
    own, faster the closer to the edge; --heat is how hard it is being

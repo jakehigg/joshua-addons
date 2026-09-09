@@ -554,16 +554,22 @@
     el.scrubRight.style.setProperty("--heat", push > 0 ? push.toFixed(3) : "0");
   }
 
+  /* Travelling under one of the two speed controls: a finger held in a gutter
+     or an arrow held down. Distinct from merely moving, which one click also
+     counts as, because the section letter is only worth throwing across the
+     art when the covers are going past too fast to read. */
   function beginFast() {
     if (state.fast) return;
     state.fast = true;
     el.carousel.classList.add("scrubbing");
+    document.body.classList.add("is-fast");
   }
 
   function endFast() {
     if (!state.fast) return;
     state.fast = false;
     el.carousel.classList.remove("scrubbing");
+    document.body.classList.remove("is-fast");
     layout(); // the covers beside this one have earned their full-size art
   }
 
