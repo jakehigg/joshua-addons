@@ -214,30 +214,48 @@
 
   /* ---------- the coverflow ---------- */
 
-  /* The shelf divider a record starts, or null. Only shelf order has
-     sections; the other orders run on year or genre and a letter tab there
-     would say nothing true. A section is one letter, "#", or a configured
-     name such as "Compilations & Soundtracks". */
-  function dividerAt(i) {
-    if (state.sort !== "shelf") return null;
-    var record = state.list[i];
-    if (!record || !record.section) return null;
-    var previous = state.list[i - 1];
-    if (previous && previous.section === record.section) return null;
-    return record.section;
+  /* What a record files under in the order on screen: its shelf section, its
+     genre, or its release year. Recently added has no run worth a divider,
+     because two records that arrived the same week are otherwise unrelated. */
+  function groupOf(record) {
+    if (!record) return null;
+    switch (state.sort) {
+      case "facet":
+        return record.facet || "Other";
+      case "year":
+        return record.year ? String(record.year) : "Year unknown";
+      case "added":
+        return null;
+      default:
+        return record.section || null;
+    }
   }
 
-  function dividerNode(section) {
-    var classes = "divider" + (section.length > 2 ? " is-word" : "");
-    return h("div", { class: classes, "aria-hidden": "true" }, [h("b", { text: section })]);
+  /* The divider a record starts, or null. Every order sorts its groups into
+     one unbroken run each, so the record that starts a group is simply the one
+     whose predecessor files elsewhere. */
+  function dividerAt(i) {
+    var group = groupOf(state.list[i]);
+    if (!group) return null;
+    return groupOf(state.list[i - 1]) === group ? null : group;
+  }
+
+  /* A shelf letter, "#", and a four-digit year set as one big glyph; anything
+     holding a word sets as a phrase, and a long phrase smaller still. Within
+     one order every label has the same shape, so a run of cards reads at one
+     size rather than lurching between them. */
+  function dividerNode(label) {
+    var classes = "divider";
+    if (!/^[0-9A-Z#]{1,4}$/.test(label)) classes += label.length > 16 ? " is-word is-long" : " is-word";
+    return h("div", { class: classes, "aria-hidden": "true" }, [h("b", { text: label })]);
   }
 
   function buildCovers() {
     el.carousel.textContent = "";
     state.list.forEach(function (record, i) {
-      var section = dividerAt(i);
+      var divider = dividerAt(i);
       var node = h("div", { class: "cover", "data-index": String(i), role: "button", tabindex: "-1", "aria-label": record.title }, [
-        section ? dividerNode(section) : null,
+        divider ? dividerNode(divider) : null,
         h("div", { class: "disc", "aria-hidden": "true" }, [h("div", { class: "platter" })]),
         h("div", { class: "sleeve" }, [coverNode(record, "art", false)]),
         record.thumb || record.cover ? h("img", { class: "reflection", src: record.thumb || record.cover, alt: "", "aria-hidden": "true" }) : null,

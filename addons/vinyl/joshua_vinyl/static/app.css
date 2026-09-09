@@ -365,17 +365,20 @@ body.is-moving .marker { opacity: 0.26; transform: translateY(0) scale(1); }
   letter-spacing: 0.03em;
   padding-top: 3%;
 }
-/* A named section is a phrase, not a letter. Two short lines of small caps,
-   sized to the band that stands above the sleeves rather than to the card,
-   because the rest of the card never leaves the crate. */
+/* A genre, a named section, and the year-unknown card are phrases rather than
+   letters. They set in small caps, sized to the band that stands above the
+   sleeves rather than to the card, because the rest of the card never leaves
+   the crate. This size holds the longest genre in the collection on one line. */
 .cover .divider.is-word b {
-  font-size: calc(var(--cover) * 0.042);
+  font-size: calc(var(--cover) * 0.06);
   line-height: 1.12;
   letter-spacing: 0.06em;
   text-align: center;
   text-transform: uppercase;
   padding: 2% 6% 0;
 }
+/* A phrase too long for that drops smaller and takes two lines. */
+.cover .divider.is-long b { font-size: calc(var(--cover) * 0.042); }
 body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) translateY(-50%); }
 
 .cover .sleeve {
