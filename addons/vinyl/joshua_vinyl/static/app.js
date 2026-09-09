@@ -238,7 +238,7 @@
       var section = dividerAt(i);
       var node = h("div", { class: "cover", "data-index": String(i), role: "button", tabindex: "-1", "aria-label": record.title }, [
         section ? dividerNode(section) : null,
-        h("div", { class: "disc", "aria-hidden": "true" }),
+        h("div", { class: "disc", "aria-hidden": "true" }, [h("div", { class: "platter" })]),
         h("div", { class: "sleeve" }, [coverNode(record, "art", false)]),
         record.thumb || record.cover ? h("img", { class: "reflection", src: record.thumb || record.cover, alt: "", "aria-hidden": "true" }) : null,
       ]);

@@ -409,8 +409,11 @@ body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) transla
   border: 1px dashed rgba(243, 229, 197, 0.3);
 }
 
-/* The record inside the sleeve. It slides out to the right on the active
-   cover and turns, slowly, like it is waiting for the needle. */
+/* The record inside the sleeve, in two parts on purpose. `.disc` slides, and
+   `.platter` inside it turns. One element cannot do both: an animation wins
+   over a transition on the same property, so a single spinning disc could only
+   ever snap in and out. Split, the record can leave the sleeve unhurriedly
+   while it is already turning, and duck back in whenever the row travels. */
 .cover .disc {
   position: absolute;
   top: 3%;
@@ -419,14 +422,21 @@ body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) transla
   height: 94%;
   border-radius: 50%;
   z-index: 1;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  transform: translateX(0) translateZ(-2px);
+  /* Tucking away is brisk: the row is already moving and the record is in the
+     way of the covers behind it. */
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+.cover .platter {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
   background:
     radial-gradient(circle at 50% 50%, #151515 0 16%, transparent 16.5%),
     repeating-radial-gradient(circle at 50% 50%, #0d0d0d 0 1.5px, #1e1e1e 1.5px 3.5px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
-  transform: translateX(0) translateZ(-2px);
-  transition: transform 700ms cubic-bezier(0.22, 0.9, 0.3, 1) 120ms;
 }
-.cover .disc::before {
+.cover .platter::before {
   /* the sheen across the grooves */
   content: "";
   position: absolute;
@@ -434,7 +444,7 @@ body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) transla
   border-radius: 50%;
   background: conic-gradient(from 200deg, transparent 0 30%, rgba(255, 255, 255, 0.12) 36%, transparent 44%, transparent 60%, rgba(255, 255, 255, 0.08) 66%, transparent 72%);
 }
-.cover .disc::after {
+.cover .platter::after {
   /* the label */
   content: "";
   position: absolute;
@@ -448,14 +458,24 @@ body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) transla
     repeating-conic-gradient(var(--orange) 0 25%, var(--mustard) 25% 50%);
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6) inset;
 }
-.cover.is-active .disc {
+
+/* It turns behind the sleeve as well as in front of it, so it is already up to
+   speed by the time the first sliver of it clears the cover. */
+.cover.is-active .platter { animation: spin 9s linear infinite; }
+/* Except at twenty-six records a second, when the active cover changes every
+   frame and nobody can see it anyway. */
+.coverflow.scrubbing .platter { animation: none; }
+
+/* Out only once the crate has settled, and unhurried, the way a record leaves
+   its sleeve. Any travel at all sends it back in. */
+body:not(.is-moving) .cover.is-active .disc {
   transform: translateX(54%) translateZ(-2px);
-  animation: spin 9s linear infinite;
+  transition: transform 760ms cubic-bezier(0.22, 0.9, 0.3, 1) 80ms;
 }
 
 @keyframes spin {
-  from { transform: translateX(54%) translateZ(-2px) rotate(0deg); }
-  to { transform: translateX(54%) translateZ(-2px) rotate(360deg); }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* The reflection in the shelf's varnish. */
@@ -867,10 +887,11 @@ body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) transla
 
 @media (prefers-reduced-motion: reduce) {
   .cover, .cover .disc, .chip, .arrow, .now-open { transition: none; }
+  body:not(.is-moving) .cover.is-active .disc { transition: none; }
   .cover .divider, .marker, .scrub, .scrub-arrow { transition: none; }
   .cover .divider { transform: translateZ(-8px) translateY(-50%); }
   .marker { transform: none; }
-  .cover.is-active .disc { animation: none; }
+  .cover.is-active .platter { animation: none; }
   .now.rise > * { animation: none; }
   .detail[open] { animation: none; }
 }
