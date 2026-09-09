@@ -12,6 +12,9 @@
     sort: "shelf",
     list: [],
     active: 0,
+    /* Travelling fast: the full-size art upgrade and the caption animation
+       are both waste at twenty records a second. */
+    fast: false,
   };
 
   var el = {
@@ -23,7 +26,12 @@
     active: document.getElementById("active"),
     activeText: document.getElementById("active-text"),
     clear: document.getElementById("clear"),
+    crate: document.getElementById("crate"),
     carousel: document.getElementById("carousel"),
+    marker: document.getElementById("marker"),
+    markerText: document.getElementById("marker-text"),
+    scrubLeft: document.getElementById("scrub-left"),
+    scrubRight: document.getElementById("scrub-right"),
     now: document.getElementById("now"),
     nowLabel: document.getElementById("now-label"),
     nowTitle: document.getElementById("now-title"),
@@ -38,7 +46,8 @@
     detailClose: document.getElementById("detail-close"),
   };
 
-  var VISIBLE = 7; // covers laid out on each side of the active one
+  var VISIBLE = 7;   // covers laid out on each side of the active one
+  var REST_MS = 850; // how long after the last step the dividers stay up
 
   /* ---------- helpers ---------- */
 
@@ -205,16 +214,36 @@
 
   /* ---------- the coverflow ---------- */
 
+  /* The shelf divider a record starts, or null. Only shelf order has
+     sections; the other orders run on year or genre and a letter tab there
+     would say nothing true. A section is one letter, "#", or a configured
+     name such as "Compilations & Soundtracks". */
+  function dividerAt(i) {
+    if (state.sort !== "shelf") return null;
+    var record = state.list[i];
+    if (!record || !record.section) return null;
+    var previous = state.list[i - 1];
+    if (previous && previous.section === record.section) return null;
+    return record.section;
+  }
+
+  function dividerNode(section) {
+    var classes = "divider" + (section.length > 2 ? " is-word" : "");
+    return h("div", { class: classes, "aria-hidden": "true" }, [h("b", { text: section })]);
+  }
+
   function buildCovers() {
     el.carousel.textContent = "";
     state.list.forEach(function (record, i) {
+      var section = dividerAt(i);
       var node = h("div", { class: "cover", "data-index": String(i), role: "button", tabindex: "-1", "aria-label": record.title }, [
+        section ? dividerNode(section) : null,
         h("div", { class: "disc", "aria-hidden": "true" }),
         h("div", { class: "sleeve" }, [coverNode(record, "art", false)]),
         record.thumb || record.cover ? h("img", { class: "reflection", src: record.thumb || record.cover, alt: "", "aria-hidden": "true" }) : null,
       ]);
       node.addEventListener("click", function () {
-        if (dragMoved) return;
+        if (drag.moved) return;
         if (i === state.active) openDetail(record);
         else setActive(i);
       });
@@ -225,13 +254,22 @@
   function layout() {
     var covers = el.carousel.children;
     if (!covers.length) return;
+    var count = state.list.length;
     var coverSize = covers[0].offsetWidth || 300;
     var stage = el.carousel.clientWidth || window.innerWidth;
     var spacing = Math.max(48, Math.min(coverSize * 0.42, stage * 0.14));
     var lift = coverSize * 0.62;
+    el.crate.style.setProperty("--scrub-zone", scrubZone().toFixed(1) + "px");
     for (var i = 0; i < covers.length; i++) {
       var node = covers[i];
+      /* The shortest way round the ring from the active cover to this one,
+         which may run forwards past the end of the list. That is what puts
+         A one step past Z instead of a wall. */
       var offset = i - state.active;
+      if (count > 1) {
+        offset = ((offset % count) + count) % count;
+        if (offset > count / 2) offset -= count;
+      }
       var abs = Math.abs(offset);
       var sign = offset < 0 ? -1 : 1;
       var hidden = abs > VISIBLE;
@@ -252,17 +290,42 @@
       node.style.zIndex = String(200 - abs);
       var img = node.querySelector(".sleeve img");
       var record = state.list[i];
-      if (img && abs <= 2 && record.cover && img.getAttribute("src") !== record.cover) {
+      if (!state.fast && img && abs <= 2 && record.cover && img.getAttribute("src") !== record.cover) {
         img.setAttribute("src", record.cover);
       }
     }
   }
 
+  /* The section letter behind the covers. Shelf order only, for the same
+     reason the divider tabs are. */
+  function renderMarker(record) {
+    var section = record && state.sort === "shelf" ? record.section : null;
+    el.marker.hidden = !section;
+    if (!section) return;
+    el.marker.classList.toggle("is-word", section.length > 2);
+    el.markerText.textContent = section;
+  }
+
+  var restTimer = null;
+
+  /* "Moving" is what raises the dividers and the letter. It lasts a beat
+     past the last step so a slow flip through still shows them. */
+  function markMoving() {
+    document.body.classList.add("is-moving");
+    clearTimeout(restTimer);
+    restTimer = setTimeout(function () {
+      document.body.classList.remove("is-moving");
+    }, REST_MS);
+  }
+
   function renderNow() {
     var record = state.list[state.active];
-    el.now.classList.remove("rise");
-    void el.now.offsetWidth; // restart the animation
-    el.now.classList.add("rise");
+    if (!state.fast) {
+      el.now.classList.remove("rise");
+      void el.now.offsetWidth; // restart the animation
+      el.now.classList.add("rise");
+    }
+    renderMarker(record);
     if (!record) {
       el.nowLabel.textContent = "";
       el.nowTitle.textContent = "";
@@ -277,15 +340,23 @@
     el.nowMeta.textContent = [record.artist, record.year].filter(Boolean).join(" · ");
     el.nowOpen.hidden = false;
     el.position.textContent = (state.active + 1) + " / " + state.list.length;
-    el.prev.disabled = state.active === 0;
-    el.next.disabled = state.active >= state.list.length - 1;
+    // The ring has no ends, so neither arrow is ever the last one.
+    el.prev.disabled = el.next.disabled = state.list.length < 2;
+  }
+
+  /* Any index, wrapped into the list. Z runs into A and A back into Z. */
+  function wrapIndex(i) {
+    var count = state.list.length;
+    if (count < 2) return 0;
+    return ((i % count) + count) % count;
   }
 
   function setActive(i, quiet) {
     if (!state.list.length) return;
-    var next = Math.max(0, Math.min(state.list.length - 1, i));
+    var next = wrapIndex(i);
     if (next === state.active && !quiet) return;
     state.active = next;
+    markMoving();
     layout();
     renderNow();
   }
@@ -395,8 +466,6 @@
     el.search.value = "";
     render();
   });
-  el.prev.addEventListener("click", function () { setActive(state.active - 1); });
-  el.next.addEventListener("click", function () { setActive(state.active + 1); });
   el.nowOpen.addEventListener("click", function () {
     var record = state.list[state.active];
     if (record) openDetail(record);
@@ -418,38 +487,216 @@
     }
   });
 
-  // Drag or swipe to flip through the crate.
-  var dragStartX = null;
-  var dragStartActive = 0;
-  var dragMoved = false;
+  /* ---------- one finger, two jobs ----------
+     Moving it drags the row a cover at a time. Parking it in either edge
+     gutter travels the crate on its own, faster the nearer the edge, which
+     is the only way two hundred records is a short trip. Both feed the same
+     target, so dragging out to the edge and holding there keeps going. */
+
+  var HOLD_MS = 190;    // a tap on an edge cover still just picks that cover
+  var SCRUB_SLOW = 2.5; // records a second at the inner lip of the gutter
+  var SCRUB_FAST = 26;  // records a second hard against the edge
+  var DEAD = 0.06;      // the innermost sliver of the gutter does nothing
+
+  var drag = {
+    id: null,      // the pointer being followed, or null between gestures
+    startX: 0,
+    x: 0,
+    dx: 0,
+    from: 0,       // the active index when the finger went down
+    downAt: 0,
+    moved: false,  // suppresses the click that would open the gatefold
+    scrubbing: false,
+    accum: 0,      // records travelled by the gutter, fractional
+    raf: null,
+    last: 0,
+  };
+
+  /* Wide enough to hit with a thumb, never so wide it swallows the middle. */
+  function scrubZone() {
+    var width = el.carousel.clientWidth || 0;
+    return Math.max(52, Math.min(width * 0.2, 148));
+  }
+
+  /* How hard a gutter is being pushed: -1 hard left, +1 hard right, 0 in the
+     middle. Past the edge of the element counts as all the way. */
+  function edgePush(clientX) {
+    var rect = el.carousel.getBoundingClientRect();
+    if (!rect.width) return 0;
+    var zone = Math.min(scrubZone(), rect.width / 2.2);
+    var x = clientX - rect.left;
+    var push = 0;
+    if (x < zone) push = -(1 - x / zone);
+    else if (x > rect.width - zone) push = 1 - (rect.width - x) / zone;
+    return Math.max(-1, Math.min(1, push));
+  }
+
+  function setHeat(push) {
+    el.scrubLeft.style.setProperty("--heat", push < 0 ? (-push).toFixed(3) : "0");
+    el.scrubRight.style.setProperty("--heat", push > 0 ? push.toFixed(3) : "0");
+  }
+
+  function beginFast() {
+    if (state.fast) return;
+    state.fast = true;
+    el.carousel.classList.add("scrubbing");
+  }
+
+  function endFast() {
+    if (!state.fast) return;
+    state.fast = false;
+    el.carousel.classList.remove("scrubbing");
+    layout(); // the covers beside this one have earned their full-size art
+  }
+
+  function applyDrag() {
+    var first = el.carousel.children[0];
+    var step = Math.max(60, (first ? first.offsetWidth : 300) * 0.35);
+    var target = drag.from - Math.round(drag.dx / step) + Math.round(drag.accum);
+    var next = wrapIndex(target);
+    if (next !== state.active) setActive(next);
+  }
+
+  function scrubTick(now) {
+    if (drag.id === null) {
+      drag.raf = null;
+      setHeat(0);
+      return;
+    }
+    drag.raf = requestAnimationFrame(scrubTick);
+    var seconds = Math.min(0.05, (now - drag.last) / 1000);
+    drag.last = now;
+    var push = edgePush(drag.x);
+    setHeat(push);
+    var force = Math.abs(push);
+    if (force < DEAD || now - drag.downAt < HOLD_MS) {
+      if (drag.scrubbing) {
+        drag.scrubbing = false;
+        endFast();
+      }
+      return;
+    }
+    if (!drag.scrubbing) {
+      drag.scrubbing = true;
+      drag.moved = true;
+      beginFast();
+      // Now the gesture belongs to the crate even if the finger slides off it.
+      try { el.carousel.setPointerCapture(drag.id); } catch (e) { /* not needed */ }
+    }
+    var eased = Math.pow((force - DEAD) / (1 - DEAD), 2.1);
+    var rate = SCRUB_SLOW + (SCRUB_FAST - SCRUB_SLOW) * eased;
+    drag.accum += rate * (push < 0 ? -1 : 1) * seconds;
+    applyDrag();
+  }
+
   el.carousel.addEventListener("pointerdown", function (event) {
     if (event.button !== 0) return;
-    dragStartX = event.clientX;
-    dragStartActive = state.active;
-    dragMoved = false;
+    drag.id = event.pointerId;
+    drag.startX = drag.x = event.clientX;
+    drag.dx = 0;
+    drag.accum = 0;
+    drag.from = state.active;
+    drag.downAt = drag.last = performance.now();
+    drag.moved = false;
+    drag.scrubbing = false;
+    if (drag.raf === null) drag.raf = requestAnimationFrame(scrubTick);
   });
+
   el.carousel.addEventListener("pointermove", function (event) {
-    if (dragStartX === null) return;
-    var dx = event.clientX - dragStartX;
-    if (!dragMoved && Math.abs(dx) > 8) {
-      dragMoved = true;
+    if (drag.id === null || event.pointerId !== drag.id) return;
+    drag.x = event.clientX;
+    drag.dx = event.clientX - drag.startX;
+    if (!drag.moved && Math.abs(drag.dx) > 8) {
+      drag.moved = true;
       el.carousel.classList.add("dragging");
       try { el.carousel.setPointerCapture(event.pointerId); } catch (e) { /* not needed */ }
     }
-    if (!dragMoved) return;
-    var step = Math.max(60, (el.carousel.children[0] ? el.carousel.children[0].offsetWidth : 300) * 0.35);
-    setActive(dragStartActive - Math.round(dx / step), true);
+    if (drag.moved) applyDrag();
   });
-  function endDrag() {
-    if (dragStartX === null) return;
-    dragStartX = null;
+
+  function endDrag(event) {
+    if (drag.id === null) return;
+    if (event && event.pointerId != null && event.pointerId !== drag.id) return;
+    drag.id = null;
+    drag.scrubbing = false;
+    endFast();
     el.carousel.classList.remove("dragging");
+    if (drag.raf !== null) {
+      cancelAnimationFrame(drag.raf);
+      drag.raf = null;
+    }
+    setHeat(0);
     layout();
-    setTimeout(function () { dragMoved = false; }, 0);
+    setTimeout(function () { drag.moved = false; }, 0);
   }
   el.carousel.addEventListener("pointerup", endDrag);
   el.carousel.addEventListener("pointercancel", endDrag);
   el.carousel.addEventListener("pointerleave", endDrag);
+  // A long press in a gutter is a scrub, not a request for the system menu.
+  el.carousel.addEventListener("contextmenu", function (event) { event.preventDefault(); });
+
+  /* An arrow held down does what a finger in a gutter does, for anyone on a
+     mouse: one step, then a run that speeds up. */
+  function holdToRepeat(button, direction) {
+    var raf = null;
+    var downAt = 0;
+    var last = 0;
+    var accum = 0;
+    var repeated = false;
+
+    function step(now) {
+      if (!downAt) {
+        raf = null;
+        return;
+      }
+      raf = requestAnimationFrame(step);
+      var held = now - downAt;
+      if (held < 380) { // a plain click is not a run
+        last = now;
+        return;
+      }
+      var eased = Math.min(1, (held - 380) / 1400);
+      accum += (3 + 21 * eased * eased) * ((now - last) / 1000);
+      last = now;
+      var whole = Math.floor(accum);
+      if (whole < 1) return;
+      accum -= whole;
+      repeated = true;
+      beginFast();
+      setActive(state.active + direction * whole);
+    }
+
+    function release() {
+      if (!downAt) return;
+      downAt = 0;
+      if (raf !== null) {
+        cancelAnimationFrame(raf);
+        raf = null;
+      }
+      endFast();
+    }
+
+    button.addEventListener("pointerdown", function (event) {
+      if (event.button !== 0) return;
+      downAt = last = performance.now();
+      accum = 0;
+      repeated = false;
+      if (raf === null) raf = requestAnimationFrame(step);
+    });
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointerleave", release);
+    button.addEventListener("pointercancel", release);
+    // The click that ends a run would add one step too many.
+    button.addEventListener("click", function () {
+      if (repeated) {
+        repeated = false;
+        return;
+      }
+      setActive(state.active + direction);
+    });
+  }
+  holdToRepeat(el.prev, -1);
+  holdToRepeat(el.next, 1);
 
   var wheelBusy = false;
   el.carousel.addEventListener("wheel", function (event) {
@@ -471,6 +718,8 @@
     .then(function (index) {
       state.index = index;
       render();
+      // Stand the dividers up once on arrival, so they are not a secret.
+      markMoving();
     })
     .catch(function () {
       el.count.textContent = "";

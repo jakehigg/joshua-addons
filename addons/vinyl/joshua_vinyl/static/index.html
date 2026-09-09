@@ -39,7 +39,12 @@
 
 <main class="stage">
   <div class="glow" aria-hidden="true"></div>
-  <section id="carousel" class="carousel coverflow" aria-label="Covers" tabindex="0"></section>
+  <div id="crate" class="crate">
+    <div id="marker" class="marker" aria-hidden="true"><span id="marker-text"></span></div>
+    <section id="carousel" class="carousel coverflow" aria-label="Covers" tabindex="0"></section>
+    <div id="scrub-left" class="scrub scrub-left" aria-hidden="true"><span class="scrub-arrow">&#8249;&#8249;&#8249;</span></div>
+    <div id="scrub-right" class="scrub scrub-right" aria-hidden="true"><span class="scrub-arrow">&#8250;&#8250;&#8250;</span></div>
+  </div>
   <div class="shelf" aria-hidden="true"></div>
   <div id="now" class="now" aria-live="polite">
     <p id="now-label" class="now-label"></p>

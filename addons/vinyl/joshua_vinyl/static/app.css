@@ -21,7 +21,11 @@
      it ignores the header, the caption and the arrows stacked below. The
      `vh` term keeps a tablet or a laptop in landscape from pushing the
      arrows off the bottom. */
-  --cover: clamp(200px, min(56vmin, 38vh), 380px);
+  --cover: clamp(200px, min(54vmin, 35vh), 380px);
+  /* How far a crate divider stands proud of the sleeves. The carousel
+     reserves this much headroom above the covers, so a risen divider never
+     paints over the filter chips. */
+  --tab: calc(var(--cover) * 0.115);
   --display: "Cooper Black", "Arial Rounded MT Bold", "Arial Black", "Trebuchet MS", sans-serif;
   --body: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
   --mono: "Courier New", Courier, monospace;
@@ -228,9 +232,78 @@ button, input, select { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
+/* ---------- the crate: the covers, the section letter, the scrub gutters ---------- */
+
+.crate { position: relative; }
+
+/* The section letter, thrown across the covers. It rises while the row is
+   travelling and sinks when it stops, so a fast scrub always says roughly
+   where you are without anyone reading a single sleeve. It sits in front:
+   behind, an unbroken row of sleeves hides every part of it. */
+.marker {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: var(--display);
+  font-weight: 900;
+  line-height: 0.78;
+  color: var(--mustard);
+  opacity: 0;
+  transform: translateY(12%) scale(0.94);
+  transition: opacity 420ms ease, transform 560ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+.marker span {
+  font-size: calc(var(--cover) * 0.95);
+  /* It lands on album art of any brightness, so it carries its own edge. */
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.85), 0 0 3px rgba(23, 14, 9, 0.6);
+}
+.marker.is-word span {
+  display: block;
+  max-width: 7em;
+  font-size: calc(var(--cover) * 0.19);
+  line-height: 1.05;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+body.is-moving .marker { opacity: 0.26; transform: translateY(0) scale(1); }
+
+/* The speed-scrub gutters. Holding a finger in one travels the crate on its
+   own, faster the closer to the edge; --heat is how hard it is being
+   pushed, and --scrub-zone is the width the script actually measures. */
+.scrub {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--scrub-zone, 18%);
+  z-index: 2;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  opacity: calc(0.1 + 0.9 * var(--heat, 0));
+  transition: opacity 180ms ease;
+}
+.scrub-left { left: 0; background: linear-gradient(90deg, rgba(213, 100, 42, 0.62), rgba(213, 100, 42, 0.3) 45%, transparent); }
+.scrub-right { right: 0; background: linear-gradient(270deg, rgba(213, 100, 42, 0.62), rgba(213, 100, 42, 0.3) 45%, transparent); }
+/* The same chevron as the arrow buttons, three deep: the shape a person
+   already reads as fast forward. */
+.scrub-arrow {
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.12em;
+  color: var(--cream);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+  transform: scale(calc(0.78 + 0.5 * var(--heat, 0)));
+  transition: transform 180ms ease;
+}
+
 .coverflow {
   position: relative;
-  height: calc(var(--cover) * 1.42);
+  z-index: 1;
+  height: calc(var(--cover) * 1.42 + var(--tab));
   perspective: 1100px;
   perspective-origin: 50% 40%;
   touch-action: pan-y;
@@ -243,7 +316,7 @@ button, input, select { font: inherit; color: inherit; }
 .cover {
   position: absolute;
   left: 50%;
-  top: 6%;
+  top: calc(var(--cover) * 0.085 + var(--tab));
   width: var(--cover);
   height: var(--cover);
   margin-left: calc(var(--cover) / -2);
@@ -254,6 +327,56 @@ button, input, select { font: inherit; color: inherit; }
 }
 .cover.is-hidden { opacity: 0; pointer-events: none; }
 .coverflow.dragging .cover { transition: none; }
+/* A fast scrub wants the row chasing the finger, not gliding 560ms behind
+   it. Short and linear reads as one continuous travel. */
+.coverflow.scrubbing .cover { transition: transform 90ms linear; }
+/* An off-stage cover jumps rather than flies. On the ring its slot swaps
+   from one far side to the other at the wrap point, and animating that is
+   invisible work. Last, so it beats the two rules above on a tie. */
+.coverflow .cover.is-hidden { transition: opacity 320ms ease; }
+
+/* A crate divider: the tabbed card that stands proud of the records. It
+   belongs to the first cover of its section, sits behind the sleeve in 3D,
+   and only stands up while the row is moving. At rest it is fully inside
+   the cover box, which the opaque sleeve hides. */
+.cover .divider {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 0;
+  height: 32%;
+  z-index: 1;
+  display: grid;
+  place-items: start center;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #f7ecd4 0%, var(--paper) 30%, var(--paper-dark) 78%, #c4ad81 100%);
+  box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.45) inset;
+  transform: translateZ(-8px) translateY(6%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 480ms cubic-bezier(0.22, 0.9, 0.3, 1), opacity 300ms ease;
+}
+.cover .divider b {
+  font-family: var(--display);
+  font-weight: 900;
+  color: var(--rust);
+  font-size: calc(var(--cover) * 0.115);
+  line-height: 1.05;
+  letter-spacing: 0.03em;
+  padding-top: 3%;
+}
+/* A named section is a phrase, not a letter. Two short lines of small caps,
+   sized to the band that stands above the sleeves rather than to the card,
+   because the rest of the card never leaves the crate. */
+.cover .divider.is-word b {
+  font-size: calc(var(--cover) * 0.042);
+  line-height: 1.12;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 2% 6% 0;
+}
+body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) translateY(-50%); }
 
 .cover .sleeve {
   position: absolute;
@@ -637,7 +760,7 @@ button, input, select { font: inherit; color: inherit; }
    caption moves beside the shelf and the cover is sized from the height
    that is actually left rather than from the smaller viewport side. */
 @media (max-height: 680px) and (orientation: landscape) {
-  :root { --cover: clamp(100px, 33vh, 240px); }
+  :root { --cover: clamp(96px, 30vh, 230px); }
 
   .top {
     padding: 8px 16px 10px;
@@ -667,7 +790,7 @@ button, input, select { font: inherit; color: inherit; }
      edge rather than let the far covers slide under the caption. `clip` on
      one axis leaves the reflection below the shelf untouched, which
      `hidden` would cut off. */
-  .coverflow {
+  .crate {
     grid-column: 1;
     grid-row: 1;
     overflow-x: clip;
@@ -729,7 +852,7 @@ button, input, select { font: inherit; color: inherit; }
 /* A short portrait window (a small phone, or the browser chrome eating the
    screen) needs the same restraint without the two-column split. */
 @media (max-height: 700px) and (orientation: portrait) {
-  :root { --cover: clamp(140px, 31vh, 300px); }
+  :root { --cover: clamp(134px, 28vh, 290px); }
   .top { padding: 8px 16px 8px; gap: 8px 16px; }
   .wordmark { font-size: clamp(1.6rem, 5.6vw, 2.4rem); }
   .count { display: none; }
@@ -744,6 +867,9 @@ button, input, select { font: inherit; color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .cover, .cover .disc, .chip, .arrow, .now-open { transition: none; }
+  .cover .divider, .marker, .scrub, .scrub-arrow { transition: none; }
+  .cover .divider { transform: translateZ(-8px) translateY(-50%); }
+  .marker { transform: none; }
   .cover.is-active .disc { animation: none; }
   .now.rise > * { animation: none; }
   .detail[open] { animation: none; }
