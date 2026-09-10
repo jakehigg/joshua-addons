@@ -196,3 +196,34 @@ def test_the_reason_falls_back_to_what_the_record_gives() -> None:
     assert result["record"]["id"] == 2
     assert "Folk" in result["reason"]
     assert "section N" in result["reason"]
+
+
+def test_owned_recognizes_the_same_pressing() -> None:
+    result = query.owned(MADE_UP, release_id=1)
+    assert result["owned"] is True
+    assert result["how"] == "the same pressing"
+
+
+def test_owned_recognizes_the_same_album_in_another_pressing() -> None:
+    index = {"records": [{**MADE_UP["records"][0], "master": 77}]}
+    result = query.owned(index, master_id=77)
+    assert result["owned"] is True
+    assert "different pressing" in result["how"]
+
+
+def test_owned_matches_the_artist_and_the_title_together() -> None:
+    result = query.owned(MADE_UP, artist="Massive Attack", title="Blue Lines")
+    assert result["owned"] is True
+    assert result["copies"][0]["id"] == 1
+
+
+def test_a_title_alone_is_a_maybe_and_never_a_yes() -> None:
+    result = query.owned(MADE_UP, title="Blue Lines")
+    assert result["owned"] is False
+    assert result["maybe"] is True
+    assert result["copies"]
+
+
+def test_owned_says_no_when_nothing_matches() -> None:
+    result = query.owned(MADE_UP, artist="Miles Davis", title="Kind Of Blue")
+    assert result == {"owned": False, "how": "nothing matched", "copies": []}

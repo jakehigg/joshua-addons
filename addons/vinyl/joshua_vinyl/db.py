@@ -18,6 +18,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS albums (
     discogs_release_id INTEGER PRIMARY KEY,
     instance_id INTEGER,
+    master_id INTEGER,
     artist TEXT NOT NULL,
     artist_sort TEXT NOT NULL,
     artist_sort_source TEXT NOT NULL,
@@ -88,6 +89,10 @@ LIST_COLUMNS = ("genres", "styles", "facets")
 # when the new row has none, so a failed release fetch loses nothing.
 KEPT_COLUMNS = ("country", "notes")
 
+# A column the schema gained after the first release. A database made by an
+# earlier version is opened, not rebuilt, so each one is added if it is absent.
+ADDED_COLUMNS = (("master_id", "INTEGER"),)
+
 
 def connect(path: Path) -> sqlite3.Connection:
     """Open (and create) the database at ``path`` with the schema applied."""
@@ -95,7 +100,17 @@ def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _add_missing_columns(conn)
     return conn
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Add a column a later version needs to a database an earlier one made."""
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(albums)")}
+    for column, kind in ADDED_COLUMNS:
+        if column not in have:
+            conn.execute(f"ALTER TABLE albums ADD COLUMN {column} {kind}")
+    conn.commit()
 
 
 def upsert_album(conn: sqlite3.Connection, album: dict[str, Any]) -> None:
@@ -244,3 +259,14 @@ def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
 
 def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+
+
+def collection_ids(conn: sqlite3.Connection) -> tuple[set[int], set[int]]:
+    """Every release id in the collection, and every master id it knows."""
+    releases: set[int] = set()
+    masters: set[int] = set()
+    for row in conn.execute("SELECT discogs_release_id, master_id FROM albums"):
+        releases.add(int(row["discogs_release_id"]))
+        if row["master_id"]:
+            masters.add(int(row["master_id"]))
+    return releases, masters

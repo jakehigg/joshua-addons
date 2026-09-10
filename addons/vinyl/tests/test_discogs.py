@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 
 import httpx
 import pytest
@@ -136,3 +137,85 @@ def test_the_throttle_waits_between_requests() -> None:
     client.release(1)
     client.release(2)
     assert waited == [1.0]
+
+
+def test_search_asks_for_releases_and_drops_an_empty_field() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"results": [{"id": 1}]})
+
+    results = _client(handler).search(barcode="602567725817", catno=None, artist="")
+    assert results == [{"id": 1}]
+    assert seen[0].url.params["type"] == "release"
+    assert seen[0].url.params["barcode"] == "602567725817"
+    assert "catno" not in seen[0].url.params
+    assert "artist" not in seen[0].url.params
+
+
+def test_the_collection_fields_come_back_as_a_list() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"fields": [{"id": 3, "name": "Notes"}]})
+
+    assert _client(handler).fields("example-user") == [{"id": 3, "name": "Notes"}]
+
+
+def test_adding_a_release_posts_to_the_folder() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(201, json={"instance_id": 42})
+
+    result = _client(handler).add_release("example-user", 1, 7823049)
+    assert result == {"instance_id": 42}
+    assert seen[0].method == "POST"
+    assert seen[0].url.path == "/users/example-user/collection/folders/1/releases/7823049"
+
+
+def test_folder_zero_cannot_take_an_add() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover — never called
+        raise AssertionError("no request should reach discogs")
+
+    with pytest.raises(discogs.DiscogsError, match="folder 0"):
+        _client(handler).add_release("example-user", 0, 7823049)
+
+
+def test_a_field_value_goes_in_the_body() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(204)
+
+    _client(handler).set_field("example-user", 1, 7823049, 42, 3, "a note")
+    assert seen[0].method == "POST"
+    assert json.loads(seen[0].content) == {"value": "a note"}
+    assert "value" not in seen[0].url.params
+
+
+def test_a_failed_write_is_not_retried() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(500, text="server error")
+
+    with pytest.raises(discogs.DiscogsError):
+        _client(handler).add_release("example-user", 1, 7823049)
+    assert len(seen) == 1
+
+
+def test_the_versions_of_one_master_come_back() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"versions": [{"id": 1}, {"id": 2}]})
+
+    assert len(_client(handler).master_versions(3986)) == 2
+
+
+def test_the_collection_folders_come_back() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"folders": [{"id": 0, "name": "All"}]})
+
+    assert _client(handler).folders("example-user") == [{"id": 0, "name": "All"}]

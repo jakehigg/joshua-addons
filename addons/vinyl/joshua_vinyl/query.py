@@ -201,3 +201,56 @@ def pick(
         "pool": len(pool),
         "reason": _reason(chosen, genre=genre),
     }
+
+
+def owned(
+    index: dict[str, Any],
+    *,
+    artist: str | None = None,
+    title: str | None = None,
+    release_id: int | None = None,
+    master_id: int | None = None,
+) -> dict[str, Any]:
+    """Is this album in the collection already? The question asked in a shop.
+
+    Four ways to be sure, in order: the release id, the master id (the same
+    album in another pressing), the artist and title together, and the title
+    alone. The last one is a maybe, never a yes, because two records can
+    share a title.
+    """
+    records = index.get("records", [])
+    wanted_title = normalize(title) if title else None
+    wanted_artist = normalize(artist) if artist else None
+
+    def answer(how: str, found: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "owned": bool(found),
+            "how": how,
+            "copies": [brief(record) for record in found[:MAX_LIMIT]],
+        }
+
+    if release_id:
+        found = [record for record in records if record.get("id") == int(release_id)]
+        if found:
+            return answer("the same pressing", found)
+    if master_id:
+        found = [record for record in records if record.get("master") == int(master_id)]
+        if found:
+            return answer("the same album, a different pressing", found)
+    if wanted_title and wanted_artist:
+        found = [
+            record
+            for record in records
+            if normalize(record.get("title", "")) == wanted_title
+            and wanted_artist in normalize(record.get("artist", ""))
+        ]
+        if found:
+            return answer("the artist and the title", found)
+    if wanted_title:
+        found = [record for record in records if wanted_title in normalize(record.get("title", ""))]
+        if found:
+            result = answer("the title alone, so check the artist", found)
+            result["owned"] = False
+            result["maybe"] = True
+            return result
+    return {"owned": False, "how": "nothing matched", "copies": []}

@@ -138,6 +138,7 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "discogs_release_id": int(info["id"]),
         "instance_id": item.get("instance_id"),
+        "master_id": int(info["master_id"]) if info.get("master_id") else None,
         "artist": _join_artists(artists) or primary,
         "primary_artist": primary,
         "sort_artist": sort_artist,
@@ -261,6 +262,7 @@ def album_from_item(
     return {
         "discogs_release_id": release_id,
         "instance_id": fields["instance_id"],
+        "master_id": fields["master_id"],
         "artist": fields["artist"],
         "artist_sort": sort_name,
         "artist_sort_source": source,

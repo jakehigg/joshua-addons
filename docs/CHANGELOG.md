@@ -15,10 +15,19 @@ releases, with the images and the packaged chart, are at
   writes a static bundle. A page at `/` shows the covers on a 3D shelf with
   a genre filter, search, sort orders, and a detail view that names the
   shelf section and lists the tracks. The facet list and the special sections after Z
-  come from a JSON file the operator keeps. Six read-only MCP tools let
+  come from a JSON file the operator keeps. Seven read-only MCP tools let
   the agent answer a question about the collection: `vinyl_search`,
   `vinyl_details`, `vinyl_stats`, `vinyl_recent`, `vinyl_pick`, and
-  `vinyl_status`.
+  `vinyl_status`, and `vinyl_owned` for the question asked in a shop.
+  Three more reach Discogs for one record at a time: `vinyl_lookup` finds
+  at most three candidate releases from what a person reads off the label,
+  with the format line, the release notes, the country and the year of each;
+  `vinyl_label_images` answers with the disc labels as pictures, to compare
+  against the photograph; and `vinyl_add` puts one record in the collection.
+  `vinyl_add` plans first and writes only on a second call with `confirm`,
+  marks a pressing it cannot confirm in the collection note, refuses a
+  record the collection already holds, and writes the bundle again so the
+  record is on the shelf page at once.
   `/`, `/bundle`, `/art`, and `/api/status` are open; `/mcp` takes the
   bearer token.
 

@@ -65,22 +65,88 @@ an image from Discogs.
 ## The tools
 
 The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000, and
-answers `GET /healthz` with `{"ok": true}`. Six tools let the agent answer a
-question about the collection. Each one reads the bundle, so an answer needs
-no network and no database query.
+answers `GET /healthz` with `{"ok": true}`. Ten tools let the agent answer a
+question about the collection, and add a record to it.
+
+Six read the shelf. Each one reads the static bundle, so an answer needs no
+network and no database query.
 
 | Tool | What it answers |
 |---|---|
 | `vinyl_search(query, genre, decade, year, section, limit)` | "Do we have Rumours?" A query matches the title, the artist, or the label, and tolerates a missing "The". A filter with no query lists a part of the collection. |
+| `vinyl_owned(artist, title, release_id, master_id)` | "Do we own this already?" The question asked in a shop. A match on the title alone is a maybe, never a yes. |
 | `vinyl_details(record_id)` | "What is that pressing?" The shelf section, the label and catalog number, the format, the country, the tracklist, and the last price with the date it was checked. |
 | `vinyl_stats()` | "How many records do we have?" The count, the genres, the decades, the sections, and the year of the oldest and the newest pressing. |
 | `vinyl_recent(limit)` | "What is new?" The records added most recently, newest first. |
 | `vinyl_pick(genre, decade, section, exclude_ids)` | "What do we put on?" One record the house owns, with a reason and the shelf section. |
 | `vinyl_status()` | The record count, the time of the last sync, and its result. `GET /api/status` is the same report over plain HTTP. |
 
-Every tool is read-only. No tool writes to Discogs, and no tool changes the
-collection. Before the first sync, each one reports that the collection is
-not synced yet.
+Three reach Discogs, so they need `DISCOGS_TOKEN` and `DISCOGS_USERNAME`.
+Without them the addon still browses and answers; these three say what is
+missing.
+
+| Tool | What it does |
+|---|---|
+| `vinyl_lookup(artist, title, catalog_no, barcode, label, matrix, year, country, tracks)` | Finds at most three candidate releases from what a person read on the record, each with the full format line, the release notes, the country and the year. |
+| `vinyl_label_images(release_id, limit)` | Answers with the disc labels Discogs holds for one release, as pictures, to compare against the photograph. |
+| `vinyl_add(release_id, note, pressing_confirmed, confirm, allow_duplicate)` | Plans an add, and writes it on a second call with `confirm`. |
+
+`vinyl_add` is the only tool that writes anything, and it writes nothing
+without `confirm`.
+
+## Add one record
+
+The path for a record bought at a yard sale, or found in a shop. It is not
+the path for a whole collection; that is a batch job and it belongs in a
+program of its own.
+
+1. **Ask for a photograph of the disc label.** The label carries the catalog
+   number, the label name, the pressing details and the matrix. Cover art
+   identifies nothing: a bowler-hat sleeve once read as the wrong album, and
+   the label photograph settled it. A back cover is the second choice, and it
+   is enough to name the album.
+2. **Read the photograph and record what is printed**, not what you know.
+   The catalog number goes in as printed, including a leading X. Write the
+   track titles as well.
+3. `vinyl_owned` first when the record is not bought yet. It answers from the
+   shelf with no network.
+4. `vinyl_lookup` with every field that was read.
+5. `vinyl_label_images` on the candidates, and compare the pictures against
+   the photograph. Layout first, then text, then colour. This is the check
+   that catches most wrong picks, and no automatic test replaces it.
+6. `vinyl_add` with no `confirm`, and show the plan to the person.
+7. `vinyl_add` again with `confirm` once they agree.
+
+What the answers are for, and what each one hides:
+
+- **A catalog number or a barcode that finds nothing is a misread**, not a
+  rare pressing. Read the photograph again.
+- **A barcode that fails its own check digit is dropped** with a reason, and
+  the search falls back to the catalog number. A US sleeve of the 1980s often
+  prints eleven digits and no check digit; that one cannot be checked and is
+  searched as it is.
+- **The format line and the release notes decide more records than the
+  match does.** Picture Disc, Test Pressing and Quadraphonic are usually the
+  wrong pressing, and a promotional copy hides in the notes while the format
+  line stays ordinary. Both are reported for every candidate.
+- **A tracklist never names a release.** It is the one thing a wrong match
+  cannot fake, so a track that is not on the candidate is a reason to reject
+  it.
+- **A pressing that is not confirmed says so in the collection note.**
+  `vinyl_add` writes `pressing-unconfirmed.` at the front unless
+  `pressing_confirmed` is set, which is how a later pass finds the records
+  that still need one. Set it only for a barcode, a matrix, or a label
+  picture that matches.
+- **A note is cut to 255 characters.** Discogs refuses a longer one, and it
+  refuses it after the record is already in the collection. Put the
+  important half first.
+- **A record already in the collection is refused** unless
+  `allow_duplicate` is set. Two copies of one album can be two pressings, so
+  the guard asks rather than decides.
+
+After a write the release goes into the local database and the bundle is
+written again, so the record is on the shelf page at once. The answer names
+the section to file it under.
 
 To give the tools to Joshua, put the addon in the `mcp` section of
 `joshua.yaml` as a `type: http` upstream:
@@ -96,8 +162,8 @@ mcp:
 ```
 
 `allow: all` gives the tools to every person, and to a group turn, which
-arrives with no person. The collection is shared and no tool changes it, so
-this is the same posture as the browse interface.
+arrives with no person. The collection is shared, and the one tool that
+writes asks first, so this is the same posture as the browse interface.
 
 ## Run a sync
 
@@ -119,8 +185,8 @@ minutes. A record whose release request fails keeps what it had.
 | Variable | Default | What it does |
 |---|---|---|
 | `ADDON_TOKEN` | not set | When set, every request to `/mcp` needs the header `Authorization: Bearer <ADDON_TOKEN>`. A missing or wrong token gets 401. `/healthz`, `/api/status`, the bundle, the art, and the page at `/` stay open. When `ADDON_TOKEN` is not set, the addon checks no token; the docker network is the boundary. |
-| `DISCOGS_TOKEN` | not set | A Discogs personal access token. The sync needs it. Without it, the nightly sync stays off and the addon serves the last bundle. |
-| `DISCOGS_USERNAME` | not set | The Discogs account whose collection to read. When it is not set, the sync asks Discogs which account the token belongs to. |
+| `DISCOGS_TOKEN` | not set | A Discogs personal access token. The sync, the lookup and the add need it. Without it the nightly sync stays off, the addon serves the last bundle, and the three Discogs tools say what is missing. A token that can add a record must be a personal token of the account that owns the collection. |
+| `DISCOGS_USERNAME` | not set | The Discogs account whose collection to read and add to. When it is not set, the addon asks Discogs which account the token belongs to. |
 | `VINYL_SYNC_TIME` | `03:00` | The local time of the nightly sync, as `HH:MM`. An empty value turns the schedule off. |
 | `VINYL_CURRENCY` | `USD` | The ISO currency code the market price is quoted in. |
 | `VINYL_DATA_DIR` | `/data` | Where the SQLite file, the art cache, the bundle, and `config.json` live. |

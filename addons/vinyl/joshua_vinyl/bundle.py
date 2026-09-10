@@ -47,6 +47,8 @@ def index_record(album: dict[str, Any]) -> dict[str, Any]:
         value = album.get(field)
         if value not in (None, "", []):
             record[field] = value
+    if album.get("master_id"):
+        record["master"] = album["master_id"]
     record["decade"] = _decade(album.get("year"))
     record["facet"] = album.get("primary_facet")
     record["section"] = album["shelf_section"]

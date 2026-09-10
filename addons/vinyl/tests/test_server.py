@@ -159,7 +159,11 @@ async def test_the_tool_list_is_the_documented_set(app_factory, synced: Path) ->
     async with mcp_session(app) as session:
         names = sorted(tool.name for tool in (await session.list_tools()).tools)
     assert names == [
+        "vinyl_add",
         "vinyl_details",
+        "vinyl_label_images",
+        "vinyl_lookup",
+        "vinyl_owned",
         "vinyl_pick",
         "vinyl_recent",
         "vinyl_search",
@@ -241,3 +245,112 @@ async def test_the_read_tools_need_the_token_too(app_factory, synced: Path) -> N
             },
         )
     assert response.status_code == 401
+
+
+class _FakeMB:
+    def close(self) -> None:
+        return None
+
+    def search_artist(self, name: str):
+        return None
+
+
+@pytest.fixture
+def write_app(app_factory, monkeypatch, data_dir: Path, fake_write_discogs):
+    """An app whose Discogs client is the fake, with a token configured."""
+    from joshua_vinyl import server as server_module
+
+    monkeypatch.setattr(server_module, "DiscogsClient", lambda *a, **k: fake_write_discogs)
+    monkeypatch.setattr(server_module, "MusicBrainzClient", lambda *a, **k: _FakeMB())
+    return app_factory(
+        None, DISCOGS_TOKEN="a-token", DISCOGS_USERNAME="example-user", VINYL_SYNC_TIME=""
+    )
+
+
+async def test_owned_tool_finds_a_record_on_the_shelf(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        found = (
+            await session.call_tool("vinyl_search", {"query": "abbey road"})
+        ).structured_content["records"][0]
+        result = await session.call_tool(
+            "vinyl_owned", {"artist": "The Beatles", "title": found["title"]}
+        )
+    assert result.structured_content["owned"] is True
+    assert result.structured_content["copies"][0]["section"] == "B"
+
+
+async def test_owned_tool_says_no_for_a_record_the_house_lacks(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool(
+            "vinyl_owned", {"artist": "Miles Davis", "title": "Kind Of Blue"}
+        )
+    assert result.structured_content["owned"] is False
+
+
+async def test_owned_tool_needs_no_discogs_token(app_factory, synced: Path) -> None:
+    app = app_factory(None, DISCOGS_TOKEN="")
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_owned", {"title": "Abbey Road"})
+    assert result.is_error is not True
+
+
+async def test_a_lookup_without_a_token_says_which_settings_are_missing(
+    app_factory, synced: Path
+) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_lookup", {"artist": "Bob Dylan"})
+    assert result.is_error is True
+    assert "DISCOGS_TOKEN" in str(result.content[0].text)
+
+
+async def test_an_add_without_a_token_is_refused(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_add", {"release_id": 1, "confirm": True})
+    assert result.is_error is True
+
+
+async def test_the_lookup_tool_answers_with_candidates(
+    write_app, synced: Path, fake_write_discogs
+) -> None:
+    fake_write_discogs.by("catno", [7590859])
+    async with mcp_session(write_app) as session:
+        result = await session.call_tool("vinyl_lookup", {"catalog_no": "EVR 108"})
+    candidate = result.structured_content["candidates"][0]
+    assert candidate["release_id"] == 7590859
+    assert candidate["format_warnings"] == ["picture disc"]
+    assert candidate["already_in_collection"] is True
+
+
+async def test_the_lookup_tool_reports_a_matrix_it_cannot_settle(
+    write_app, synced: Path, fake_write_discogs
+) -> None:
+    fake_write_discogs.by("catno", [7590859])
+    async with mcp_session(write_app) as session:
+        result = await session.call_tool(
+            "vinyl_lookup", {"catalog_no": "EVR 108", "matrix": "ST-CTN-701881CTH"}
+        )
+    assert result.structured_content["matrix_read"] == "ST-CTN-701881CTH"
+    assert "does not settle it" in result.structured_content["matrix_note"]
+
+
+async def test_the_label_images_come_back_as_pictures(
+    write_app, synced: Path, fake_write_discogs
+) -> None:
+    async with mcp_session(write_app) as session:
+        result = await session.call_tool("vinyl_label_images", {"release_id": 33300852})
+    kinds = {block.type for block in result.content}
+    assert kinds == {"image"}
+    assert result.content[0].mime_type == "image/jpeg"
+
+
+async def test_an_add_through_the_tool_plans_first(
+    write_app, synced: Path, fake_write_discogs
+) -> None:
+    async with mcp_session(write_app) as session:
+        result = await session.call_tool("vinyl_add", {"release_id": 24194891})
+    assert result.structured_content["written"] is False
+    assert fake_write_discogs.added == []
