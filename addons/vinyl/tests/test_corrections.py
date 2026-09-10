@@ -166,3 +166,30 @@ async def test_the_server_imports_the_corrections_at_startup(
     async with mcp_session(app) as session:
         result = await session.call_tool("vinyl_corrections", {})
     assert result.structured_content["sort_names"]["Glenn Gould"] == "Bach, Johann Sebastian"
+
+
+def test_a_record_from_an_older_database_keeps_its_section(synced_dir: Path) -> None:
+    """The traits column is what re-filing needs; without it, nothing is guessed."""
+    conn = db.connect(synced_dir / "vinyl.db")
+    try:
+        conn.execute("UPDATE albums SET traits = NULL")
+        conn.commit()
+        before = {a["discogs_release_id"]: a["shelf_section"] for a in db.list_albums(conn)}
+        assert db.list_albums(conn)[0]["traits"] is None
+        moved = refile_albums(conn, ShelfConfig())
+        after = {a["discogs_release_id"]: a["shelf_section"] for a in db.list_albums(conn)}
+    finally:
+        conn.close()
+    assert moved == []
+    assert before == after
+
+
+def test_a_correction_still_moves_a_record_from_an_older_database(synced_dir: Path) -> None:
+    conn = db.connect(synced_dir / "vinyl.db")
+    try:
+        conn.execute("UPDATE albums SET traits = NULL")
+        conn.commit()
+    finally:
+        conn.close()
+    _correct(synced_dir, db.SECTION, str(NUGGETS), "N", release_ids=[NUGGETS])
+    assert _section_of(synced_dir, NUGGETS) == "N"

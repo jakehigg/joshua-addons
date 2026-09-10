@@ -100,6 +100,9 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 LIST_COLUMNS = ("genres", "styles", "facets", "traits")
+# A list column the first version already wrote. An empty value is an empty
+# list, not an unanswered question.
+ALWAYS_LIST = ("genres", "styles", "facets")
 
 # A column the collection item does not carry. A sync keeps the value it has
 # when the new row has none, so a failed release fetch loses nothing.
@@ -174,7 +177,10 @@ def delete_albums_not_in(conn: sqlite3.Connection, keep: set[int]) -> int:
 def _album_from_row(row: sqlite3.Row) -> dict[str, Any]:
     album = dict(row)
     for column in LIST_COLUMNS:
-        album[column] = json.loads(album[column] or "[]")
+        # A column a database made by an earlier version never held stays None.
+        # An empty list means the sync found none; None means nobody has looked.
+        stored = album[column]
+        album[column] = json.loads(stored) if stored else ([] if column in ALWAYS_LIST else None)
     album["is_compilation"] = bool(album["is_compilation"])
     album["is_soundtrack"] = bool(album["is_soundtrack"])
     return album
