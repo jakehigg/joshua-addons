@@ -34,7 +34,7 @@ from joshua_vinyl.discogs import DiscogsClient
 from joshua_vinyl.log import get_logger
 from joshua_vinyl.musicbrainz import MusicBrainzClient
 from joshua_vinyl.scheduler import run_daily
-from joshua_vinyl.sync import META_LAST_RESULT, META_LAST_SYNC
+from joshua_vinyl.sync import META_LAST_RESULT, META_LAST_SYNC, migrate_overrides
 
 logger = get_logger("vinyl")
 
@@ -81,8 +81,20 @@ def _scheduled_sync() -> None:
 
 @asynccontextmanager
 async def lifespan(server: MCPServer) -> AsyncIterator[dict[str, Any]]:
-    """Start the nightly sync loop when a schedule and a token are both set."""
+    """Import the corrections once, then start the nightly sync loop.
+
+    The import runs here as well as in the sync, because an addon that serves
+    a copied bundle and never syncs still has to take the corrections out of
+    the rules file before a tool files a record again.
+    """
     settings = _current_settings()
+    conn = db.connect(settings.db_path)
+    try:
+        migrate_overrides(conn, load_shelf_config(settings.config_path), now=datetime.now(UTC))
+    except Exception:  # noqa: BLE001 — a bad rules file must not stop the page
+        logger.warning({"message": "could not import the corrections from the rules file"})
+    finally:
+        conn.close()
     task: asyncio.Task[int] | None = None
     if settings.sync_time and settings.discogs_token:
         task = asyncio.create_task(run_daily(settings.sync_time, _scheduled_sync))

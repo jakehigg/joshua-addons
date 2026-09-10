@@ -149,3 +149,20 @@ def test_refiling_writes_only_what_changed(synced_dir: Path) -> None:
         assert refile_albums(conn, ShelfConfig()) == []
     finally:
         conn.close()
+
+
+async def test_the_server_imports_the_corrections_at_startup(
+    app_factory, data_dir: Path, monkeypatch
+) -> None:
+    """An addon that serves a copied bundle and never syncs still needs them."""
+    from conftest import mcp_session
+
+    rules = data_dir / "shelf.json"
+    rules.write_text(
+        '{"overrides": {"artist_sort": {"Glenn Gould": "Bach, Johann Sebastian"}}}',
+        encoding="utf-8",
+    )
+    app = app_factory(None, VINYL_CONFIG=str(rules))
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_corrections", {})
+    assert result.structured_content["sort_names"]["Glenn Gould"] == "Bach, Johann Sebastian"
