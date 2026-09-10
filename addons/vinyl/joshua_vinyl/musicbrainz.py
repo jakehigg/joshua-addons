@@ -51,6 +51,16 @@ def strip_discogs_suffix(name: str) -> str:
     return re.sub(r"\s*\(\d+\)$", "", name.strip()).strip()
 
 
+def _escape(text: str) -> str:
+    """Make a name safe inside a Lucene phrase.
+
+    A name with a double quote in it (`"Weird Al" Yankovic`) closes the
+    phrase early and the whole query is malformed, so the artist never
+    resolves and costs a request every night.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def best_match(name: str, artists: list[dict[str, Any]]) -> ArtistSort | None:
     """The first result that scores at least ``MIN_SCORE`` and has the same name."""
     wanted = normalize_name(name)
@@ -100,10 +110,17 @@ class MusicBrainzClient:
     def search_artist(self, name: str) -> ArtistSort | None:
         """The best MusicBrainz match for ``name``, or ``None`` when there is no safe match."""
         query = strip_discogs_suffix(name)
-        params = {"query": f'artist:"{query}"', "fmt": "json", "limit": 5}
+        params = {"query": f'artist:"{_escape(query)}"', "fmt": "json", "limit": 5}
         for attempt in range(RETRIES + 1):
             self._throttle.wait()
-            response = self._client.get("/artist/", params=params)
+            try:
+                response = self._client.get("/artist/", params=params)
+            except httpx.HTTPError as error:
+                # A name this service cannot answer for must not stop a sync
+                # that Discogs answered. The artist keeps its Discogs name for
+                # this run and is asked for again tomorrow.
+                logger.warning({"message": "musicbrainz unreachable", "error": str(error)})
+                return None
             if response.status_code == 503 and attempt < RETRIES:
                 delay = 3.0 * (attempt + 1)
                 logger.warning({"message": "musicbrainz busy", "retry_after": delay})

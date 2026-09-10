@@ -12,7 +12,9 @@ import json
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from joshua_vinyl.scheduler import parse_time
 
 DATA_DIR_ENV = "VINYL_DATA_DIR"
 DEFAULT_DATA_DIR = "/data"
@@ -59,6 +61,10 @@ def settings_from_env() -> Settings:
     data_dir = Path(os.environ.get(DATA_DIR_ENV) or DEFAULT_DATA_DIR)
     config_path = Path(os.environ.get(CONFIG_ENV) or (data_dir / "config.json"))
     sync_time = os.environ.get(SYNC_TIME_ENV, DEFAULT_SYNC_TIME).strip() or None
+    if sync_time is not None:
+        # Checked here so the process stops at startup. Left to the scheduler,
+        # the error kills the background task while the health check stays green.
+        parse_time(sync_time)
     return Settings(
         data_dir=data_dir,
         static_dir=Path(os.environ.get(STATIC_DIR_ENV) or DEFAULT_STATIC_DIR),
@@ -110,6 +116,23 @@ class ShelfConfig(BaseModel):
         ]
     )
     overrides: Overrides = Field(default_factory=Overrides)
+
+    @model_validator(mode="after")
+    def _known_sections(self) -> ShelfConfig:
+        """Every section override must name a section that exists.
+
+        A typo would otherwise make a phantom divider after Z that no record
+        can be filed behind, and the sync would say nothing about it.
+        """
+        # Imported here: shelf reads this module, so the dependency only runs
+        # one way at import time.
+        from joshua_vinyl.shelf import section_order
+
+        known = set(section_order(self.sections))
+        unknown = sorted(set(self.overrides.section.values()) - known)
+        if unknown:
+            raise ValueError(f"section override names no section: {unknown}")
+        return self
 
     @field_validator("sections")
     @classmethod

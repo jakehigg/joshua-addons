@@ -12,6 +12,12 @@
 # `vinyl-data` named volume at /data. To keep the art on a network share,
 # bind-mount that share over /data/art in your own override file.
 #
+# The shelf rules (the facet list, the sections after Z, the overrides) are a
+# JSON file. With no file the defaults apply. To keep your own, put it beside
+# this compose file and uncomment the bind mount and VINYL_CONFIG below. A
+# read-only mount keeps it out of the data volume, so it survives a wipe of
+# the cache and stays in version control with the rest of your setup.
+#
 # Network: the addon joins `joshua`, the external network joshua-ai's own
 # compose file creates. The gateway reaches this addon at
 # `http://vinyl:8000/mcp`. When joshua-ai is not up, the external network is
@@ -29,8 +35,12 @@ services:
       VINYL_CURRENCY: ${VINYL_CURRENCY:-USD}
       VINYL_USER_AGENT: ${VINYL_USER_AGENT:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Uncomment with the volume below to keep your own shelf rules.
+      # VINYL_CONFIG: /etc/joshua-addon/shelf.json
+      TZ: ${TZ:-UTC}
     volumes:
       - vinyl-data:/data
+      # - ./shelf.json:/etc/joshua-addon/shelf.json:ro
     # Not published on the host. Only the gateway, over the shared network,
     # reaches this addon. To browse from a phone, publish the port in your
     # own override file, never here:

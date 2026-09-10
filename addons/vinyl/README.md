@@ -97,6 +97,7 @@ minutes. A record whose release request fails keeps what it had.
 | `VINYL_CONFIG` | `<VINYL_DATA_DIR>/config.json` | The shelf rules file (below). A missing file means the defaults. |
 | `VINYL_STATIC_DIR` | the package's `static/` directory | Where the page is served from. |
 | `VINYL_USER_AGENT` | `joshua-vinyl/0.1 (+https://github.com/jakehigg/joshua-addons)` | The `User-Agent` sent to Discogs and MusicBrainz. Both refuse a request without a descriptive one. |
+| `TZ` | `UTC` | The timezone `VINYL_SYNC_TIME` is read in. A container has no timezone of its own, so without this a sync time of `03:00` runs at 03:00 UTC. |
 | `LOG_LEVEL` | `INFO` | The log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |
 
 ## The shelf rules file
@@ -135,6 +136,22 @@ a JSON file at `VINYL_CONFIG`, not in code. This is the default, written out:
   as a string, to a fixed value.
 
 Run a sync after you change the file.
+
+
+### How each deployment path supplies it
+
+With compose, put the file beside `docker-compose.yml` and uncomment the
+bind mount and `VINYL_CONFIG` there. A read-only mount keeps the file out of
+the data volume, so it survives a wipe of the cache.
+
+With the chart, `addons/vinyl/values.yaml` writes the file to a ConfigMap and
+mounts it read-only, and sets `VINYL_CONFIG` to the mount path. Edit
+`configFile.content` to keep your own rules, and the file ships with the
+release rather than being copied into a volume by hand.
+
+Set `configFile.enabled` to `false`, or leave `VINYL_CONFIG` unset, and the
+addon reads `config.json` from the data directory instead. A missing file
+means the defaults.
 
 ## Add it to joshua.yaml
 

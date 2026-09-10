@@ -8,6 +8,7 @@ with backoff. Nothing here writes to Discogs.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -21,7 +22,15 @@ logger = get_logger("vinyl.discogs")
 
 BASE_URL = "https://api.discogs.com"
 RATELIMIT_REMAINING = "X-Discogs-Ratelimit-Remaining"
+# A collection path names the account, and an error message reaches the log
+# and the status route, so the name is taken out of it.
+USER_PATH = re.compile(r"/users/[^/]+")
 RETRIES = 3
+
+
+def safe_path(url: str) -> str:
+    """A request path with the account name taken out."""
+    return USER_PATH.sub("/users/…", url)
 
 
 class DiscogsError(RuntimeError):
@@ -73,10 +82,10 @@ class DiscogsClient:
                 self._sleep(2.0 * (attempt + 1))
                 continue
             if response.status_code >= 400:
-                raise DiscogsError(f"discogs {url} returned {response.status_code}")
+                raise DiscogsError(f"discogs {safe_path(url)} returned {response.status_code}")
             logger.debug({"message": "discogs request", "path": url, "remaining": remaining})
             return response
-        raise DiscogsError(f"discogs {url} failed after {RETRIES} retries")
+        raise DiscogsError(f"discogs {safe_path(url)} failed after {RETRIES} retries")
 
     def identity(self) -> dict[str, Any]:
         """The account the token belongs to. Read this to learn the username."""

@@ -18,6 +18,7 @@ release that fails to fetch keeps what it had.
 
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 from collections.abc import Iterable
@@ -226,7 +227,13 @@ def cache_art(
         return relative, False
     art_dir.mkdir(parents=True, exist_ok=True)
     data = discogs.download(url)
-    path.write_bytes(data)
+    if not data:
+        raise ValueError(f"empty image body for release {release_id}")
+    # Written to a temporary name and moved, the way the bundle is. A file cut
+    # short by a crash would otherwise count as cached for good.
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
     return relative, True
 
 
@@ -319,11 +326,55 @@ def run_sync(
     """Run one full sync and write the bundle. Commits as it goes."""
     started = now or datetime.now(UTC)
     result = SyncResult(started_at=started.isoformat(timespec="seconds"))
-    seen: list[int] = []
+    try:
+        return _run(
+            conn,
+            discogs=discogs,
+            musicbrainz=musicbrainz,
+            username=username,
+            config=config,
+            art_dir=art_dir,
+            bundle_dir=bundle_dir,
+            currency=currency,
+            enrich=enrich,
+            now=now,
+            started=started,
+            result=result,
+        )
+    except Exception as error:
+        # The status route reads these two keys. Without this, a revoked token
+        # leaves "ok" and a stale time in place for as long as it keeps failing.
+        db.set_meta(conn, META_LAST_SYNC, datetime.now(UTC).isoformat(timespec="seconds"))
+        db.set_meta(conn, META_LAST_RESULT, f"error: {error}"[:200])
+        conn.commit()
+        logger.error({"message": "sync failed", "error": str(error)[:200]})
+        raise
+
+
+def _run(
+    conn: sqlite3.Connection,
+    *,
+    discogs: CollectionSource,
+    musicbrainz: SortNameSource | None,
+    username: str,
+    config: ShelfConfig,
+    art_dir: Path,
+    bundle_dir: Path,
+    currency: str,
+    enrich: bool,
+    now: datetime | None,
+    started: datetime,
+    result: SyncResult,
+) -> SyncResult:
+    """The sync itself. ``run_sync`` wraps it to record a failure."""
+    # A collection is keyed by instance, so one release can appear twice. The
+    # keys of a dict keep the order and drop the repeat, so the count is right
+    # and the enrich loop fetches each release once.
+    seen: dict[int, None] = {}
     for item in discogs.collection(username):
         album = album_from_item(conn, item, config, musicbrainz, now=started)
         release_id = album["discogs_release_id"]
-        seen.append(release_id)
+        seen[release_id] = None
         if album["artist_sort_source"] == SOURCE_UNRESOLVED:
             result.unresolved_artists.append(album["artist"])
         thumb_url = album.pop("thumb_url")

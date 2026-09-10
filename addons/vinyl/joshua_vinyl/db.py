@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS meta (
 
 LIST_COLUMNS = ("genres", "styles", "facets")
 
+# A column the collection item does not carry. A sync keeps the value it has
+# when the new row has none, so a failed release fetch loses nothing.
+KEPT_COLUMNS = ("country", "notes")
+
 
 def connect(path: Path) -> sqlite3.Connection:
     """Open (and create) the database at ``path`` with the schema applied."""
@@ -95,15 +99,33 @@ def connect(path: Path) -> sqlite3.Connection:
 
 
 def upsert_album(conn: sqlite3.Connection, album: dict[str, Any]) -> None:
-    """Insert or replace one album row. List fields are stored as JSON."""
+    """Insert one album row, or update the columns the collection supplies.
+
+    A collection item does not carry every column. The country comes from
+    the release, and the note is written by hand, so a plain replace would
+    empty both on every sync and lose them for good when the release fetch
+    fails. Those columns keep their value when the new row has none.
+    """
     row = dict(album)
     for column in LIST_COLUMNS:
         row[column] = json.dumps(row.get(column) or [])
     row["is_compilation"] = int(bool(row.get("is_compilation")))
     row["is_soundtrack"] = int(bool(row.get("is_soundtrack")))
-    columns = ", ".join(row)
-    placeholders = ", ".join(f":{key}" for key in row)
-    conn.execute(f"INSERT OR REPLACE INTO albums ({columns}) VALUES ({placeholders})", row)
+    columns = list(row)
+    placeholders = ", ".join(f":{key}" for key in columns)
+    updates = []
+    for column in columns:
+        if column == "discogs_release_id":
+            continue
+        if column in KEPT_COLUMNS:
+            updates.append(f"{column} = COALESCE(excluded.{column}, albums.{column})")
+        else:
+            updates.append(f"{column} = excluded.{column}")
+    conn.execute(
+        f"INSERT INTO albums ({', '.join(columns)}) VALUES ({placeholders}) "
+        f"ON CONFLICT(discogs_release_id) DO UPDATE SET {', '.join(updates)}",
+        row,
+    )
 
 
 def delete_albums_not_in(conn: sqlite3.Connection, keep: set[int]) -> int:

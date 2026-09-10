@@ -1,0 +1,18 @@
+# Mirrors addons/vinyl/values.yaml: persistence for the cache, plus a mounted
+# config file for the shelf rules and the environment variable that points at
+# it. No other file in this directory renders a ConfigMap mount beside a
+# PersistentVolumeClaim, which is the combination this addon needs.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-vinyl
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi
+configFile:
+  enabled: true
+  name: shelf.json
+  mountPath: /etc/joshua-addon/shelf.json
+  content: |
+    { "facets": { "promote": {}, "relabel": {} }, "sections": [], "overrides": {} }
+env:
+  VINYL_CONFIG: /etc/joshua-addon/shelf.json

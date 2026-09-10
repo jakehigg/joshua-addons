@@ -6,6 +6,7 @@
 
   var state = {
     index: null,
+    detailId: null,
     facet: null,
     style: null,
     query: "",
@@ -457,13 +458,21 @@
     renderDetail(record);
     if (typeof el.detail.showModal === "function") el.detail.showModal();
     else el.detail.setAttribute("open", "");
+    // The id the reader is looking at now. A fetch that lands after they have
+    // closed this record and opened another one must not overwrite it.
+    state.detailId = record.id;
     fetch("bundle/detail/" + record.id + ".json", { cache: "no-cache" })
       .then(function (response) { return response.ok ? response.json() : null; })
-      .then(function (detail) { if (detail && el.detail.open) renderDetail(detail); })
+      .then(function (detail) {
+        if (!detail || !el.detail.open) return;
+        if (state.detailId !== detail.id) return;
+        renderDetail(detail);
+      })
       .catch(function () { /* the index entry is already shown */ });
   }
 
   function closeDetail() {
+    state.detailId = null;
     if (el.detail.open) el.detail.close();
   }
 
