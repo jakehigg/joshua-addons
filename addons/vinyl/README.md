@@ -62,12 +62,42 @@ page reads the index once and does every filter, search, and sort in the
 browser. Art is cached under `art/` at two sizes, and the page never loads
 an image from Discogs.
 
-## The tool
+## The tools
 
-`vinyl_status()` reports the record count, the time of the last sync, and
-its result. The addon serves MCP at `POST /mcp` (streamable HTTP) on port
-8000, and answers `GET /healthz` with `{"ok": true}`. `GET /api/status` is
-the same report over plain HTTP.
+The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000, and
+answers `GET /healthz` with `{"ok": true}`. Six tools let the agent answer a
+question about the collection. Each one reads the bundle, so an answer needs
+no network and no database query.
+
+| Tool | What it answers |
+|---|---|
+| `vinyl_search(query, genre, decade, year, section, limit)` | "Do we have Rumours?" A query matches the title, the artist, or the label, and tolerates a missing "The". A filter with no query lists a part of the collection. |
+| `vinyl_details(record_id)` | "What is that pressing?" The shelf section, the label and catalog number, the format, the country, the tracklist, and the last price with the date it was checked. |
+| `vinyl_stats()` | "How many records do we have?" The count, the genres, the decades, the sections, and the year of the oldest and the newest pressing. |
+| `vinyl_recent(limit)` | "What is new?" The records added most recently, newest first. |
+| `vinyl_pick(genre, decade, section, exclude_ids)` | "What do we put on?" One record the house owns, with a reason and the shelf section. |
+| `vinyl_status()` | The record count, the time of the last sync, and its result. `GET /api/status` is the same report over plain HTTP. |
+
+Every tool is read-only. No tool writes to Discogs, and no tool changes the
+collection. Before the first sync, each one reports that the collection is
+not synced yet.
+
+To give the tools to Joshua, put the addon in the `mcp` section of
+`joshua.yaml` as a `type: http` upstream:
+
+```yaml
+mcp:
+  vinyl:
+    type: http
+    url: http://vinyl:8000/mcp
+    allow: all
+    headers:
+      Authorization: "Bearer ${VINYL_ADDON_TOKEN:-}"
+```
+
+`allow: all` gives the tools to every person, and to a group turn, which
+arrives with no person. The collection is shared and no tool changes it, so
+this is the same posture as the browse interface.
 
 ## Run a sync
 

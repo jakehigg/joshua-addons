@@ -15,7 +15,10 @@ releases, with the images and the packaged chart, are at
   writes a static bundle. A page at `/` shows the covers on a 3D shelf with
   a genre filter, search, sort orders, and a detail view that names the
   shelf section and lists the tracks. The facet list and the special sections after Z
-  come from a JSON file the operator keeps. One MCP tool, `vinyl_status`.
+  come from a JSON file the operator keeps. Six read-only MCP tools let
+  the agent answer a question about the collection: `vinyl_search`,
+  `vinyl_details`, `vinyl_stats`, `vinyl_recent`, `vinyl_pick`, and
+  `vinyl_status`.
   `/`, `/bundle`, `/art`, and `/api/status` are open; `/mcp` takes the
   bearer token.
 

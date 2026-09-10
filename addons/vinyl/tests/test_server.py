@@ -46,7 +46,7 @@ async def test_mcp_route_accepts_the_right_token(app_factory, synced: Path) -> N
     app = app_factory("right-token")
     async with mcp_session(app, headers={"Authorization": "Bearer right-token"}) as session:
         tools = (await session.list_tools()).tools
-        assert [tool.name for tool in tools] == ["vinyl_status"]
+        assert "vinyl_status" in [tool.name for tool in tools]
         result = await session.call_tool("vinyl_status", {})
         assert result.is_error is not True
         assert result.structured_content["records"] == 10
@@ -152,3 +152,92 @@ def test_settings_are_unavailable_before_build_app(monkeypatch) -> None:
     monkeypatch.setattr(server, "_settings", None)
     with pytest.raises(RuntimeError):
         server._current_settings()
+
+
+async def test_the_tool_list_is_the_documented_set(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        names = sorted(tool.name for tool in (await session.list_tools()).tools)
+    assert names == [
+        "vinyl_details",
+        "vinyl_pick",
+        "vinyl_recent",
+        "vinyl_search",
+        "vinyl_stats",
+        "vinyl_status",
+    ]
+
+
+async def test_search_tool_finds_a_record(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_search", {"query": "beatles"})
+    assert result.is_error is not True
+    assert result.structured_content["found"] == 1
+    assert result.structured_content["records"][0]["section"] == "B"
+
+
+async def test_record_tool_reports_one_record_in_full(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        found = (
+            await session.call_tool("vinyl_search", {"query": "abbey road"})
+        ).structured_content
+        record_id = found["records"][0]["id"]
+        result = await session.call_tool("vinyl_details", {"record_id": record_id})
+    assert result.structured_content["title"] == "Abbey Road"
+    assert result.structured_content["tracks"]
+
+
+async def test_record_tool_names_a_record_that_is_absent(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_details", {"record_id": 1})
+    assert "id 1" in result.structured_content["error"]
+
+
+async def test_stats_tool_reports_the_collection(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_stats", {})
+    assert result.structured_content["records"] == 10
+    assert result.structured_content["genres"]
+
+
+async def test_recent_tool_lists_the_newest_first(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_recent", {"limit": 3})
+    added = [record["added_at"] for record in result.structured_content["records"]]
+    assert added == sorted(added, reverse=True)
+
+
+async def test_pick_tool_chooses_a_record_with_a_reason(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        result = await session.call_tool("vinyl_pick", {})
+    assert result.structured_content["record"]["id"]
+    assert result.structured_content["reason"]
+
+
+async def test_every_read_tool_says_so_before_any_sync(app_factory) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        for name in ("vinyl_search", "vinyl_stats", "vinyl_recent", "vinyl_pick"):
+            result = await session.call_tool(name, {})
+            assert "not synced yet" in result.structured_content["error"]
+
+
+async def test_the_read_tools_need_the_token_too(app_factory, synced: Path) -> None:
+    async with _client(app_factory("right-token")) as client:
+        response = await client.post(
+            "/mcp",
+            headers={"Authorization": "Bearer wrong-token"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "vinyl_search", "arguments": {}},
+            },
+        )
+    assert response.status_code == 401

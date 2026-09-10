@@ -25,6 +25,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from joshua_vinyl import db
+from joshua_vinyl import query as query_bundle
 from joshua_vinyl.bundle import read_index
 from joshua_vinyl.config import Settings, settings_from_env
 from joshua_vinyl.log import get_logger
@@ -93,6 +94,99 @@ mcp = MCPServer(name="vinyl", lifespan=lifespan)
 def vinyl_status() -> dict[str, Any]:
     """Report the sync state: record count, last sync time, and last result."""
     return status(_current_settings())
+
+
+def _index_or_none() -> dict[str, Any] | None:
+    return read_index(_current_settings().bundle_dir)
+
+
+NO_BUNDLE = {"error": "The collection is not synced yet. No record is available."}
+
+
+@mcp.tool()
+def vinyl_search(
+    query: str | None = None,
+    genre: str | None = None,
+    decade: int | None = None,
+    year: int | None = None,
+    section: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Find records in the house collection.
+
+    ``query`` matches the album title, the artist, or the label, and it
+    tolerates a missing "The". Use a filter with no query to list a part of
+    the collection, for example every Jazz record, or everything from the
+    1970s. The answer gives the number found, and up to ``limit`` records
+    with the shelf section of each.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.search(
+        index, query, genre=genre, decade=decade, section=section, year=year, limit=limit
+    )
+
+
+@mcp.tool()
+def vinyl_details(record_id: int) -> dict[str, Any]:
+    """Report one record in full, by the id that ``vinyl_search`` gives.
+
+    The answer holds the shelf section, the label and catalog number, the
+    format, the country, the genres and styles, the tracklist, and the
+    lowest listed price with the date it was checked. Never present the
+    price as live: give the date with it.
+    """
+    record = query_bundle.detail(_current_settings().bundle_dir, record_id)
+    if record is None:
+        return {"error": f"No record with id {record_id} is in the collection."}
+    return record
+
+
+@mcp.tool()
+def vinyl_stats() -> dict[str, Any]:
+    """Report the shape of the collection: how many records, of what, and from when.
+
+    Use it for a question about the size of the collection, the genres in
+    it, the decades it covers, or which shelf sections are fullest.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.stats(index)
+
+
+@mcp.tool()
+def vinyl_recent(limit: int = 10) -> dict[str, Any]:
+    """List the records added most recently, newest first.
+
+    Use it for a question about what is new, or what came in this month.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.recent(index, limit)
+
+
+@mcp.tool()
+def vinyl_pick(
+    genre: str | None = None,
+    decade: int | None = None,
+    section: str | None = None,
+    exclude_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """Choose one record to play, with a reason and the shelf section.
+
+    The choice is always a record the house owns. Give ``genre`` or
+    ``decade`` for a mood. Give ``exclude_ids`` to keep a record that was
+    suggested already out of the answer.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.pick(
+        index, genre=genre, decade=decade, section=section, exclude=exclude_ids
+    )
 
 
 class BearerAuthMiddleware:
