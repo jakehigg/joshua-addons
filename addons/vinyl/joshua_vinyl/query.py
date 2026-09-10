@@ -179,12 +179,18 @@ def pick(
     decade: int | None = None,
     section: str | None = None,
     exclude: list[int] | None = None,
+    avoid: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> dict[str, Any]:
     """One record to play, with the reason and the shelf section.
 
-    The choice is always a record in the collection. When nothing matches,
-    the answer says so and suggests nothing.
+    The choice is always a record in the collection. A record that is out
+    with somebody is never suggested, because it is not on the shelf.
+
+    ``avoid`` holds the records suggested recently. They are left out while
+    anything else fits, so the same record does not come up twice in a
+    fortnight. When they are all that is left, one of them is suggested and
+    the answer says the collection is smaller than the memory.
     """
     skip = set(exclude or [])
     pool = [
@@ -192,15 +198,25 @@ def pick(
         for record in index.get("records", [])
         if _matches_filters(record, genre=genre, decade=decade, section=section, year=None)
         and record["id"] not in skip
+        and not record.get("lent")
     ]
     if not pool:
         return {"record": None, "pool": 0, "message": "No record in the collection matches that."}
-    chosen = (rng or random.Random()).choice(pool)
-    return {
+    recent = avoid or set()
+    fresh = [record for record in pool if record["id"] not in recent]
+    repeat = not fresh
+    chosen = (rng or random.Random()).choice(fresh or pool)
+    answer = {
         "record": brief(chosen),
-        "pool": len(pool),
+        "pool": len(fresh or pool),
         "reason": _reason(chosen, genre=genre),
     }
+    if repeat:
+        answer["repeat"] = True
+        answer["message"] = (
+            "Every record that fits was suggested recently, so this one comes up again."
+        )
+    return answer
 
 
 def owned(

@@ -16,6 +16,7 @@ import hmac
 import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mcp.server.mcpserver import Image, MCPServer
@@ -38,6 +39,10 @@ from joshua_vinyl.sync import META_LAST_RESULT, META_LAST_SYNC
 logger = get_logger("vinyl")
 
 PROTECTED_PREFIX = "/mcp"
+
+# How long the addon remembers a suggestion, so the same record does not come
+# up twice in a fortnight.
+SUGGEST_MEMORY_DAYS = 14
 
 # Set by ``build_app``. The lifespan and the status tool read it.
 _settings: Settings | None = None
@@ -177,19 +182,38 @@ def vinyl_pick(
     decade: int | None = None,
     section: str | None = None,
     exclude_ids: list[int] | None = None,
+    avoid_days: int = SUGGEST_MEMORY_DAYS,
 ) -> dict[str, Any]:
     """Choose one record to play, with a reason and the shelf section.
 
-    The choice is always a record the house owns. Give ``genre`` or
-    ``decade`` for a mood. Give ``exclude_ids`` to keep a record that was
-    suggested already out of the answer.
+    The choice is always a record the house owns, and never one that is out
+    with somebody. Give ``genre`` or ``decade`` for a mood.
+
+    The addon remembers what it suggested. A record suggested inside the
+    last ``avoid_days`` is left out while anything else fits, so asking
+    twice in a week gives two different records. When every record that
+    fits was suggested recently, the answer says so and repeats one.
     """
     index = _index_or_none()
     if index is None:
         return NO_BUNDLE
-    return query_bundle.pick(
-        index, genre=genre, decade=decade, section=section, exclude=exclude_ids
-    )
+    now = datetime.now(UTC)
+    with _database() as conn:
+        since = (now - timedelta(days=max(0, avoid_days))).isoformat(timespec="seconds")
+        avoid = db.recent_suggestions(conn, since) if avoid_days > 0 else set()
+        answer = query_bundle.pick(
+            index,
+            genre=genre,
+            decade=decade,
+            section=section,
+            exclude=exclude_ids,
+            avoid=avoid,
+        )
+        record = answer.get("record")
+        if record:
+            db.log_suggestion(conn, int(record["id"]), now.isoformat(timespec="seconds"))
+            conn.commit()
+    return answer
 
 
 WRITE_HELP = (
@@ -374,6 +398,101 @@ def vinyl_add(
             )
         finally:
             musicbrainz.close()
+
+
+@mcp.tool()
+def vinyl_remove(
+    release_id: int,
+    instance_id: int | None = None,
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """Take one record out of the collection, for good.
+
+    Use it when a record is sold, given away, or lost, and when a record was
+    matched to the wrong pressing. A record that is lent to somebody is not
+    removed: use vinyl_lend, which keeps the record and marks it out.
+
+    Call it once with no confirm and show the person the plan. Call it again
+    with confirm once they agree. Never confirm on your own: the record
+    leaves Discogs as well, and adding it again means identifying the
+    pressing again.
+
+    When the house owns two copies of one release, the plan lists both with
+    the note and the date each was added, and you pass the instance_id of the
+    one that left.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn, _discogs() as (client, username):
+        return intake.remove_record(
+            conn,
+            client,
+            username=username,
+            release_id=int(release_id),
+            config=config,
+            bundle_dir=settings.bundle_dir,
+            instance_id=instance_id,
+            confirm=confirm,
+        )
+
+
+@mcp.tool()
+def vinyl_lend(release_id: int, to: str, note: str | None = None) -> dict[str, Any]:
+    """Mark one record as out with somebody, without giving it up.
+
+    The record stays in the collection with its note and the date it was
+    first added, so nobody identifies the pressing again when it comes back.
+    Until then it is off the shelf: vinyl_pick never suggests it, and the
+    browse page says who has it.
+
+    Use the person's name as ``to``. This needs no Discogs token and nothing
+    is written to Discogs.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.lend_record(
+            conn,
+            release_id=int(release_id),
+            person=to,
+            note=note,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+        )
+
+
+@mcp.tool()
+def vinyl_return(release_id: int) -> dict[str, Any]:
+    """Put a record that was out with somebody back on the shelf."""
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.return_record(
+            conn,
+            release_id=int(release_id),
+            config=config,
+            bundle_dir=settings.bundle_dir,
+        )
+
+
+@mcp.tool()
+def vinyl_lent_out() -> dict[str, Any]:
+    """List every record that is out with somebody, and who has it."""
+    with _database() as conn:
+        loans = db.list_loans(conn)
+        records = []
+        for release_id, loan in loans.items():
+            album = db.get_album(conn, release_id)
+            records.append(
+                {
+                    "id": release_id,
+                    "title": album["title"] if album else None,
+                    "artist": album["artist"] if album else None,
+                    **loan,
+                }
+            )
+    records.sort(key=lambda record: record["since"])
+    return {"count": len(records), "records": records}
 
 
 class BearerAuthMiddleware:

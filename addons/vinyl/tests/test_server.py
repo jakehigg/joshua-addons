@@ -162,10 +162,14 @@ async def test_the_tool_list_is_the_documented_set(app_factory, synced: Path) ->
         "vinyl_add",
         "vinyl_details",
         "vinyl_label_images",
+        "vinyl_lend",
+        "vinyl_lent_out",
         "vinyl_lookup",
         "vinyl_owned",
         "vinyl_pick",
         "vinyl_recent",
+        "vinyl_remove",
+        "vinyl_return",
         "vinyl_search",
         "vinyl_stats",
         "vinyl_status",
@@ -354,3 +358,53 @@ async def test_an_add_through_the_tool_plans_first(
         result = await session.call_tool("vinyl_add", {"release_id": 24194891})
     assert result.structured_content["written"] is False
     assert fake_write_discogs.added == []
+
+
+async def test_lending_and_returning_need_no_discogs_token(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        lent = await session.call_tool("vinyl_lend", {"release_id": 7590859, "to": "a neighbour"})
+        listed = await session.call_tool("vinyl_lent_out", {})
+        picked = await session.call_tool("vinyl_pick", {"section": "C"})
+        back = await session.call_tool("vinyl_return", {"release_id": 7590859})
+    assert lent.structured_content["lent"] is True
+    assert listed.structured_content["count"] == 1
+    assert listed.structured_content["records"][0]["to"] == "a neighbour"
+    assert picked.structured_content["record"] is None or (
+        picked.structured_content["record"]["id"] != 7590859
+    )
+    assert back.structured_content["returned"] is True
+
+
+async def test_the_same_record_is_not_suggested_twice(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        first = await session.call_tool("vinyl_pick", {})
+        second = await session.call_tool("vinyl_pick", {})
+    assert first.structured_content["record"]["id"] != second.structured_content["record"]["id"]
+
+
+async def test_a_short_memory_lets_a_record_come_up_again(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        for _ in range(3):
+            result = await session.call_tool("vinyl_pick", {"section": "B", "avoid_days": 0})
+    assert result.structured_content["record"] is not None
+
+
+async def test_a_removal_through_the_tool_plans_first(
+    write_app, synced: Path, fake_write_discogs
+) -> None:
+    async with mcp_session(write_app) as session:
+        result = await session.call_tool("vinyl_remove", {"release_id": 7590859})
+    assert result.structured_content["written"] is False
+    assert fake_write_discogs.removed == []
+
+
+async def test_a_confirmed_removal_through_the_tool_writes(
+    write_app, synced: Path, fake_write_discogs
+) -> None:
+    async with mcp_session(write_app) as session:
+        result = await session.call_tool("vinyl_remove", {"release_id": 7590859, "confirm": True})
+    assert result.structured_content["written"] is True
+    assert fake_write_discogs.removed[0][0] == 7590859

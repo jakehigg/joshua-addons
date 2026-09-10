@@ -27,7 +27,15 @@ releases, with the images and the packaged chart, are at
   `vinyl_add` plans first and writes only on a second call with `confirm`,
   marks a pressing it cannot confirm in the collection note, refuses a
   record the collection already holds, and writes the bundle again so the
-  record is on the shelf page at once.
+  record is on the shelf page at once. `vinyl_remove` takes a record out of
+  the collection with the same plan-then-confirm shape, for a record sold,
+  given away, or matched to the wrong pressing, and asks which copy when the
+  house owns two. `vinyl_lend`, `vinyl_return` and `vinyl_lent_out` mark a
+  record as out with a person without touching Discogs: it keeps its note and
+  its shelf section, the page says who has it, and it is not suggested until
+  it comes back. `vinyl_pick` remembers what it suggested and leaves a record
+  alone for two weeks, so nobody reports a play for the suggestions to
+  improve.
   `/`, `/bundle`, `/art`, and `/api/status` are open; `/mcp` takes the
   bearer token.
 

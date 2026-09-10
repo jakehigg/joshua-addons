@@ -55,6 +55,12 @@ class DiscogsSource(Protocol):
 
     def add_release(self, username: str, folder_id: int, release_id: int) -> dict[str, Any]: ...
 
+    def instances(self, username: str, release_id: int) -> list[dict[str, Any]]: ...
+
+    def remove_instance(
+        self, username: str, folder_id: int, release_id: int, instance_id: int
+    ) -> None: ...
+
     def set_field(
         self,
         username: str,
@@ -304,3 +310,148 @@ def add_record(
     plan["shelf_section"] = album["shelf_section"]
     plan["on_the_shelf"] = True
     return plan
+
+
+def _instance_summary(item: dict[str, Any]) -> dict[str, Any]:
+    """One copy in the collection, as a person would tell two copies apart."""
+    summary = {
+        "instance_id": item.get("instance_id"),
+        "folder_id": item.get("folder_id"),
+        "added_at": item.get("date_added"),
+    }
+    for note in item.get("notes") or []:
+        if str(note.get("field_id")) == "3" and note.get("value"):
+            summary["note"] = note["value"]
+    return summary
+
+
+def remove_record(
+    conn: sqlite3.Connection,
+    discogs: DiscogsSource,
+    *,
+    username: str,
+    release_id: int,
+    config: ShelfConfig,
+    bundle_dir: Path,
+    instance_id: int | None = None,
+    confirm: bool = False,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Take one record out of the collection. Nothing is written without ``confirm``.
+
+    A record sold, given away, or matched to the wrong pressing leaves the
+    collection for good, so the plan comes first. When the collection holds
+    two copies of one release, the plan lists both and the caller says which
+    instance to remove: the copies differ in their note and the date they
+    were added, and only a person can tell which one left the house.
+    """
+    started = now or datetime.now(UTC)
+    album = db.get_album(conn, release_id)
+    items = discogs.instances(username, release_id)
+    plan: dict[str, Any] = {
+        "release_id": release_id,
+        "title": album.get("title") if album else None,
+        "artist": album.get("artist") if album else None,
+        "copies": [_instance_summary(item) for item in items],
+        "written": False,
+    }
+    if not items:
+        plan["refused"] = "That release is not in the collection, so there is nothing to remove."
+        return plan
+    if len(items) > 1 and instance_id is None:
+        plan["refused"] = (
+            "The collection holds more than one copy of that release. Say which "
+            "instance_id to remove; the copies above differ in the note and the "
+            "date each was added."
+        )
+        return plan
+    chosen = items[0]
+    if instance_id is not None:
+        matching = [item for item in items if int(item.get("instance_id", 0)) == int(instance_id)]
+        if not matching:
+            plan["refused"] = f"No copy of that release has instance {instance_id}."
+            return plan
+        chosen = matching[0]
+    plan["removing"] = _instance_summary(chosen)
+    if not confirm:
+        plan["confirm_to_write"] = (
+            "Nothing is removed yet. A record that leaves the collection is gone "
+            "from Discogs as well, so call again with confirm."
+        )
+        return plan
+
+    discogs.remove_instance(
+        username, int(chosen["folder_id"]), release_id, int(chosen["instance_id"])
+    )
+    plan["written"] = True
+    logger.info({"message": "record removed", "release_id": release_id})
+    remaining = discogs.instances(username, release_id)
+    plan["copies_left"] = len(remaining)
+    if not remaining:
+        db.delete_album(conn, release_id)
+        conn.commit()
+        write_bundle(conn, bundle_dir, config, now=started)
+        plan["off_the_shelf"] = True
+    return plan
+
+
+def lend_record(
+    conn: sqlite3.Connection,
+    *,
+    release_id: int,
+    person: str,
+    config: ShelfConfig,
+    bundle_dir: Path,
+    note: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Mark one record as out with somebody. The collection keeps it.
+
+    A loan is not a sale. The record stays in Discogs with its note and the
+    date it was first added, so nobody has to identify the pressing again
+    when it comes back. It leaves the shelf until then.
+    """
+    started = now or datetime.now(UTC)
+    album = db.get_album(conn, release_id)
+    if album is None:
+        return {
+            "lent": False,
+            "error": f"No record with id {release_id} is in the collection.",
+        }
+    db.set_loan(conn, release_id, person, started.isoformat(timespec="seconds"), note)
+    conn.commit()
+    write_bundle(conn, bundle_dir, config, now=started)
+    return {
+        "lent": True,
+        "record": {"id": release_id, "title": album["title"], "artist": album["artist"]},
+        "to": person,
+        "since": started.isoformat(timespec="seconds"),
+    }
+
+
+def return_record(
+    conn: sqlite3.Connection,
+    *,
+    release_id: int,
+    config: ShelfConfig,
+    bundle_dir: Path,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Put a record that was out back on the shelf."""
+    started = now or datetime.now(UTC)
+    loan = db.get_loan(conn, release_id)
+    if loan is None:
+        return {"returned": False, "error": f"Record {release_id} is not out with anybody."}
+    db.clear_loan(conn, release_id)
+    conn.commit()
+    write_bundle(conn, bundle_dir, config, now=started)
+    album = db.get_album(conn, release_id)
+    return {
+        "returned": True,
+        "record": {
+            "id": release_id,
+            "title": album["title"] if album else None,
+            "artist": album["artist"] if album else None,
+        },
+        "was_with": loan["person"],
+    }

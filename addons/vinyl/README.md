@@ -65,10 +65,10 @@ an image from Discogs.
 ## The tools
 
 The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000, and
-answers `GET /healthz` with `{"ok": true}`. Ten tools let the agent answer a
+answers `GET /healthz` with `{"ok": true}`. Fourteen tools let the agent answer a
 question about the collection, and add a record to it.
 
-Six read the shelf. Each one reads the static bundle, so an answer needs no
+Eight read the shelf. Each one reads the static bundle, so an answer needs no
 network and no database query.
 
 | Tool | What it answers |
@@ -78,21 +78,32 @@ network and no database query.
 | `vinyl_details(record_id)` | "What is that pressing?" The shelf section, the label and catalog number, the format, the country, the tracklist, and the last price with the date it was checked. |
 | `vinyl_stats()` | "How many records do we have?" The count, the genres, the decades, the sections, and the year of the oldest and the newest pressing. |
 | `vinyl_recent(limit)` | "What is new?" The records added most recently, newest first. |
-| `vinyl_pick(genre, decade, section, exclude_ids)` | "What do we put on?" One record the house owns, with a reason and the shelf section. |
+| `vinyl_pick(genre, decade, section, exclude_ids, avoid_days)` | "What do we put on?" One record the house owns, with a reason and the shelf section. A record suggested in the last two weeks waits its turn, and a record that is out with somebody is never suggested. |
+| `vinyl_lent_out()` | "Who has what?" Every record that is off the shelf, and with whom. |
 | `vinyl_status()` | The record count, the time of the last sync, and its result. `GET /api/status` is the same report over plain HTTP. |
 
-Three reach Discogs, so they need `DISCOGS_TOKEN` and `DISCOGS_USERNAME`.
-Without them the addon still browses and answers; these three say what is
-missing.
+Two mark a record as out with somebody, and write only to the local
+database:
+
+| Tool | What it does |
+|---|---|
+| `vinyl_lend(release_id, to, note)` | Marks a record as out with a person. The record stays in the collection. |
+| `vinyl_return(release_id)` | Puts a record that was out back on the shelf. |
+
+Four reach Discogs, so they need `DISCOGS_TOKEN` and `DISCOGS_USERNAME`.
+Without them the addon still browses, answers, and lends; these four say
+what is missing.
 
 | Tool | What it does |
 |---|---|
 | `vinyl_lookup(artist, title, catalog_no, barcode, label, matrix, year, country, tracks)` | Finds at most three candidate releases from what a person read on the record, each with the full format line, the release notes, the country and the year. |
 | `vinyl_label_images(release_id, limit)` | Answers with the disc labels Discogs holds for one release, as pictures, to compare against the photograph. |
 | `vinyl_add(release_id, note, pressing_confirmed, confirm, allow_duplicate)` | Plans an add, and writes it on a second call with `confirm`. |
+| `vinyl_remove(release_id, instance_id, confirm)` | Plans a removal, and takes the record out of the collection on a second call with `confirm`. |
 
-`vinyl_add` is the only tool that writes anything, and it writes nothing
-without `confirm`.
+`vinyl_add` and `vinyl_remove` are the only tools that write to Discogs, and
+neither writes without `confirm`. `vinyl_lend` and `vinyl_return` write only
+to the local database, so a loan needs no token.
 
 ## Add one record
 
@@ -147,6 +158,46 @@ What the answers are for, and what each one hides:
 After a write the release goes into the local database and the bundle is
 written again, so the record is on the shelf page at once. The answer names
 the section to file it under.
+
+## Take one record off the shelf
+
+A record leaves the shelf in two different ways, and the difference is the
+point.
+
+**A loan is not a sale.** `vinyl_lend` marks the record as out with a person
+and changes nothing on Discogs. The record keeps its note, its shelf section
+and the date it was first added, so nobody identifies the pressing again when
+it comes back. Until then `vinyl_pick` never suggests it, the caption under
+the shelf says who has it, and the gatefold says since when. `vinyl_return`
+puts it back. `vinyl_lent_out` says who has what.
+
+**A removal is for good.** `vinyl_remove` takes the record out of the Discogs
+collection, which is where the collection lives, so the record is gone from
+the shelf and from every future sync. Use it for a record that was sold,
+given away or lost, and for a record that was matched to the wrong pressing.
+It plans first and writes only on a second call with `confirm`.
+
+Two rules the tool applies for you:
+
+- **Two copies of one release need a choice.** The collection can hold the
+  same release twice, and the copies differ only in the note and the date each
+  was added. The plan lists both and asks which `instance_id` left the house.
+- **A release with a copy left stays on the shelf.** Removing one of two
+  copies takes that copy out of Discogs and leaves the record in the
+  collection, because the house still owns one.
+
+The page is written again after either one, so the shelf is right at once.
+
+## Suggestions do not repeat
+
+`vinyl_pick` writes down what it suggested. A record suggested inside the
+last two weeks is left out while anything else fits, so a person who asks
+twice in a week gets two different records. When every record that fits was
+suggested recently, the answer says so and repeats one rather than refusing.
+`avoid_days` changes the two weeks for one call, and `0` turns the memory
+off.
+
+Nobody has to report a play. The addon remembers only what it said itself.
 
 To give the tools to Joshua, put the addon in the `mcp` section of
 `joshua.yaml` as a `type: http` upstream:

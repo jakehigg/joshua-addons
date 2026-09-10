@@ -350,3 +350,177 @@ def test_a_release_that_cannot_be_read_again_still_lands_on_the_shelf(
     without_folsom.release = once  # type: ignore[method-assign]
     plan = _add(data_dir, without_folsom, fake_musicbrainz, release_id=folsom, confirm=True)
     assert plan["on_the_shelf"] is True
+
+
+def _remove(
+    data_dir: Path, discogs: FakeWriteDiscogs, release_id: int, **kwargs: Any
+) -> dict[str, Any]:
+    conn = db.connect(data_dir / "vinyl.db")
+    try:
+        return intake.remove_record(
+            conn,
+            discogs,
+            username="example-user",
+            release_id=release_id,
+            config=ShelfConfig(),
+            bundle_dir=data_dir / "bundle",
+            **kwargs,
+        )
+    finally:
+        conn.close()
+
+
+def test_a_removal_plans_and_takes_nothing_out(
+    data_dir: Path, without_folsom: FakeWriteDiscogs
+) -> None:
+    plan = _remove(data_dir, without_folsom, PICTURE_DISC)
+    assert plan["written"] is False
+    assert plan["copies"]
+    assert "confirm" in plan["confirm_to_write"]
+    assert without_folsom.removed == []
+
+
+def test_removing_a_record_the_house_does_not_own_is_refused(
+    data_dir: Path, without_folsom: FakeWriteDiscogs
+) -> None:
+    plan = _remove(data_dir, without_folsom, _folsom_id(), confirm=True)
+    assert plan["written"] is False
+    assert "nothing to remove" in plan["refused"]
+    assert without_folsom.removed == []
+
+
+def test_a_confirmed_removal_takes_the_record_off_the_shelf(
+    data_dir: Path, without_folsom: FakeWriteDiscogs
+) -> None:
+    before = read_index(data_dir / "bundle")["count"]
+    plan = _remove(data_dir, without_folsom, PICTURE_DISC, confirm=True)
+    index = read_index(data_dir / "bundle")
+    assert plan["written"] is True
+    assert plan["off_the_shelf"] is True
+    assert without_folsom.removed[0][0] == PICTURE_DISC
+    assert index["count"] == before - 1
+    assert PICTURE_DISC not in [record["id"] for record in index["records"]]
+
+
+def test_two_copies_need_the_instance_said_out_loud(
+    data_dir: Path, without_folsom: FakeWriteDiscogs
+) -> None:
+    without_folsom.copies[PICTURE_DISC].append(
+        {
+            "id": PICTURE_DISC,
+            "instance_id": 999_001,
+            "folder_id": 1,
+            "date_added": "2026-02-02T10:00:00-07:00",
+            "notes": [{"field_id": 3, "value": "the second copy"}],
+        }
+    )
+    plan = _remove(data_dir, without_folsom, PICTURE_DISC, confirm=True)
+    assert plan["written"] is False
+    assert "more than one copy" in plan["refused"]
+    assert len(plan["copies"]) == 2
+    assert any(copy.get("note") == "the second copy" for copy in plan["copies"])
+    assert without_folsom.removed == []
+
+
+def test_one_copy_of_two_leaves_the_record_on_the_shelf(
+    data_dir: Path, without_folsom: FakeWriteDiscogs
+) -> None:
+    without_folsom.copies[PICTURE_DISC].append(
+        {"id": PICTURE_DISC, "instance_id": 999_001, "folder_id": 1, "notes": []}
+    )
+    plan = _remove(data_dir, without_folsom, PICTURE_DISC, instance_id=999_001, confirm=True)
+    index = read_index(data_dir / "bundle")
+    assert plan["written"] is True
+    assert plan["copies_left"] == 1
+    assert plan.get("off_the_shelf") is None
+    assert PICTURE_DISC in [record["id"] for record in index["records"]]
+
+
+def test_an_instance_that_is_not_there_is_refused(
+    data_dir: Path, without_folsom: FakeWriteDiscogs
+) -> None:
+    plan = _remove(data_dir, without_folsom, PICTURE_DISC, instance_id=123, confirm=True)
+    assert "instance 123" in plan["refused"]
+    assert without_folsom.removed == []
+
+
+def _lend(data_dir: Path, release_id: int, person: str, **kwargs: Any) -> dict[str, Any]:
+    conn = db.connect(data_dir / "vinyl.db")
+    try:
+        return intake.lend_record(
+            conn,
+            release_id=release_id,
+            person=person,
+            config=ShelfConfig(),
+            bundle_dir=data_dir / "bundle",
+            **kwargs,
+        )
+    finally:
+        conn.close()
+
+
+def _return(data_dir: Path, release_id: int) -> dict[str, Any]:
+    conn = db.connect(data_dir / "vinyl.db")
+    try:
+        return intake.return_record(
+            conn,
+            release_id=release_id,
+            config=ShelfConfig(),
+            bundle_dir=data_dir / "bundle",
+        )
+    finally:
+        conn.close()
+
+
+def test_a_lent_record_stays_in_the_collection(
+    data_dir: Path, without_folsom: FakeWriteDiscogs
+) -> None:
+    before = read_index(data_dir / "bundle")["count"]
+    result = _lend(data_dir, PICTURE_DISC, "a neighbour", note="borrowed at the barbecue")
+    index = read_index(data_dir / "bundle")
+    record = next(r for r in index["records"] if r["id"] == PICTURE_DISC)
+    assert result["lent"] is True
+    assert index["count"] == before
+    assert record["lent"]["to"] == "a neighbour"
+    assert record["lent"]["note"] == "borrowed at the barbecue"
+    assert without_folsom.removed == []
+
+
+def test_a_lent_record_says_who_has_it_in_the_detail_file(data_dir: Path, without_folsom) -> None:
+    _lend(data_dir, PICTURE_DISC, "a neighbour")
+    detail = json.loads(
+        (data_dir / "bundle" / "detail" / f"{PICTURE_DISC}.json").read_text(encoding="utf-8")
+    )
+    assert detail["lent"]["to"] == "a neighbour"
+
+
+def test_lending_a_record_the_house_does_not_own_says_so(data_dir: Path, without_folsom) -> None:
+    result = _lend(data_dir, _folsom_id(), "a neighbour")
+    assert result["lent"] is False
+    assert "is in the collection" in result["error"]
+
+
+def test_a_returned_record_is_back_on_the_shelf(data_dir: Path, without_folsom) -> None:
+    _lend(data_dir, PICTURE_DISC, "a neighbour")
+    result = _return(data_dir, PICTURE_DISC)
+    index = read_index(data_dir / "bundle")
+    record = next(r for r in index["records"] if r["id"] == PICTURE_DISC)
+    assert result["returned"] is True
+    assert result["was_with"] == "a neighbour"
+    assert "lent" not in record
+
+
+def test_returning_a_record_that_is_not_out_says_so(data_dir: Path, without_folsom) -> None:
+    result = _return(data_dir, PICTURE_DISC)
+    assert result["returned"] is False
+    assert "not out with anybody" in result["error"]
+
+
+def test_removing_a_record_forgets_the_loan(data_dir: Path, without_folsom) -> None:
+    _lend(data_dir, PICTURE_DISC, "a neighbour")
+    _remove(data_dir, without_folsom, PICTURE_DISC, confirm=True)
+    conn = db.connect(data_dir / "vinyl.db")
+    try:
+        assert db.get_loan(conn, PICTURE_DISC) is None
+    finally:
+        conn.close()

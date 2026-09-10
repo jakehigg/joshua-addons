@@ -227,3 +227,28 @@ def test_a_title_alone_is_a_maybe_and_never_a_yes() -> None:
 def test_owned_says_no_when_nothing_matches() -> None:
     result = query.owned(MADE_UP, artist="Miles Davis", title="Kind Of Blue")
     assert result == {"owned": False, "how": "nothing matched", "copies": []}
+
+
+def test_a_lent_record_is_never_suggested() -> None:
+    index = {
+        "records": [
+            {**MADE_UP["records"][0], "lent": {"to": "a neighbour", "since": "2026-09-01"}},
+        ]
+    }
+    result = query.pick(index)
+    assert result["record"] is None
+    assert result["pool"] == 0
+
+
+def test_a_record_suggested_recently_waits_its_turn() -> None:
+    result = query.pick(MADE_UP, avoid={1}, rng=random.Random(0))
+    assert result["record"]["id"] == 2
+    assert result["pool"] == 1
+    assert "repeat" not in result
+
+
+def test_the_memory_gives_way_when_everything_was_suggested() -> None:
+    result = query.pick(MADE_UP, avoid={1, 2}, rng=random.Random(0))
+    assert result["record"] is not None
+    assert result["repeat"] is True
+    assert "suggested recently" in result["message"]

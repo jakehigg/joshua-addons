@@ -1,10 +1,14 @@
 """The SQLite store under the data directory.
 
 One file, ``vinyl.db``. The schema follows the PRD: ``albums``, ``tracks``,
-``prices``, ``tags``, ``plays``, plus ``artists`` (the MusicBrainz sort-name
+``prices``, ``tags``, plus ``artists`` (the MusicBrainz sort-name
 cache, keyed by artist name) and ``meta`` (the last sync). The collection
 itself lives on Discogs, so the file is fully reconstructible, and it is
 never in the critical path of a backup.
+
+Two tables hold what Discogs cannot: ``suggestions``, which is how the same
+record is not suggested twice in a fortnight, and ``loans``, which is who has
+a record that is off the shelf. A sync never clears either one.
 """
 
 from __future__ import annotations
@@ -61,13 +65,16 @@ CREATE TABLE IF NOT EXISTS tags (
     count INTEGER,
     PRIMARY KEY (release_id, tag, source)
 );
-CREATE TABLE IF NOT EXISTS plays (
+CREATE TABLE IF NOT EXISTS suggestions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     release_id INTEGER NOT NULL,
-    played_at TEXT NOT NULL,
-    person TEXT,
-    mood TEXT,
-    source TEXT
+    suggested_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS loans (
+    release_id INTEGER PRIMARY KEY,
+    person TEXT NOT NULL,
+    since TEXT NOT NULL,
+    note TEXT
 );
 CREATE TABLE IF NOT EXISTS artists (
     name TEXT PRIMARY KEY,
@@ -270,3 +277,66 @@ def collection_ids(conn: sqlite3.Connection) -> tuple[set[int], set[int]]:
         if row["master_id"]:
             masters.add(int(row["master_id"]))
     return releases, masters
+
+
+def delete_album(conn: sqlite3.Connection, release_id: int) -> bool:
+    """Remove one album and everything derived from it. Return whether it was there."""
+    found = get_album(conn, release_id) is not None
+    for table, column in (
+        ("albums", "discogs_release_id"),
+        ("tracks", "release_id"),
+        ("prices", "release_id"),
+        ("tags", "release_id"),
+        ("loans", "release_id"),
+    ):
+        conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (release_id,))
+    return found
+
+
+def log_suggestion(conn: sqlite3.Connection, release_id: int, suggested_at: str) -> None:
+    """Record that this record was suggested, so it is not suggested again at once."""
+    conn.execute(
+        "INSERT INTO suggestions (release_id, suggested_at) VALUES (?, ?)",
+        (release_id, suggested_at),
+    )
+
+
+def recent_suggestions(conn: sqlite3.Connection, since: str) -> set[int]:
+    """Every record suggested at or after ``since``."""
+    rows = conn.execute(
+        "SELECT DISTINCT release_id FROM suggestions WHERE suggested_at >= ?", (since,)
+    )
+    return {int(row["release_id"]) for row in rows}
+
+
+def set_loan(
+    conn: sqlite3.Connection, release_id: int, person: str, since: str, note: str | None = None
+) -> None:
+    """Mark one record as out with a person."""
+    conn.execute(
+        "INSERT OR REPLACE INTO loans (release_id, person, since, note) VALUES (?, ?, ?, ?)",
+        (release_id, person, since, note),
+    )
+
+
+def clear_loan(conn: sqlite3.Connection, release_id: int) -> bool:
+    """Mark one record as back. Return whether it was out."""
+    cursor = conn.execute("DELETE FROM loans WHERE release_id = ?", (release_id,))
+    return cursor.rowcount > 0
+
+
+def get_loan(conn: sqlite3.Connection, release_id: int) -> dict[str, Any] | None:
+    row = conn.execute("SELECT * FROM loans WHERE release_id = ?", (release_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_loans(conn: sqlite3.Connection) -> dict[int, dict[str, Any]]:
+    """Every record that is out, by release id."""
+    return {
+        int(row["release_id"]): {
+            "to": row["person"],
+            "since": row["since"],
+            **({"note": row["note"]} if row["note"] else {}),
+        }
+        for row in conn.execute("SELECT * FROM loans")
+    }

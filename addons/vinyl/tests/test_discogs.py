@@ -219,3 +219,41 @@ def test_the_collection_folders_come_back() -> None:
         return httpx.Response(200, json={"folders": [{"id": 0, "name": "All"}]})
 
     assert _client(handler).folders("example-user") == [{"id": 0, "name": "All"}]
+
+
+def test_the_copies_of_one_release_come_back_with_their_folders() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"releases": [{"instance_id": 7, "folder_id": 2}]})
+
+    copies = _client(handler).instances("example-user", 7823049)
+    assert copies == [{"instance_id": 7, "folder_id": 2}]
+    assert seen[0].url.path == "/users/example-user/collection/releases/7823049"
+
+
+def test_removing_an_instance_deletes_the_right_path() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(204)
+
+    _client(handler).remove_instance("example-user", 2, 7823049, 7)
+    assert seen[0].method == "DELETE"
+    assert seen[0].url.path == (
+        "/users/example-user/collection/folders/2/releases/7823049/instances/7"
+    )
+
+
+def test_a_failed_removal_is_not_retried() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(500)
+
+    with pytest.raises(discogs.DiscogsError):
+        _client(handler).remove_instance("example-user", 1, 7823049, 7)
+    assert len(seen) == 1

@@ -157,6 +157,28 @@ class DiscogsClient:
         )
         return result or {}
 
+    def instances(self, username: str, release_id: int) -> list[dict[str, Any]]:
+        """Every copy of one release in the collection, with its folder and instance.
+
+        A delete needs both ids, and the folder a copy sits in is not the
+        folder an add put it in, so it is read here and never assumed.
+        """
+        data = self._get(f"/users/{username}/collection/releases/{release_id}").json()
+        return data.get("releases", [])
+
+    def remove_instance(
+        self, username: str, folder_id: int, release_id: int, instance_id: int
+    ) -> None:
+        """Take one copy out of the collection. Not retried, like every write."""
+        self._throttle.wait()
+        url = (
+            f"/users/{username}/collection/folders/{folder_id}"
+            f"/releases/{release_id}/instances/{instance_id}"
+        )
+        response = self._client.delete(url)
+        if response.status_code >= 400:
+            raise DiscogsError(f"discogs {url} returned {response.status_code}")
+
     def set_field(
         self,
         username: str,

@@ -357,6 +357,10 @@
     el.nowLabel.textContent = labelFor(record);
     el.nowTitle.textContent = record.title;
     el.nowMeta.textContent = [record.artist, record.year].filter(Boolean).join(" · ");
+    el.now.classList.toggle("is-lent", !!record.lent);
+    if (record.lent) {
+      el.nowMeta.textContent += " · lent to " + record.lent.to;
+    }
     el.nowOpen.hidden = false;
     el.position.textContent = (state.active + 1) + " / " + state.list.length;
     // The ring has no ends, so neither arrow is ever the last one.
@@ -422,6 +426,12 @@
     return h("p", { class: "price" }, [document.createTextNode(amount), h("small", { text: when })]);
   }
 
+  /* A record that is out with somebody is not on the shelf to play. */
+  function lentText(lent) {
+    var since = lent.since ? " since " + lent.since.slice(0, 10) : "";
+    return "Lent to " + lent.to + since;
+  }
+
   function renderDetail(record) {
     var facts = [];
     facts = facts.concat(fact("Label", [record.label, record.catalog_no].filter(Boolean).join(" · ")));
@@ -446,6 +456,7 @@
       h("h2", { id: "detail-title", text: record.title }),
       h("p", { class: "artist", text: record.artist }),
       h("div", { class: "section", text: "Section " + record.section }),
+      record.lent ? h("p", { class: "lent", text: lentText(record.lent) }) : null,
       facts.length ? h("dl", { class: "facts" }, facts) : null,
       priceNode(record.price),
       tags.length ? h("div", { class: "tags" }, tags.map(function (t) { return h("span", { class: "tag", text: t }); })) : null,

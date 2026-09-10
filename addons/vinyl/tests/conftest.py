@@ -220,6 +220,18 @@ class FakeWriteDiscogs(FakeDiscogs):
         self.notes: list[tuple[int, int, str]] = []
         self.next_instance = 500_001
         self.note_fails = False
+        self.copies: dict[int, list[dict[str, Any]]] = {}
+        for n, item in enumerate(self.items, start=1):
+            self.copies.setdefault(int(item["id"]), []).append(
+                {
+                    "id": int(item["id"]),
+                    "instance_id": item.get("instance_id") or 800_000 + n,
+                    "folder_id": 1,
+                    "date_added": item.get("date_added"),
+                    "notes": [],
+                }
+            )
+        self.removed: list[tuple[int, int]] = []
         self.collection_fields = [
             {"id": 1, "name": "Media Condition"},
             {"id": 2, "name": "Sleeve Condition"},
@@ -228,6 +240,20 @@ class FakeWriteDiscogs(FakeDiscogs):
 
     def close(self) -> None:
         return None
+
+    def instances(self, username: str, release_id: int) -> list[dict[str, Any]]:
+        return list(self.copies.get(int(release_id), []))
+
+    def remove_instance(
+        self, username: str, folder_id: int, release_id: int, instance_id: int
+    ) -> None:
+        kept = [
+            copy
+            for copy in self.copies.get(int(release_id), [])
+            if int(copy["instance_id"]) != int(instance_id)
+        ]
+        self.copies[int(release_id)] = kept
+        self.removed.append((int(release_id), int(instance_id)))
 
     def by(self, key: str, release_ids: list[int]) -> None:
         """Say which releases a search on ``key`` finds."""
@@ -250,6 +276,15 @@ class FakeWriteDiscogs(FakeDiscogs):
         self.added.append((username, folder_id, release_id))
         instance = self.next_instance
         self.next_instance += 1
+        self.copies.setdefault(int(release_id), []).append(
+            {
+                "id": int(release_id),
+                "instance_id": instance,
+                "folder_id": folder_id,
+                "date_added": None,
+                "notes": [],
+            }
+        )
         return {"instance_id": instance}
 
     def set_field(
