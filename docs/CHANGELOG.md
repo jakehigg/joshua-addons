@@ -35,7 +35,12 @@ releases, with the images and the packaged chart, are at
   its shelf section, the page says who has it, and it is not suggested until
   it comes back. `vinyl_pick` remembers what it suggested and leaves a record
   alone for two weeks, so nobody reports a play for the suggestions to
-  improve.
+  improve. The manual corrections move out of the rules file and into the
+  database, so a tool can write them: `vinyl_set_sort_name`,
+  `vinyl_set_section` and `vinyl_set_genre` correct the filing and file the
+  records they touch again at once, and `vinyl_corrections` lists them. A
+  file that still holds an `overrides` block is imported one time and then
+  ignored, so a correction dropped with a tool does not come back.
   `/`, `/bundle`, `/art`, and `/api/status` are open; `/mcp` takes the
   bearer token.
 

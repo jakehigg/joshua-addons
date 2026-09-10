@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS albums (
     instance_id INTEGER,
     master_id INTEGER,
     artist TEXT NOT NULL,
+    sort_artist TEXT,
+    traits TEXT,
     artist_sort TEXT NOT NULL,
     artist_sort_source TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -65,6 +67,13 @@ CREATE TABLE IF NOT EXISTS tags (
     count INTEGER,
     PRIMARY KEY (release_id, tag, source)
 );
+CREATE TABLE IF NOT EXISTS overrides (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    set_at TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
 CREATE TABLE IF NOT EXISTS suggestions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     release_id INTEGER NOT NULL,
@@ -90,7 +99,7 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
-LIST_COLUMNS = ("genres", "styles", "facets")
+LIST_COLUMNS = ("genres", "styles", "facets", "traits")
 
 # A column the collection item does not carry. A sync keeps the value it has
 # when the new row has none, so a failed release fetch loses nothing.
@@ -98,7 +107,7 @@ KEPT_COLUMNS = ("country", "notes")
 
 # A column the schema gained after the first release. A database made by an
 # earlier version is opened, not rebuilt, so each one is added if it is absent.
-ADDED_COLUMNS = (("master_id", "INTEGER"),)
+ADDED_COLUMNS = (("master_id", "INTEGER"), ("traits", "TEXT"), ("sort_artist", "TEXT"))
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -340,3 +349,52 @@ def list_loans(conn: sqlite3.Connection) -> dict[int, dict[str, Any]]:
         }
         for row in conn.execute("SELECT * FROM loans")
     }
+
+
+ARTIST_SORT = "artist_sort"
+PRIMARY_FACET = "primary_facet"
+SECTION = "section"
+OVERRIDE_KINDS = (ARTIST_SORT, PRIMARY_FACET, SECTION)
+
+
+def set_override(conn: sqlite3.Connection, kind: str, key: str, value: str, set_at: str) -> None:
+    """Write one manual correction. A person, or a tool, decides these."""
+    conn.execute(
+        "INSERT OR REPLACE INTO overrides (kind, key, value, set_at) VALUES (?, ?, ?, ?)",
+        (kind, key, value, set_at),
+    )
+
+
+def clear_override(conn: sqlite3.Connection, kind: str, key: str) -> bool:
+    """Drop one correction. Return whether there was one."""
+    cursor = conn.execute("DELETE FROM overrides WHERE kind = ? AND key = ?", (kind, key))
+    return cursor.rowcount > 0
+
+
+def list_overrides(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    """Every correction, by kind."""
+    result: dict[str, dict[str, str]] = {kind: {} for kind in OVERRIDE_KINDS}
+    for row in conn.execute("SELECT kind, key, value FROM overrides"):
+        result.setdefault(row["kind"], {})[row["key"]] = row["value"]
+    return result
+
+
+def import_overrides(
+    conn: sqlite3.Connection, overrides: dict[str, dict[str, str]], set_at: str
+) -> int:
+    """Take the corrections from the rules file once, and never overwrite.
+
+    The corrections used to live in the file. They belong in the database,
+    because a tool can write here and cannot write a read-only ConfigMap.
+    An entry the database already holds is left alone, so an import never
+    undoes a change somebody made through a tool.
+    """
+    taken = 0
+    for kind, entries in overrides.items():
+        for key, value in (entries or {}).items():
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO overrides (kind, key, value, set_at) VALUES (?, ?, ?, ?)",
+                (kind, key, value, set_at),
+            )
+            taken += cursor.rowcount
+    return taken

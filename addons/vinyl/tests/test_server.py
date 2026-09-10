@@ -160,6 +160,7 @@ async def test_the_tool_list_is_the_documented_set(app_factory, synced: Path) ->
         names = sorted(tool.name for tool in (await session.list_tools()).tools)
     assert names == [
         "vinyl_add",
+        "vinyl_corrections",
         "vinyl_details",
         "vinyl_label_images",
         "vinyl_lend",
@@ -171,6 +172,9 @@ async def test_the_tool_list_is_the_documented_set(app_factory, synced: Path) ->
         "vinyl_remove",
         "vinyl_return",
         "vinyl_search",
+        "vinyl_set_genre",
+        "vinyl_set_section",
+        "vinyl_set_sort_name",
         "vinyl_stats",
         "vinyl_status",
     ]
@@ -408,3 +412,42 @@ async def test_a_confirmed_removal_through_the_tool_writes(
         result = await session.call_tool("vinyl_remove", {"release_id": 7590859, "confirm": True})
     assert result.structured_content["written"] is True
     assert fake_write_discogs.removed[0][0] == 7590859
+
+
+async def test_a_correction_through_the_tool_moves_the_record(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        before = await session.call_tool("vinyl_search", {"query": "goldberg"})
+        was = before.structured_content["records"][0]["section"]
+        result = await session.call_tool(
+            "vinyl_set_sort_name",
+            {"artist": "Glenn Gould", "sort_name": "Bach, Johann Sebastian"},
+        )
+        after = await session.call_tool("vinyl_search", {"query": "goldberg"})
+        listed = await session.call_tool("vinyl_corrections", {})
+    assert result.structured_content["action"] == "set"
+    assert after.structured_content["records"][0]["section"] == "B"
+    assert was != "B"
+    assert listed.structured_content["sort_names"]["Glenn Gould"] == "Bach, Johann Sebastian"
+
+
+async def test_a_section_correction_needs_no_discogs_token(app_factory, synced: Path) -> None:
+    app = app_factory(None, DISCOGS_TOKEN="")
+    async with mcp_session(app) as session:
+        found = await session.call_tool("vinyl_search", {"query": "nuggets"})
+        record_id = found.structured_content["records"][0]["id"]
+        result = await session.call_tool(
+            "vinyl_set_section", {"record_id": record_id, "section": "N"}
+        )
+    assert result.is_error is not True
+    assert result.structured_content["moved"][0]["section"] == "N"
+
+
+async def test_a_genre_correction_is_dropped_by_leaving_it_out(app_factory, synced: Path) -> None:
+    app = app_factory(None)
+    async with mcp_session(app) as session:
+        found = await session.call_tool("vinyl_search", {"query": "nuggets"})
+        record_id = found.structured_content["records"][0]["id"]
+        await session.call_tool("vinyl_set_genre", {"record_id": record_id, "genre": "Jazz"})
+        result = await session.call_tool("vinyl_set_genre", {"record_id": record_id})
+    assert result.structured_content["action"] == "cleared"

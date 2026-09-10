@@ -65,7 +65,7 @@ an image from Discogs.
 ## The tools
 
 The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000, and
-answers `GET /healthz` with `{"ok": true}`. Fourteen tools let the agent answer a
+answers `GET /healthz` with `{"ok": true}`. Eighteen tools let the agent answer a
 question about the collection, and add a record to it.
 
 Eight read the shelf. Each one reads the static bundle, so an answer needs no
@@ -82,13 +82,26 @@ network and no database query.
 | `vinyl_lent_out()` | "Who has what?" Every record that is off the shelf, and with whom. |
 | `vinyl_status()` | The record count, the time of the last sync, and its result. `GET /api/status` is the same report over plain HTTP. |
 
-Two mark a record as out with somebody, and write only to the local
-database:
+Six write only to the local database, so none of them needs a Discogs token.
+Two mark a record as out with somebody:
 
 | Tool | What it does |
 |---|---|
 | `vinyl_lend(release_id, to, note)` | Marks a record as out with a person. The record stays in the collection. |
 | `vinyl_return(release_id)` | Puts a record that was out back on the shelf. |
+
+Four correct what the filing rules got wrong. Each one files the records it
+touches again at once and writes the page, so the shelf is right with no sync.
+
+| Tool | What it does |
+|---|---|
+| `vinyl_set_sort_name(artist, sort_name)` | Files an artist under a different name, for a credit MusicBrainz sorts in a way this house does not. |
+| `vinyl_set_section(record_id, section)` | Puts one record behind a different divider. |
+| `vinyl_set_genre(record_id, genre)` | Changes the genre one record sorts and filters under. |
+| `vinyl_corrections()` | Lists every correction the house has made. |
+
+Leaving the value out of any of the three setters drops that correction and
+gives the derived answer back.
 
 Four reach Discogs, so they need `DISCOGS_TOKEN` and `DISCOGS_USERNAME`.
 Without them the addon still browses, answers, and lends; these four say
@@ -260,12 +273,7 @@ a JSON file at `VINYL_CONFIG`, not in code. This is the default, written out:
   },
   "sections": [
     {"name": "Compilations & Soundtracks", "traits": ["various", "soundtrack"]}
-  ],
-  "overrides": {
-    "artist_sort": {},
-    "primary_facet": {},
-    "section": {}
-  }
+  ]
 }
 ```
 
@@ -278,11 +286,17 @@ a JSON file at `VINYL_CONFIG`, not in code. This is the default, written out:
   sections, or add one, without a code change. `compilation` covers a
   greatest-hits record by one artist as well, so a section that lists it
   takes those off the artist shelf.
-- `overrides.artist_sort` maps an artist name to the sort-name to use.
-  `overrides.section` and `overrides.primary_facet` map a Discogs release id,
-  as a string, to a fixed value.
-
 Run a sync after you change the file.
+
+The manual corrections are **not** in this file. They live in the database,
+because a mounted file is read-only and a tool has to be able to write one.
+Use `vinyl_set_sort_name`, `vinyl_set_section` and `vinyl_set_genre`, and
+read them back with `vinyl_corrections`.
+
+A file that still holds an `overrides` block is imported one time, at the
+next sync, and the block is then ignored. The import never overwrites a
+correction already in the database, and it does not run twice, so a
+correction dropped with a tool does not come back from the file.
 
 
 ### How each deployment path supplies it

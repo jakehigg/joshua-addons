@@ -33,7 +33,7 @@ from joshua_vinyl import db, identify
 from joshua_vinyl.bundle import write_bundle
 from joshua_vinyl.config import ShelfConfig
 from joshua_vinyl.log import get_logger
-from joshua_vinyl.sync import album_from_item, cache_art, enrich_album
+from joshua_vinyl.sync import album_from_item, cache_art, enrich_album, refile_albums
 
 logger = get_logger("vinyl.intake")
 
@@ -454,4 +454,45 @@ def return_record(
             "artist": album["artist"] if album else None,
         },
         "was_with": loan["person"],
+    }
+
+
+def set_correction(
+    conn: sqlite3.Connection,
+    *,
+    kind: str,
+    key: str,
+    value: str | None,
+    config: ShelfConfig,
+    bundle_dir: Path,
+    release_ids: list[int] | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Write or drop one manual correction, and file the records again.
+
+    The corrections live in the database, not in the rules file, because a
+    tool writes them and a mounted file is read-only. Every record the
+    correction touches is filed again at once and the page is written, so the
+    shelf is right without a sync.
+    """
+    started = now or datetime.now(UTC)
+    text = (value or "").strip()
+    if text:
+        db.set_override(conn, kind, key, text, started.isoformat(timespec="seconds"))
+        action = "set"
+    else:
+        action = "cleared" if db.clear_override(conn, kind, key) else "not set"
+    conn.commit()
+    moved = refile_albums(conn, config, release_ids=release_ids)
+    write_bundle(conn, bundle_dir, config, now=started)
+    return {kind: {key: text or None}, "action": action, "moved": moved}
+
+
+def corrections(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Every manual correction the house has made."""
+    overrides = db.list_overrides(conn)
+    return {
+        "sort_names": overrides.get(db.ARTIST_SORT, {}),
+        "sections": overrides.get(db.SECTION, {}),
+        "genres": overrides.get(db.PRIMARY_FACET, {}),
     }

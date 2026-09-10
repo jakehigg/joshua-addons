@@ -495,6 +495,83 @@ def vinyl_lent_out() -> dict[str, Any]:
     return {"count": len(records), "records": records}
 
 
+@mcp.tool()
+def vinyl_set_sort_name(artist: str, sort_name: str | None = None) -> dict[str, Any]:
+    """File an artist's records under a different name.
+
+    The shelf letter comes from the artist sort-name MusicBrainz publishes,
+    which files `Dylan, Bob` under D and `Beatles, The` under B. When that is
+    wrong for this house, say what the name should be: "Duane & Greg Allman"
+    filed as "Allman, Duane" moves those records to A.
+
+    Use the credit as it is written on the record. Leave sort_name out to drop
+    the correction and go back to what MusicBrainz says. Every record by that
+    artist is filed again at once, and the answer says which ones moved.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.set_correction(
+            conn,
+            kind=db.ARTIST_SORT,
+            key=artist,
+            value=sort_name,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+        )
+
+
+@mcp.tool()
+def vinyl_set_section(record_id: int, section: str | None = None) -> dict[str, Any]:
+    """Put one record behind a different divider.
+
+    Use it when the filing rules put a record somewhere the house does not
+    keep it. The section is a letter, `#`, or the name of a section after Z.
+    Leave section out to drop the correction.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.set_correction(
+            conn,
+            kind=db.SECTION,
+            key=str(int(record_id)),
+            value=section,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+            release_ids=[int(record_id)],
+        )
+
+
+@mcp.tool()
+def vinyl_set_genre(record_id: int, genre: str | None = None) -> dict[str, Any]:
+    """Change the genre one record sorts and filters under.
+
+    Discogs decides the genre, and it is sometimes not the one the house
+    thinks of. This changes the record's own genre, not the genre list. Leave
+    genre out to drop the correction.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.set_correction(
+            conn,
+            kind=db.PRIMARY_FACET,
+            key=str(int(record_id)),
+            value=genre,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+            release_ids=[int(record_id)],
+        )
+
+
+@mcp.tool()
+def vinyl_corrections() -> dict[str, Any]:
+    """List every manual correction: the sort-names, the sections, the genres."""
+    with _database() as conn:
+        return intake.corrections(conn)
+
+
 class BearerAuthMiddleware:
     """Require ``Authorization: Bearer <token>`` on ``PROTECTED_PREFIX`` only.
 

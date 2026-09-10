@@ -99,7 +99,12 @@ class FacetRules(BaseModel):
 
 
 class Overrides(BaseModel):
-    """Manual corrections. Keys are the artist name, or the release id as a string."""
+    """Manual corrections, read from the rules file one time.
+
+    The corrections live in the database, where a tool can write them. A file
+    that still holds this block is imported at the next sync and then ignored.
+    Keys are the artist name, or the release id as a string.
+    """
 
     artist_sort: dict[str, str] = Field(default_factory=dict)
     primary_facet: dict[str, str] = Field(default_factory=dict)
