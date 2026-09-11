@@ -1,0 +1,248 @@
+{
+  "id": 1853642,
+  "status": "Accepted",
+  "year": 1989,
+  "resource_url": "https://api.discogs.com/releases/1853642",
+  "uri": "https://www.discogs.com/release/1853642-Ennio-Morricone-The-GoodBad-And-The-Ugly",
+  "artists": [
+    {
+      "name": "Ennio Morricone",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 15900,
+      "resource_url": "https://api.discogs.com/artists/15900",
+      "thumbnail_url": "https://i.discogs.com/tOz2gjNvawIZvSYslFGf25Urj5BlagqMn65g2T1SadU/rs:fit/g:sm/q:90/h:600/w:383/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTE1OTAw/LTExNzY0MDUwNDAu/anBlZw.jpeg"
+    }
+  ],
+  "artists_sort": "Ennio Morricone",
+  "labels": [
+    {
+      "name": "Success",
+      "catno": "2112LP",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 36045,
+      "resource_url": "https://api.discogs.com/labels/36045",
+      "thumbnail_url": "https://i.discogs.com/EGchO5qG4qxguCYdX4xcX6i-sChZLquOyr-xql4jS30/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTM2MDQ1/LTE1NzI2OTgwNjEt/Mjc5Mi5qcGVn.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [],
+  "formats": [
+    {
+      "name": "Vinyl",
+      "qty": "1",
+      "descriptions": [
+        "LP",
+        "Compilation"
+      ]
+    }
+  ],
+  "data_quality": "Needs Vote",
+  "community": {
+    "have": 178,
+    "want": 43,
+    "rating": {
+      "count": 10,
+      "average": 3.6
+    },
+    "submitter": {
+      "username": "Kanis",
+      "resource_url": "https://api.discogs.com/users/Kanis"
+    },
+    "contributors": [
+      {
+        "username": "Kanis",
+        "resource_url": "https://api.discogs.com/users/Kanis"
+      },
+      {
+        "username": "helix",
+        "resource_url": "https://api.discogs.com/users/helix"
+      },
+      {
+        "username": "thesixthofmarch",
+        "resource_url": "https://api.discogs.com/users/thesixthofmarch"
+      },
+      {
+        "username": "DiscogsUpdateBot",
+        "resource_url": "https://api.discogs.com/users/DiscogsUpdateBot"
+      }
+    ],
+    "data_quality": "Needs Vote",
+    "status": "Accepted"
+  },
+  "format_quantity": 1,
+  "date_added": "2009-07-18T14:29:23-07:00",
+  "date_changed": "2010-12-18T06:04:14-08:00",
+  "num_for_sale": 9,
+  "lowest_price": 13.95,
+  "master_id": 237655,
+  "master_url": "https://api.discogs.com/masters/237655",
+  "title": "The Good, The Bad And The Ugly",
+  "country": "Italy",
+  "released": "1989",
+  "notes": "Available also on CD and cassette.",
+  "released_formatted": "1989",
+  "identifiers": [],
+  "videos": [],
+  "genres": [
+    "Classical",
+    "Stage & Screen"
+  ],
+  "styles": [
+    "Soundtrack",
+    "Theme"
+  ],
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "title": "The Good, The Bad And The Ugly",
+      "duration": "2:55"
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "title": "Cockeye's Song (\"Once Upon A Time In America\")",
+      "duration": "4:12"
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "title": "The Man With The Harmonica (\"Once Upon A Time In The West\")",
+      "duration": "2:56"
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "title": "A Fistful Of Dollars (1st Theme)",
+      "duration": "2:30"
+    },
+    {
+      "position": "A5",
+      "type_": "track",
+      "title": "Square Dance (\"A Fistful Of Dollars\")",
+      "duration": "2:02"
+    },
+    {
+      "position": "A6",
+      "type_": "track",
+      "title": "Orient Express (Main Train)",
+      "duration": "4:22"
+    },
+    {
+      "position": "A7",
+      "type_": "track",
+      "title": "El Mercenario",
+      "duration": "3:15"
+    },
+    {
+      "position": "A8",
+      "type_": "track",
+      "title": "Chi Mai (\"Le Professionnel\")",
+      "duration": "3:32"
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "title": "For A Few Dollars More",
+      "duration": "2:42"
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "title": "A Fistful Of Dollars (2nd Theme)",
+      "duration": "2:25"
+    },
+    {
+      "position": "B3",
+      "type_": "track",
+      "title": "A Gun For Ringo",
+      "duration": "2:16"
+    },
+    {
+      "position": "B4",
+      "type_": "track",
+      "title": "Sixty Seconds To What (\"A Few Dollars More\")",
+      "duration": "2:17"
+    },
+    {
+      "position": "B5",
+      "type_": "track",
+      "title": "My Name Is Nobody",
+      "duration": "3:04"
+    },
+    {
+      "position": "B6",
+      "type_": "track",
+      "title": "A Fistful Of Dynamite",
+      "duration": "4:37"
+    },
+    {
+      "position": "B7",
+      "type_": "track",
+      "title": "Good Luck Jack (\"My Name Is Nobody\")",
+      "duration": "6:01"
+    },
+    {
+      "position": "B8",
+      "type_": "track",
+      "title": "Once Upon A Time In America (Main Theme)",
+      "duration": "2:05"
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "John Blackinsell Orchestra",
+      "anv": "",
+      "join": "",
+      "role": "Conductor",
+      "tracks": "",
+      "id": 1046326,
+      "resource_url": "https://api.discogs.com/artists/1046326"
+    },
+    {
+      "name": "Nicky North",
+      "anv": "",
+      "join": "",
+      "role": "Conductor",
+      "tracks": "",
+      "id": 660943,
+      "resource_url": "https://api.discogs.com/artists/660943"
+    },
+    {
+      "name": "Ennio Morricone",
+      "anv": "",
+      "join": "",
+      "role": "Music By",
+      "tracks": "",
+      "id": 15900,
+      "resource_url": "https://api.discogs.com/artists/15900"
+    },
+    {
+      "name": "The London Studio Orchestra",
+      "anv": "Studio London Orchestra",
+      "join": "",
+      "role": "Performer",
+      "tracks": "",
+      "id": 341299,
+      "resource_url": "https://api.discogs.com/artists/341299"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/kL4GdpSDOFLbnyMPw0nB1tdqkT1eBaPVdAhoCaz6rnE/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE4NTM2/NDItMTI0Nzk1MjUw/Ny5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/kL4GdpSDOFLbnyMPw0nB1tdqkT1eBaPVdAhoCaz6rnE/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE4NTM2/NDItMTI0Nzk1MjUw/Ny5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/tLZOwmXnR2-ZOh_hU147BwCVHk4lPIzctnCV6EbNsFY/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE4NTM2/NDItMTI0Nzk1MjUw/Ny5qcGVn.jpeg",
+      "width": 600,
+      "height": 600
+    }
+  ],
+  "thumb": "https://i.discogs.com/tLZOwmXnR2-ZOh_hU147BwCVHk4lPIzctnCV6EbNsFY/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE4NTM2/NDItMTI0Nzk1MjUw/Ny5qcGVn.jpeg",
+  "estimated_weight": 230,
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

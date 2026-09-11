@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c120c">
+<title>Records</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23111'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23444' stroke-width='1'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%23e0a83a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="brand">
+    <h1 class="wordmark">Records</h1>
+    <p id="count" class="count" aria-live="polite">Loading</p>
+  </div>
+  <div class="tools">
+    <input id="search" type="search" placeholder="Artist, title, label" autocomplete="off" aria-label="Search the collection">
+    <select id="sort" aria-label="Sort order">
+      <option value="shelf">Shelf order</option>
+      <option value="facet">Genre runs</option>
+      <option value="year">Release year</option>
+      <option value="added">Recently added</option>
+    </select>
+  </div>
+  <div class="stripes" aria-hidden="true"></div>
+</header>
+
+<nav class="filters" aria-label="Filters">
+  <div id="facets" class="chips" role="group" aria-label="Genre"></div>
+  <div id="styles" class="chips chips-styles" role="group" aria-label="Style" hidden></div>
+  <div id="active" class="active" hidden>
+    <span id="active-text"></span>
+    <button id="clear" type="button" class="link">Clear</button>
+  </div>
+</nav>
+
+<main class="stage">
+  <div class="glow" aria-hidden="true"></div>
+  <div id="crate" class="crate">
+    <div id="marker" class="marker" aria-hidden="true"><span id="marker-text"></span></div>
+    <section id="carousel" class="carousel coverflow" aria-label="Covers" tabindex="0"></section>
+    <div id="scrub-left" class="scrub scrub-left" aria-hidden="true"><span class="scrub-arrow">&#8249;&#8249;&#8249;</span></div>
+    <div id="scrub-right" class="scrub scrub-right" aria-hidden="true"><span class="scrub-arrow">&#8250;&#8250;&#8250;</span></div>
+  </div>
+  <div class="shelf" aria-hidden="true"></div>
+  <div id="now" class="now" aria-live="polite">
+    <p id="now-label" class="now-label"></p>
+    <h2 id="now-title" class="now-title"></h2>
+    <p id="now-meta" class="now-meta"></p>
+    <button id="now-open" type="button" class="now-open" hidden>Flip it over</button>
+  </div>
+  <div class="arrows">
+    <button id="prev" type="button" class="arrow" aria-label="Previous record">&#8249;</button>
+    <span id="position" class="position"></span>
+    <button id="next" type="button" class="arrow" aria-label="Next record">&#8250;</button>
+  </div>
+  <p id="empty" class="empty" hidden></p>
+</main>
+
+<dialog id="detail" class="detail" aria-labelledby="detail-title">
+  <button id="detail-close" type="button" class="close" aria-label="Close">&times;</button>
+  <div id="detail-body" class="detail-body"></div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

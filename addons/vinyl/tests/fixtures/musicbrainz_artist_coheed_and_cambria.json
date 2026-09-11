@@ -1,0 +1,81 @@
+{
+  "created": "2026-09-08T06:16:19.911Z",
+  "count": 1,
+  "offset": 0,
+  "artists": [
+    {
+      "id": "ae1b47d5-5128-431c-9d30-e08fd90e0767",
+      "type": "Group",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "score": 100,
+      "name": "Coheed and Cambria",
+      "sort-name": "Coheed and Cambria",
+      "country": "US",
+      "area": {
+        "id": "489ce91b-6658-3307-9877-795b68554c98",
+        "type": "Country",
+        "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+        "name": "United States",
+        "sort-name": "United States",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "begin-area": {
+        "id": "77d9f600-4c51-4b18-be9e-3be9e6c260f5",
+        "type": "City",
+        "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+        "name": "Nyack",
+        "sort-name": "Nyack",
+        "life-span": {
+          "ended": null
+        }
+      },
+      "isnis": [
+        "000000012174113X"
+      ],
+      "life-span": {
+        "begin": "2001",
+        "ended": null
+      },
+      "aliases": [
+        {
+          "sort-name": "Coheed And Cambria",
+          "name": "Coheed And Cambria",
+          "locale": null,
+          "type": null,
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        },
+        {
+          "sort-name": "Coheed & Cambria",
+          "name": "Coheed & Cambria",
+          "locale": null,
+          "type": null,
+          "primary": null,
+          "begin-date": null,
+          "end-date": null
+        }
+      ],
+      "tags": [
+        {
+          "count": 3,
+          "name": "progressive metal"
+        },
+        {
+          "count": 0,
+          "name": "new prog"
+        },
+        {
+          "count": 6,
+          "name": "progressive rock"
+        },
+        {
+          "count": 3,
+          "name": "alternative rock"
+        }
+      ]
+    }
+  ]
+}

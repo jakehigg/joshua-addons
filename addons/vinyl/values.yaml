@@ -1,0 +1,43 @@
+# The vinyl addon, installed with charts/joshua-addon. The SQLite file, the
+# cached art, and the bundle need somewhere to live, so persistence is on by
+# default, at the chart's default mountPath (/data, this addon's default
+# VINYL_DATA_DIR). Put DISCOGS_TOKEN in an existingSecret, never here.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-vinyl
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi
+
+# The shelf rules: the facet list, the sections after Z, and the manual
+# overrides. They are household taste, so they live in one file that this
+# chart writes to a ConfigMap and mounts read-only. VINYL_CONFIG points the
+# addon at it, away from the data volume, so the file is version-controlled
+# with the release and never edited in place.
+#
+# The content below is the default, written out. Change it, or set
+# configFile.enabled to false to keep the defaults and let the addon read
+# a file from the data volume instead.
+configFile:
+  enabled: true
+  name: shelf.json
+  mountPath: /etc/joshua-addon/shelf.json
+  content: |
+    {
+      "facets": {
+        "promote": { "Country": "Folk, World, & Country" },
+        "relabel": { "Folk, World, & Country": "Folk & World" }
+      },
+      "sections": [
+        { "name": "Compilations & Soundtracks", "traits": ["various", "soundtrack"] }
+      ],
+      "overrides": {
+        "artist_sort": {},
+        "primary_facet": {},
+        "section": {}
+      }
+    }
+
+env:
+  VINYL_CONFIG: /etc/joshua-addon/shelf.json

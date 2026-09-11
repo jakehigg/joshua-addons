@@ -4,6 +4,21 @@ Each entry names what changed for the person who runs an addon. The
 releases, with the images and the packaged chart, are at
 <https://github.com/jakehigg/joshua-addons/releases>.
 
+## Unreleased
+
+### Added
+
+- `vinyl`, a shelf browser for a record collection kept on Discogs. A
+  nightly sync reads the collection (read-only), caches the album art,
+  resolves each artist's sort-name from MusicBrainz to derive the shelf
+  section, reads each release's tracklist and lowest listed price, and
+  writes a static bundle. A page at `/` shows the covers on a 3D shelf with
+  a genre filter, search, sort orders, and a detail view that names the
+  shelf section and lists the tracks. The facet list and the special sections after Z
+  come from a JSON file the operator keeps. One MCP tool, `vinyl_status`.
+  `/`, `/bundle`, `/art`, and `/api/status` are open; `/mcp` takes the
+  bearer token.
+
 ## 0.1.2
 
 ### Added

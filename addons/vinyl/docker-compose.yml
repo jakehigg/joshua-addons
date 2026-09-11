@@ -1,0 +1,67 @@
+# Run the `vinyl` addon alone. `make up ADDON=vinyl` starts it. The image
+# comes from the GitHub container registry, so nothing is built here: set
+# JOSHUA_ADDONS_VERSION in `.env` to take another release.
+#
+# To run your own build instead, add the developer override:
+#   docker compose -f addons/vinyl/docker-compose.yml -f addons/vinyl/docker-compose.dev.yml up -d --build
+#
+# Secrets come only from `.env` (see `.env.example`). No secret is written in
+# this file; every value is a literal or a `${VAR}` from `.env`.
+#
+# Storage: the SQLite file, the cached album art, and the bundle live on the
+# `vinyl-data` named volume at /data. To keep the art on a network share,
+# bind-mount that share over /data/art in your own override file.
+#
+# The shelf rules (the facet list, the sections after Z, the overrides) are a
+# JSON file. With no file the defaults apply. To keep your own, put it beside
+# this compose file and uncomment the bind mount and VINYL_CONFIG below. A
+# read-only mount keeps it out of the data volume, so it survives a wipe of
+# the cache and stays in version control with the rest of your setup.
+#
+# Network: the addon joins `joshua`, the external network joshua-ai's own
+# compose file creates. The gateway reaches this addon at
+# `http://vinyl:8000/mcp`. When joshua-ai is not up, the external network is
+# missing and compose refuses to start; start joshua-ai first, or set
+# JOSHUA_NETWORK to the network joshua-ai actually created.
+services:
+  vinyl:
+    image: ghcr.io/jakehigg/joshua-addons-vinyl:${JOSHUA_ADDONS_VERSION:-0.1.2}
+    restart: unless-stopped
+    environment:
+      ADDON_TOKEN: ${ADDON_TOKEN:-}
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      DISCOGS_USERNAME: ${DISCOGS_USERNAME:-}
+      VINYL_SYNC_TIME: ${VINYL_SYNC_TIME:-03:00}
+      VINYL_CURRENCY: ${VINYL_CURRENCY:-USD}
+      VINYL_USER_AGENT: ${VINYL_USER_AGENT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Uncomment with the volume below to keep your own shelf rules.
+      # VINYL_CONFIG: /etc/joshua-addon/shelf.json
+      TZ: ${TZ:-UTC}
+    volumes:
+      - vinyl-data:/data
+      # - ./shelf.json:/etc/joshua-addon/shelf.json:ro
+    # Not published on the host. Only the gateway, over the shared network,
+    # reaches this addon. To browse from a phone, publish the port in your
+    # own override file, never here:
+    # ports:
+    #   - "8000:8000"
+    healthcheck:
+      # The slim image has no curl, so the check uses python. `urlopen` exits
+      # non-zero on a non-200 response.
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - joshua
+
+volumes:
+  vinyl-data:
+
+networks:
+  joshua:
+    external: true
+    name: ${JOSHUA_NETWORK:-joshua-ai_default}

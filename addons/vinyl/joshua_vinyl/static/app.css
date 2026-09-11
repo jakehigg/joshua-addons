@@ -1,0 +1,903 @@
+/* A record shop in 1974: walnut, burnt orange, mustard, cream, and a little
+   grain. The covers stand on a shelf in 3D and the vinyl slides out of the
+   sleeve you are looking at. Plain CSS, no build step, works offline. */
+
+:root {
+  --walnut: #2a1b13;
+  --walnut-deep: #170e09;
+  --cream: #f3e5c5;
+  --cream-dim: #c9b28c;
+  --orange: #d5642a;
+  --mustard: #e3a83a;
+  --rust: #8a3b1c;
+  --wood-hi: #8d5a34;
+  --wood-lo: #4a2a16;
+  --paper: #efe1c1;
+  --paper-dark: #e1cfa6;
+  --ink: #2a1b13;
+  --ink-soft: #6b5340;
+  /* The cover has to fit the height as well as the width. `vmin` alone is
+     the smaller side, which on a wide short window is still the height, but
+     it ignores the header, the caption and the arrows stacked below. The
+     `vh` term keeps a tablet or a laptop in landscape from pushing the
+     arrows off the bottom. */
+  --cover: clamp(200px, min(54vmin, 35vh), 380px);
+  /* How far a crate divider stands proud of the sleeves. The carousel
+     reserves this much headroom above the covers, so a risen divider never
+     paints over the filter chips. */
+  --tab: calc(var(--cover) * 0.115);
+  --display: "Cooper Black", "Arial Rounded MT Bold", "Arial Black", "Trebuchet MS", sans-serif;
+  --body: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+/* `clip` rather than `hidden`: the 3D shelf and the sliding disc reach past
+   the viewport on a narrow screen, and `hidden` would turn that into a
+   sideways scroll that fights the swipe gesture. */
+html, body { margin: 0; min-height: 100%; overflow-x: clip; }
+
+body {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 62%, rgba(213, 100, 42, 0.28), transparent 70%),
+    linear-gradient(180deg, #3a2417 0%, var(--walnut) 40%, var(--walnut-deep) 100%);
+  color: var(--cream);
+  font: 16px/1.4 var(--body);
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow-x: clip;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Film grain over everything, fixed, cheap. */
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.16;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+button, input, select { font: inherit; color: inherit; }
+
+/* ---------- header ---------- */
+
+.top {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 18px 22px 16px;
+}
+
+.wordmark {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--mustard);
+  text-shadow:
+    2px 2px 0 var(--rust),
+    4px 4px 0 var(--walnut-deep),
+    6px 6px 12px rgba(0, 0, 0, 0.5);
+}
+
+.count {
+  margin: 6px 0 0 2px;
+  color: var(--cream-dim);
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tools {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 320px;
+  max-width: 560px;
+}
+
+.tools input,
+.tools select {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(243, 229, 197, 0.25);
+  border-radius: 4px;
+  padding: 10px 12px;
+  min-width: 0;
+  color: var(--cream);
+}
+.tools input::placeholder { color: var(--cream-dim); }
+.tools input { flex: 1 1 auto; }
+.tools select option { background: var(--walnut); }
+
+.tools input:focus, .tools select:focus, .chip:focus-visible, .arrow:focus-visible,
+.carousel:focus-visible, .now-open:focus-visible, .link:focus-visible {
+  outline: 2px solid var(--mustard);
+  outline-offset: 2px;
+}
+
+/* Three racing stripes under the header, the way a 1974 sleeve would. */
+.stripes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 9px;
+  background: linear-gradient(
+    180deg,
+    var(--orange) 0 33%,
+    var(--mustard) 33% 66%,
+    var(--cream) 66% 100%
+  );
+  opacity: 0.9;
+}
+
+/* ---------- filters ---------- */
+
+.filters {
+  padding: 12px 22px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(243, 229, 197, 0.4);
+  border-radius: 3px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--cream);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+.chip:hover { transform: translateY(-1px); }
+.chip small {
+  color: var(--cream-dim);
+  margin-left: 6px;
+  letter-spacing: 0;
+}
+.chip[aria-pressed="true"] {
+  background: var(--mustard);
+  border-color: var(--mustard);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--rust);
+}
+.chip[aria-pressed="true"] small { color: var(--ink); opacity: 0.7; }
+.chips-styles .chip { font-size: 0.72rem; padding: 4px 10px; border-style: dashed; }
+.chips-styles .chip[aria-pressed="true"] { background: var(--orange); border-color: var(--orange); }
+
+.active {
+  color: var(--cream-dim);
+  font-size: 0.85rem;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.link {
+  background: none;
+  border: none;
+  color: var(--mustard);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- stage ---------- */
+
+.stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  padding-bottom: 16px;
+}
+
+.glow {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: min(100%, 1100px);
+  height: 60%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse at center, rgba(227, 168, 58, 0.22), transparent 62%);
+  pointer-events: none;
+}
+
+/* ---------- the crate: the covers, the section letter, the scrub gutters ---------- */
+
+.crate { position: relative; }
+
+/* The section letter, thrown across the covers. It rises under one of the two
+   speed controls and sinks the moment the finger comes off, so a scrub always
+   says roughly where you are without anyone reading a single sleeve. It sits in
+   front: behind, an unbroken row of sleeves hides every part of it. */
+.marker {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: var(--display);
+  font-weight: 900;
+  line-height: 0.78;
+  color: var(--mustard);
+  opacity: 0;
+  transform: translateY(12%) scale(0.94);
+  transition: opacity 420ms ease, transform 560ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+.marker span {
+  font-size: calc(var(--cover) * 0.95);
+  /* It lands on album art of any brightness, so it carries its own edge. */
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.85), 0 0 3px rgba(23, 14, 9, 0.6);
+}
+.marker.is-word span {
+  display: block;
+  max-width: 7em;
+  font-size: calc(var(--cover) * 0.19);
+  line-height: 1.05;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+/* Only at speed, not on every step. Flipping one cover at a time is slow
+   enough to read the caption, and a letter thrown across the art then is
+   just in the way. */
+body.is-fast .marker { opacity: 0.26; transform: translateY(0) scale(1); }
+
+/* The speed-scrub gutters. Holding a finger in one travels the crate on its
+   own, faster the closer to the edge; --heat is how hard it is being
+   pushed, and --scrub-zone is the width the script actually measures. */
+.scrub {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--scrub-zone, 18%);
+  z-index: 2;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  opacity: calc(0.1 + 0.9 * var(--heat, 0));
+  transition: opacity 180ms ease;
+}
+.scrub-left { left: 0; background: linear-gradient(90deg, rgba(213, 100, 42, 0.62), rgba(213, 100, 42, 0.3) 45%, transparent); }
+.scrub-right { right: 0; background: linear-gradient(270deg, rgba(213, 100, 42, 0.62), rgba(213, 100, 42, 0.3) 45%, transparent); }
+/* The same chevron as the arrow buttons, three deep: the shape a person
+   already reads as fast forward. */
+.scrub-arrow {
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.12em;
+  color: var(--cream);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+  transform: scale(calc(0.78 + 0.5 * var(--heat, 0)));
+  transition: transform 180ms ease;
+}
+
+.coverflow {
+  position: relative;
+  z-index: 1;
+  height: calc(var(--cover) * 1.42 + var(--tab));
+  perspective: 1100px;
+  perspective-origin: 50% 40%;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+.coverflow.dragging { cursor: grabbing; }
+
+.cover {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--cover) * 0.085 + var(--tab));
+  width: var(--cover);
+  height: var(--cover);
+  margin-left: calc(var(--cover) / -2);
+  transform-style: preserve-3d;
+  transition: transform 560ms cubic-bezier(0.22, 0.9, 0.3, 1), opacity 320ms ease;
+  will-change: transform;
+  cursor: pointer;
+}
+.cover.is-hidden { opacity: 0; pointer-events: none; }
+.coverflow.dragging .cover { transition: none; }
+/* A fast scrub wants the row chasing the finger, not gliding 560ms behind
+   it. Short and linear reads as one continuous travel. */
+.coverflow.scrubbing .cover { transition: transform 90ms linear; }
+/* An off-stage cover jumps rather than flies. On the ring its slot swaps
+   from one far side to the other at the wrap point, and animating that is
+   invisible work. Last, so it beats the two rules above on a tie. */
+.coverflow .cover.is-hidden { transition: opacity 320ms ease; }
+
+/* A crate divider: the tabbed card that stands proud of the records. It
+   belongs to the first cover of its section, sits behind the sleeve in 3D,
+   and only stands up while the row is moving. At rest it is fully inside
+   the cover box, which the opaque sleeve hides. */
+.cover .divider {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 0;
+  height: 32%;
+  z-index: 1;
+  display: grid;
+  place-items: start center;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #f7ecd4 0%, var(--paper) 30%, var(--paper-dark) 78%, #c4ad81 100%);
+  box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.45) inset;
+  transform: translateZ(-8px) translateY(6%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 480ms cubic-bezier(0.22, 0.9, 0.3, 1), opacity 300ms ease;
+}
+.cover .divider b {
+  font-family: var(--display);
+  font-weight: 900;
+  color: var(--rust);
+  font-size: calc(var(--cover) * 0.115);
+  line-height: 1.05;
+  letter-spacing: 0.03em;
+  padding-top: 3%;
+}
+/* A genre, a named section, and the year-unknown card are phrases rather than
+   letters. They set in small caps, sized to the band that stands above the
+   sleeves rather than to the card, because the rest of the card never leaves
+   the crate. This size holds the longest genre in the collection on one line. */
+.cover .divider.is-word b {
+  font-size: calc(var(--cover) * 0.06);
+  line-height: 1.12;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 2% 6% 0;
+}
+/* A phrase too long for that drops smaller and takes two lines. */
+.cover .divider.is-long b { font-size: calc(var(--cover) * 0.042); }
+body.is-moving .cover .divider { opacity: 1; transform: translateZ(-8px) translateY(-50%); }
+
+.cover .sleeve {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: var(--walnut-deep);
+  box-shadow: 0 24px 40px rgba(0, 0, 0, 0.6), 0 2px 0 rgba(255, 255, 255, 0.06) inset;
+  transform: translateZ(1px);
+}
+.cover .sleeve img,
+.cover .sleeve .missing {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: brightness(0.62) saturate(0.8);
+  transition: filter 400ms ease;
+}
+.cover.is-active .sleeve img,
+.cover.is-active .sleeve .missing { filter: none; }
+.cover .missing {
+  display: grid;
+  place-items: center;
+  color: var(--cream-dim);
+  font-family: var(--display);
+  font-size: 1.1rem;
+  text-align: center;
+  padding: 12px;
+  background: linear-gradient(135deg, #3a2417, #1f130c);
+  border: 1px dashed rgba(243, 229, 197, 0.3);
+}
+
+/* The record inside the sleeve, in two parts on purpose. `.disc` slides, and
+   `.platter` inside it turns. One element cannot do both: an animation wins
+   over a transition on the same property, so a single spinning disc could only
+   ever snap in and out. Split, the record can leave the sleeve unhurriedly
+   while it is already turning, and duck back in whenever the row travels. */
+.cover .disc {
+  position: absolute;
+  top: 3%;
+  left: 3%;
+  width: 94%;
+  height: 94%;
+  border-radius: 50%;
+  z-index: 1;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  transform: translateX(0) translateZ(-2px);
+  /* Tucking away is brisk: the row is already moving and the record is in the
+     way of the covers behind it. */
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+.cover .platter {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #151515 0 16%, transparent 16.5%),
+    repeating-radial-gradient(circle at 50% 50%, #0d0d0d 0 1.5px, #1e1e1e 1.5px 3.5px);
+}
+.cover .platter::before {
+  /* the sheen across the grooves */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 200deg, transparent 0 30%, rgba(255, 255, 255, 0.12) 36%, transparent 44%, transparent 60%, rgba(255, 255, 255, 0.08) 66%, transparent 72%);
+}
+.cover .platter::after {
+  /* the label */
+  content: "";
+  position: absolute;
+  left: 34%;
+  top: 34%;
+  width: 32%;
+  height: 32%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--walnut-deep) 0 6%, transparent 6.5%),
+    repeating-conic-gradient(var(--orange) 0 25%, var(--mustard) 25% 50%);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6) inset;
+}
+
+/* It turns behind the sleeve as well as in front of it, so it is already up to
+   speed by the time the first sliver of it clears the cover. */
+.cover.is-active .platter { animation: spin 9s linear infinite; }
+/* Except at twenty-six records a second, when the active cover changes every
+   frame and nobody can see it anyway. */
+.coverflow.scrubbing .platter { animation: none; }
+
+/* Out only once the crate has settled, and unhurried, the way a record leaves
+   its sleeve. Any travel at all sends it back in. */
+body:not(.is-moving) .cover.is-active .disc {
+  transform: translateX(54%) translateZ(-2px);
+  transition: transform 760ms cubic-bezier(0.22, 0.9, 0.3, 1) 80ms;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* The reflection in the shelf's varnish. */
+.cover .reflection {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  width: 100%;
+  height: 100%;
+  transform: scaleY(-1) translateZ(0);
+  transform-origin: top;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+  object-fit: cover;
+  mask-image: linear-gradient(to bottom, transparent 45%, rgba(0, 0, 0, 0.6) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 45%, rgba(0, 0, 0, 0.6) 100%);
+  filter: blur(1px) brightness(0.7);
+}
+
+.shelf {
+  position: relative;
+  margin: calc(var(--cover) * -0.28) 0 0;
+  height: 16px;
+  background: linear-gradient(180deg, var(--wood-hi), var(--wood-lo) 70%, #2d190d);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+  z-index: 3;
+}
+.shelf::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 90px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent);
+  pointer-events: none;
+}
+
+/* ---------- now playing caption ---------- */
+
+.now {
+  position: relative;
+  z-index: 4;
+  text-align: center;
+  padding: 18px 20px 0;
+  min-height: 118px;
+}
+.now.rise > * { animation: rise 420ms cubic-bezier(0.22, 0.9, 0.3, 1) both; }
+.now.rise > :nth-child(2) { animation-delay: 40ms; }
+.now.rise > :nth-child(3) { animation-delay: 80ms; }
+.now.rise > :nth-child(4) { animation-delay: 120ms; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.now-label {
+  margin: 0 0 6px;
+  display: inline-block;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--mustard);
+  padding: 4px 10px;
+  border-radius: 2px;
+  box-shadow: 2px 2px 0 var(--rust);
+}
+.now-label:empty { display: none; }
+.now-title {
+  margin: 4px 0 2px;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(1.3rem, 4.2vw, 2rem);
+  line-height: 1.15;
+  color: var(--cream);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+.now-meta {
+  margin: 0;
+  color: var(--cream-dim);
+  font-size: 0.95rem;
+}
+.now-open {
+  margin-top: 10px;
+  background: transparent;
+  border: 1px solid var(--orange);
+  color: var(--orange);
+  border-radius: 3px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: background 160ms ease, color 160ms ease;
+}
+.now-open:hover { background: var(--orange); color: var(--ink); }
+
+.arrows {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 0 4px;
+}
+.arrow {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(243, 229, 197, 0.45);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--cream);
+  font-size: 1.7rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease;
+}
+.arrow:hover { background: var(--orange); transform: scale(1.06); }
+.arrow:disabled { opacity: 0.3; cursor: default; transform: none; background: rgba(0, 0, 0, 0.35); }
+.position {
+  font-family: var(--mono);
+  color: var(--cream-dim);
+  font-size: 0.85rem;
+  min-width: 5.5em;
+  text-align: center;
+}
+
+.empty {
+  position: relative;
+  z-index: 4;
+  text-align: center;
+  color: var(--cream-dim);
+  padding: 40px 20px;
+  font-family: var(--display);
+  font-size: 1.2rem;
+}
+
+/* ---------- the gatefold (detail) ---------- */
+
+.detail {
+  border: none;
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0;
+  width: min(94vw, 820px);
+  max-height: 92dvh;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+.detail[open] { animation: pop 320ms cubic-bezier(0.22, 0.9, 0.3, 1); }
+.detail::backdrop { background: rgba(20, 10, 5, 0.78); }
+
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.94) translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.detail .close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: var(--ink);
+  border: none;
+  color: var(--cream);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  font-size: 1.4rem;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.detail-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  max-height: 92dvh;
+  overflow-y: auto;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.06), transparent 6%, transparent 94%, rgba(0, 0, 0, 0.06)),
+    var(--paper);
+}
+@media (min-width: 680px) {
+  .detail-body { grid-template-columns: 320px 1fr; }
+}
+
+.detail-body .cover-wrap {
+  padding: 26px 22px 10px;
+  background: var(--paper-dark);
+}
+.detail-body .cover-wrap img,
+.detail-body .cover-wrap .missing {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+  transform: rotate(-2deg);
+  box-shadow: 8px 10px 0 rgba(42, 27, 19, 0.15), 0 16px 30px rgba(0, 0, 0, 0.35);
+  background: var(--walnut);
+}
+.detail-body .cover-wrap .missing {
+  display: grid;
+  place-items: center;
+  color: var(--cream-dim);
+  font-family: var(--display);
+}
+
+.info { padding: 26px 26px 30px; }
+.info h2 {
+  margin: 0 0 4px;
+  font-family: var(--display);
+  font-size: 1.55rem;
+  line-height: 1.15;
+  padding-right: 40px;
+}
+.info .artist { margin: 0 0 14px; color: var(--ink-soft); font-size: 1.05rem; }
+
+.section {
+  display: inline-block;
+  font-family: var(--display);
+  color: var(--orange);
+  border: 3px double var(--orange);
+  border-radius: 4px;
+  padding: 4px 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+  margin: 0 0 18px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0 0 14px;
+  font-size: 0.93rem;
+}
+.facts dt {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding-top: 3px;
+}
+.facts dd { margin: 0; }
+
+.price { margin: 0 0 14px; font-family: var(--mono); font-size: 0.95rem; }
+.price small { color: var(--ink-soft); display: block; font-family: var(--body); font-size: 0.8rem; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.tag {
+  border: 1px solid var(--ink-soft);
+  border-radius: 2px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.tracks-title {
+  margin: 8px 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.tracks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+}
+.tracks li {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 1px dotted rgba(42, 27, 19, 0.35);
+}
+.tracks li.heading {
+  font-weight: 700;
+  border-top: 2px solid var(--ink);
+  margin-top: 6px;
+}
+.tracks .pos { color: var(--ink-soft); min-width: 2.6em; }
+.tracks .name { flex: 1; }
+.tracks .dur { color: var(--ink-soft); margin-left: auto; }
+
+@media (max-width: 600px) {
+  .top { padding: 14px 16px 14px; }
+  .filters { padding-left: 16px; padding-right: 16px; }
+  .now { min-height: 108px; }
+}
+
+/* A short viewport is nearly always a phone held sideways. Stacking the
+   shelf, the caption and the arrows needs more height than there is, so the
+   caption moves beside the shelf and the cover is sized from the height
+   that is actually left rather than from the smaller viewport side. */
+@media (max-height: 680px) and (orientation: landscape) {
+  :root { --cover: clamp(96px, 30vh, 230px); }
+
+  .top {
+    padding: 8px 16px 10px;
+    gap: 4px 16px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .wordmark { font-size: clamp(1.35rem, 4.2vh, 2.1rem); }
+  .count { display: none; }
+  .brand { flex: 0 0 auto; }
+  .tools { flex: 1 1 auto; max-width: 62%; }
+  .tools input, .tools select { padding: 7px 10px; }
+  .stripes { height: 6px; }
+
+  .filters { padding: 6px 16px 0; gap: 4px; }
+  .chip { padding: 4px 10px; font-size: 0.74rem; }
+
+  .stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(170px, 32%, 290px);
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: 18px;
+    padding: 4px 16px 2px;
+  }
+  /* The row of covers is wider than its column, so clip it at the column
+     edge rather than let the far covers slide under the caption. `clip` on
+     one axis leaves the reflection below the shelf untouched, which
+     `hidden` would cut off. */
+  .crate {
+    grid-column: 1;
+    grid-row: 1;
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+  .shelf { grid-column: 1; grid-row: 2; }
+  /* The shadow below the shelf is an absolutely positioned block, and it
+     still counts toward the page height. Stacked, the caption below absorbs
+     it; here nothing does, so it has to be shorter than the screen can
+     spare. */
+  .shelf::after { height: 34px; }
+
+  /* The caption sits above the shelf line and the arrows below it, so the
+     two read as one block beside the covers. */
+  .now {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    text-align: left;
+    padding: 0 0 8px;
+    min-height: 0;
+  }
+  .now-title { font-size: clamp(1.05rem, 3.4vh, 1.5rem); }
+  /* One line, always. A wrapped artist name changes the height of the whole
+     column, which is the difference between fitting the screen and not. */
+  .now-meta {
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .now-open { margin-top: 8px; }
+
+  .arrows {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-start;
+    align-self: start;
+    padding: 6px 0 0;
+    gap: 12px;
+  }
+  .arrow { width: 38px; height: 38px; font-size: 1.45rem; }
+
+  .empty { grid-column: 1 / -1; grid-row: 1 / -1; }
+  .glow { height: 74%; }
+
+  /* The gatefold goes side by side too. Stacked, a full-width square cover
+     is taller than the whole screen, so the title and the tracklist sit
+     below the fold and the panel reads as broken. The narrow first column
+     shrinks the cover, because the cover is sized by its width. */
+  .detail-body { grid-template-columns: minmax(0, 34%) 1fr; }
+  .detail-body .cover-wrap { padding: 14px 12px 14px 14px; align-self: start; }
+  .info { padding: 16px 18px 20px; }
+  .info h2 { font-size: 1.25rem; padding-right: 44px; }
+  .info .artist { margin-bottom: 10px; font-size: 0.95rem; }
+  .section { margin-bottom: 12px; }
+}
+
+/* A short portrait window (a small phone, or the browser chrome eating the
+   screen) needs the same restraint without the two-column split. */
+@media (max-height: 700px) and (orientation: portrait) {
+  :root { --cover: clamp(134px, 28vh, 290px); }
+  .top { padding: 8px 16px 8px; gap: 8px 16px; }
+  .wordmark { font-size: clamp(1.6rem, 5.6vw, 2.4rem); }
+  .count { display: none; }
+  .tools input, .tools select { padding: 7px 10px; }
+  .filters { padding-top: 6px; }
+  .chip { padding: 4px 10px; font-size: 0.74rem; }
+  .now { min-height: 0; padding-top: 10px; }
+  .now-open { margin-top: 6px; }
+  .arrows { padding: 6px 0 2px; }
+  .arrow { width: 38px; height: 38px; font-size: 1.45rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover, .cover .disc, .chip, .arrow, .now-open { transition: none; }
+  body:not(.is-moving) .cover.is-active .disc { transition: none; }
+  .cover .divider, .marker, .scrub, .scrub-arrow { transition: none; }
+  .cover .divider { transform: translateZ(-8px) translateY(-50%); }
+  .marker { transform: none; }
+  .cover.is-active .platter { animation: none; }
+  .now.rise > * { animation: none; }
+  .detail[open] { animation: none; }
+}
