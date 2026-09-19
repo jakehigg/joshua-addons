@@ -4,6 +4,49 @@ Each entry names what changed for the person who runs an addon. The
 releases, with the images and the packaged chart, are at
 <https://github.com/jakehigg/joshua-addons/releases>.
 
+## Unreleased
+
+### Added
+
+- `vinyl` gains the tools that answer a question about the collection, and
+  the tools that change it. Seven read the static bundle, so an answer needs
+  no network: `vinyl_search` matches the title, the artist or the label and
+  tolerates a missing "The"; `vinyl_owned` answers the question asked in a
+  shop; `vinyl_details`, `vinyl_stats`, `vinyl_recent` and `vinyl_lent_out`
+  report what the house has; and `vinyl_pick` chooses one record to play,
+  leaving a record it suggested in the last two weeks alone while anything
+  else fits. Nobody reports a play for that to work.
+- Four reach Discogs, and say what is missing without a token. `vinyl_lookup`
+  searches in the order of the evidence, barcode first, then catalog number,
+  then artist and title, and answers with at most three candidates, each with
+  the full format line, the release notes, the country and the year.
+  `vinyl_label_images` answers with the disc labels as pictures, to compare
+  against a photograph of the record. `vinyl_add` and `vinyl_remove` change
+  the collection, and each plans first and writes only on a second call with
+  `confirm`. An add marks a pressing it cannot confirm in the collection note
+  and refuses a release the collection already holds; a removal asks which
+  copy when the house owns two.
+- Two mark a record as out with somebody without touching Discogs:
+  `vinyl_lend` and `vinyl_return`. A lent record keeps its note, its shelf
+  section and the date it was added, is never suggested, and the page says
+  who has it.
+- Four correct the filing: `vinyl_set_sort_name`, `vinyl_set_section`,
+  `vinyl_set_genre` and `vinyl_corrections`. The corrections move out of the
+  shelf rules file and into the database, because a mounted file is read-only
+  and a tool has to be able to write one. A file that still holds an
+  `overrides` block is imported one time and then ignored. Every correction
+  files the records it touches again at once and writes the page, so the
+  shelf is right with no sync.
+- A record added, removed, lent or corrected is on the browse page at once.
+
+### Changed
+
+- The `vinyl` database gains `master_id`, `sort_artist` and `traits` on the
+  albums table, and an `overrides` table. A database from an earlier version
+  gains the columns when it is opened. `master_id` is what lets the addon say
+  the house owns the same album in another pressing, and it fills at the next
+  sync.
+
 ## 0.1.3 - 2026-09-11
 
 ### Added

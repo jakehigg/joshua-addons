@@ -901,3 +901,18 @@ body:not(.is-moving) .cover.is-active .disc {
   .now.rise > * { animation: none; }
   .detail[open] { animation: none; }
 }
+
+/* A record that is out with somebody. It stays in the collection, so it is
+   dimmed rather than hidden, and the gatefold says who has it. */
+.now.is-lent .now-title,
+.now.is-lent .now-meta {
+  opacity: 0.62;
+}
+.lent {
+  margin: 8px 0 0;
+  font-family: var(--display);
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mustard);
+}

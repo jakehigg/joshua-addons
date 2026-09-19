@@ -1,10 +1,14 @@
 """The SQLite store under the data directory.
 
 One file, ``vinyl.db``. The schema follows the PRD: ``albums``, ``tracks``,
-``prices``, ``tags``, ``plays``, plus ``artists`` (the MusicBrainz sort-name
+``prices``, ``tags``, plus ``artists`` (the MusicBrainz sort-name
 cache, keyed by artist name) and ``meta`` (the last sync). The collection
 itself lives on Discogs, so the file is fully reconstructible, and it is
 never in the critical path of a backup.
+
+Two tables hold what Discogs cannot: ``suggestions``, which is how the same
+record is not suggested twice in a fortnight, and ``loans``, which is who has
+a record that is off the shelf. A sync never clears either one.
 """
 
 from __future__ import annotations
@@ -18,7 +22,10 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS albums (
     discogs_release_id INTEGER PRIMARY KEY,
     instance_id INTEGER,
+    master_id INTEGER,
     artist TEXT NOT NULL,
+    sort_artist TEXT,
+    traits TEXT,
     artist_sort TEXT NOT NULL,
     artist_sort_source TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -60,13 +67,23 @@ CREATE TABLE IF NOT EXISTS tags (
     count INTEGER,
     PRIMARY KEY (release_id, tag, source)
 );
-CREATE TABLE IF NOT EXISTS plays (
+CREATE TABLE IF NOT EXISTS overrides (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    set_at TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+CREATE TABLE IF NOT EXISTS suggestions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     release_id INTEGER NOT NULL,
-    played_at TEXT NOT NULL,
-    person TEXT,
-    mood TEXT,
-    source TEXT
+    suggested_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS loans (
+    release_id INTEGER PRIMARY KEY,
+    person TEXT NOT NULL,
+    since TEXT NOT NULL,
+    note TEXT
 );
 CREATE TABLE IF NOT EXISTS artists (
     name TEXT PRIMARY KEY,
@@ -82,11 +99,18 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
-LIST_COLUMNS = ("genres", "styles", "facets")
+LIST_COLUMNS = ("genres", "styles", "facets", "traits")
+# A list column the first version already wrote. An empty value is an empty
+# list, not an unanswered question.
+ALWAYS_LIST = ("genres", "styles", "facets")
 
 # A column the collection item does not carry. A sync keeps the value it has
 # when the new row has none, so a failed release fetch loses nothing.
 KEPT_COLUMNS = ("country", "notes")
+
+# A column the schema gained after the first release. A database made by an
+# earlier version is opened, not rebuilt, so each one is added if it is absent.
+ADDED_COLUMNS = (("master_id", "INTEGER"), ("traits", "TEXT"), ("sort_artist", "TEXT"))
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -95,7 +119,17 @@ def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _add_missing_columns(conn)
     return conn
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Add a column a later version needs to a database an earlier one made."""
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(albums)")}
+    for column, kind in ADDED_COLUMNS:
+        if column not in have:
+            conn.execute(f"ALTER TABLE albums ADD COLUMN {column} {kind}")
+    conn.commit()
 
 
 def upsert_album(conn: sqlite3.Connection, album: dict[str, Any]) -> None:
@@ -143,7 +177,10 @@ def delete_albums_not_in(conn: sqlite3.Connection, keep: set[int]) -> int:
 def _album_from_row(row: sqlite3.Row) -> dict[str, Any]:
     album = dict(row)
     for column in LIST_COLUMNS:
-        album[column] = json.loads(album[column] or "[]")
+        # A column a database made by an earlier version never held stays None.
+        # An empty list means the sync found none; None means nobody has looked.
+        stored = album[column]
+        album[column] = json.loads(stored) if stored else ([] if column in ALWAYS_LIST else None)
     album["is_compilation"] = bool(album["is_compilation"])
     album["is_soundtrack"] = bool(album["is_soundtrack"])
     return album
@@ -244,3 +281,126 @@ def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
 
 def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+
+
+def collection_ids(conn: sqlite3.Connection) -> tuple[set[int], set[int]]:
+    """Every release id in the collection, and every master id it knows."""
+    releases: set[int] = set()
+    masters: set[int] = set()
+    for row in conn.execute("SELECT discogs_release_id, master_id FROM albums"):
+        releases.add(int(row["discogs_release_id"]))
+        if row["master_id"]:
+            masters.add(int(row["master_id"]))
+    return releases, masters
+
+
+def delete_album(conn: sqlite3.Connection, release_id: int) -> bool:
+    """Remove one album and everything derived from it. Return whether it was there."""
+    found = get_album(conn, release_id) is not None
+    for table, column in (
+        ("albums", "discogs_release_id"),
+        ("tracks", "release_id"),
+        ("prices", "release_id"),
+        ("tags", "release_id"),
+        ("loans", "release_id"),
+    ):
+        conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (release_id,))
+    return found
+
+
+def log_suggestion(conn: sqlite3.Connection, release_id: int, suggested_at: str) -> None:
+    """Record that this record was suggested, so it is not suggested again at once."""
+    conn.execute(
+        "INSERT INTO suggestions (release_id, suggested_at) VALUES (?, ?)",
+        (release_id, suggested_at),
+    )
+
+
+def recent_suggestions(conn: sqlite3.Connection, since: str) -> set[int]:
+    """Every record suggested at or after ``since``."""
+    rows = conn.execute(
+        "SELECT DISTINCT release_id FROM suggestions WHERE suggested_at >= ?", (since,)
+    )
+    return {int(row["release_id"]) for row in rows}
+
+
+def set_loan(
+    conn: sqlite3.Connection, release_id: int, person: str, since: str, note: str | None = None
+) -> None:
+    """Mark one record as out with a person."""
+    conn.execute(
+        "INSERT OR REPLACE INTO loans (release_id, person, since, note) VALUES (?, ?, ?, ?)",
+        (release_id, person, since, note),
+    )
+
+
+def clear_loan(conn: sqlite3.Connection, release_id: int) -> bool:
+    """Mark one record as back. Return whether it was out."""
+    cursor = conn.execute("DELETE FROM loans WHERE release_id = ?", (release_id,))
+    return cursor.rowcount > 0
+
+
+def get_loan(conn: sqlite3.Connection, release_id: int) -> dict[str, Any] | None:
+    row = conn.execute("SELECT * FROM loans WHERE release_id = ?", (release_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_loans(conn: sqlite3.Connection) -> dict[int, dict[str, Any]]:
+    """Every record that is out, by release id."""
+    return {
+        int(row["release_id"]): {
+            "to": row["person"],
+            "since": row["since"],
+            **({"note": row["note"]} if row["note"] else {}),
+        }
+        for row in conn.execute("SELECT * FROM loans")
+    }
+
+
+ARTIST_SORT = "artist_sort"
+PRIMARY_FACET = "primary_facet"
+SECTION = "section"
+OVERRIDE_KINDS = (ARTIST_SORT, PRIMARY_FACET, SECTION)
+
+
+def set_override(conn: sqlite3.Connection, kind: str, key: str, value: str, set_at: str) -> None:
+    """Write one manual correction. A person, or a tool, decides these."""
+    conn.execute(
+        "INSERT OR REPLACE INTO overrides (kind, key, value, set_at) VALUES (?, ?, ?, ?)",
+        (kind, key, value, set_at),
+    )
+
+
+def clear_override(conn: sqlite3.Connection, kind: str, key: str) -> bool:
+    """Drop one correction. Return whether there was one."""
+    cursor = conn.execute("DELETE FROM overrides WHERE kind = ? AND key = ?", (kind, key))
+    return cursor.rowcount > 0
+
+
+def list_overrides(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    """Every correction, by kind."""
+    result: dict[str, dict[str, str]] = {kind: {} for kind in OVERRIDE_KINDS}
+    for row in conn.execute("SELECT kind, key, value FROM overrides"):
+        result.setdefault(row["kind"], {})[row["key"]] = row["value"]
+    return result
+
+
+def import_overrides(
+    conn: sqlite3.Connection, overrides: dict[str, dict[str, str]], set_at: str
+) -> int:
+    """Take the corrections from the rules file once, and never overwrite.
+
+    The corrections used to live in the file. They belong in the database,
+    because a tool can write here and cannot write a read-only ConfigMap.
+    An entry the database already holds is left alone, so an import never
+    undoes a change somebody made through a tool.
+    """
+    taken = 0
+    for kind, entries in overrides.items():
+        for key, value in (entries or {}).items():
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO overrides (kind, key, value, set_at) VALUES (?, ?, ?, ?)",
+                (kind, key, value, set_at),
+            )
+            taken += cursor.rowcount
+    return taken

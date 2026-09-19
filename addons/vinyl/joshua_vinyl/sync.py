@@ -18,6 +18,7 @@ release that fails to fetch keeps what it had.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sqlite3
@@ -41,6 +42,7 @@ SOURCE_OVERRIDE = "override"
 SOURCE_MUSICBRAINZ = "musicbrainz"
 SOURCE_UNRESOLVED = "unresolved"
 META_LAST_SYNC = "last_sync"
+META_OVERRIDES_IMPORTED = "overrides_imported"
 META_LAST_RESULT = "last_result"
 CLASSICAL = "Classical"
 
@@ -138,6 +140,7 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "discogs_release_id": int(info["id"]),
         "instance_id": item.get("instance_id"),
+        "master_id": int(info["master_id"]) if info.get("master_id") else None,
         "artist": _join_artists(artists) or primary,
         "primary_artist": primary,
         "sort_artist": sort_artist,
@@ -188,14 +191,15 @@ def tracks_of(release: dict[str, Any]) -> list[dict[str, Any]]:
 def resolve_artist_sort(
     conn: sqlite3.Connection,
     name: str,
-    config: ShelfConfig,
+    overrides: dict[str, dict[str, str]],
     musicbrainz: SortNameSource | None,
     *,
     now: datetime,
 ) -> tuple[str, str]:
     """The sort-name for ``name`` and where it came from."""
-    if name in config.overrides.artist_sort:
-        return config.overrides.artist_sort[name], SOURCE_OVERRIDE
+    manual = overrides.get(db.ARTIST_SORT, {}).get(name)
+    if manual:
+        return manual, SOURCE_OVERRIDE
     cached = db.get_artist(conn, name)
     if cached:
         return cached["sort_name"], cached["source"]
@@ -244,24 +248,28 @@ def album_from_item(
     musicbrainz: SortNameSource | None,
     *,
     now: datetime,
+    overrides: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """The album row for one item, with sort-name, section, and facets derived."""
     fields = normalize_item(item)
     release_id = fields["discogs_release_id"]
     key = str(release_id)
+    manual = overrides if overrides is not None else db.list_overrides(conn)
     sort_name, source = resolve_artist_sort(
-        conn, fields["sort_artist"], config, musicbrainz, now=now
+        conn, fields["sort_artist"], manual, musicbrainz, now=now
     )
     traits = traits_of(fields["primary_artist"], fields["styles"], fields["formats"])
-    section = config.overrides.section.get(key) or section_for(sort_name, traits, config.sections)
+    section = manual.get(db.SECTION, {}).get(key) or section_for(sort_name, traits, config.sections)
     facets = facets_of(fields["genres"], fields["styles"], config.facets)
-    facet = config.overrides.primary_facet.get(key) or primary_facet(
+    facet = manual.get(db.PRIMARY_FACET, {}).get(key) or primary_facet(
         fields["genres"], fields["styles"], config.facets
     )
     return {
         "discogs_release_id": release_id,
         "instance_id": fields["instance_id"],
+        "master_id": fields["master_id"],
         "artist": fields["artist"],
+        "sort_artist": fields["sort_artist"],
         "artist_sort": sort_name,
         "artist_sort_source": source,
         "title": fields["title"],
@@ -274,6 +282,7 @@ def album_from_item(
         "styles": fields["styles"],
         "facets": facets,
         "primary_facet": facet,
+        "traits": sorted(traits),
         "is_compilation": COMPILATION in traits,
         "is_soundtrack": SOUNDTRACK in traits,
         "thumb_path": None,
@@ -308,6 +317,32 @@ def enrich_album(
         num_for_sale=release.get("num_for_sale"),
         checked_at=now.isoformat(timespec="seconds"),
     )
+
+
+def migrate_overrides(conn: sqlite3.Connection, config: ShelfConfig, *, now: datetime) -> int:
+    """Take the corrections out of the rules file and into the database, once.
+
+    They live in the database because a tool writes them and a mounted file
+    is read-only. The import runs one time and leaves a mark, so a correction
+    somebody drops with a tool does not come back from the file at the next
+    sync.
+    """
+    if db.get_meta(conn, META_OVERRIDES_IMPORTED):
+        return 0
+    taken = db.import_overrides(
+        conn,
+        {
+            db.ARTIST_SORT: config.overrides.artist_sort,
+            db.PRIMARY_FACET: config.overrides.primary_facet,
+            db.SECTION: config.overrides.section,
+        },
+        now.isoformat(timespec="seconds"),
+    )
+    db.set_meta(conn, META_OVERRIDES_IMPORTED, now.isoformat(timespec="seconds"))
+    conn.commit()
+    if taken:
+        logger.info({"message": "overrides imported from the rules file", "count": taken})
+    return taken
 
 
 def run_sync(
@@ -370,9 +405,11 @@ def _run(
     # A collection is keyed by instance, so one release can appear twice. The
     # keys of a dict keep the order and drop the repeat, so the count is right
     # and the enrich loop fetches each release once.
+    migrate_overrides(conn, config, now=started)
+    overrides = db.list_overrides(conn)
     seen: dict[int, None] = {}
     for item in discogs.collection(username):
-        album = album_from_item(conn, item, config, musicbrainz, now=started)
+        album = album_from_item(conn, item, config, musicbrainz, now=started, overrides=overrides)
         release_id = album["discogs_release_id"]
         seen[release_id] = None
         if album["artist_sort_source"] == SOURCE_UNRESOLVED:
@@ -410,3 +447,71 @@ def _run(
     write_bundle(conn, bundle_dir, config, now=finished)
     logger.info({"message": "sync finished", **result.as_dict()})
     return result
+
+
+def refile_albums(
+    conn: sqlite3.Connection,
+    config: ShelfConfig,
+    *,
+    release_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """Work out the shelf section and the facet again, with no network.
+
+    A manual correction has to show on the shelf at once, and everything the
+    filing rules need is already stored: the credit the shelf files under, the
+    traits of the release, and its genres and styles. Only a row that actually
+    changes is written. The answer says which records moved.
+    """
+    overrides = db.list_overrides(conn)
+    albums = db.list_albums(conn)
+    if release_ids is not None:
+        wanted = set(release_ids)
+        albums = [album for album in albums if album["discogs_release_id"] in wanted]
+    moved: list[dict[str, Any]] = []
+    for album in albums:
+        release_id = album["discogs_release_id"]
+        key = str(release_id)
+        credit = album.get("sort_artist") or album["artist"]
+        sort_name = overrides.get(db.ARTIST_SORT, {}).get(credit)
+        source = SOURCE_OVERRIDE
+        if not sort_name:
+            cached = db.get_artist(conn, credit)
+            sort_name = cached["sort_name"] if cached else album["artist_sort"]
+            source = cached["source"] if cached else album["artist_sort_source"]
+        # An album stored before the traits column keeps the section it has
+        # unless a correction moves it, because the traits cannot be worked out
+        # again without the release.
+        traits = set(album.get("traits") or [])
+        if album.get("traits") is None:
+            section = overrides.get(db.SECTION, {}).get(key) or album["shelf_section"]
+        else:
+            section = overrides.get(db.SECTION, {}).get(key) or section_for(
+                sort_name, traits, config.sections
+            )
+        facets = facets_of(album["genres"], album["styles"], config.facets)
+        facet = overrides.get(db.PRIMARY_FACET, {}).get(key) or primary_facet(
+            album["genres"], album["styles"], config.facets
+        )
+        if (
+            sort_name == album["artist_sort"]
+            and section == album["shelf_section"]
+            and facet == album["primary_facet"]
+            and facets == album["facets"]
+        ):
+            continue
+        conn.execute(
+            "UPDATE albums SET artist_sort = ?, artist_sort_source = ?, shelf_section = ?, "
+            "primary_facet = ?, facets = ? WHERE discogs_release_id = ?",
+            (sort_name, source, section, facet, json.dumps(facets), release_id),
+        )
+        moved.append(
+            {
+                "id": release_id,
+                "title": album["title"],
+                "artist": album["artist"],
+                "section": section,
+                "was": album["shelf_section"],
+            }
+        )
+    conn.commit()
+    return moved

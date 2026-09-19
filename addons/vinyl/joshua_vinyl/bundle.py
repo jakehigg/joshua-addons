@@ -5,6 +5,9 @@ for each album. The sync writes both after every run, so the interface never
 queries the database and nothing runs while nobody is browsing. Each file is
 written to a temporary name and then moved, so a reader never sees a
 half-written file.
+
+A record that is out with somebody carries ``lent``, so the page can say who
+has it and the suggestion tool can leave it alone.
 """
 
 from __future__ import annotations
@@ -47,6 +50,8 @@ def index_record(album: dict[str, Any]) -> dict[str, Any]:
         value = album.get(field)
         if value not in (None, "", []):
             record[field] = value
+    if album.get("master_id"):
+        record["master"] = album["master_id"]
     record["decade"] = _decade(album.get("year"))
     record["facet"] = album.get("primary_facet")
     record["section"] = album["shelf_section"]
@@ -77,6 +82,13 @@ def detail_record(conn: sqlite3.Connection, album: dict[str, Any]) -> dict[str, 
             "for_sale": price.get("num_for_sale"),
             "checked_at": price["checked_at"],
         }
+    loan = db.get_loan(conn, release_id)
+    if loan:
+        record["lent"] = {
+            "to": loan["person"],
+            "since": loan["since"],
+            **({"note": loan["note"]} if loan["note"] else {}),
+        }
     tags = db.list_tags(conn, release_id)
     if tags:
         record["tags"] = tags
@@ -99,7 +111,14 @@ def write_bundle(
 ) -> dict[str, Any]:
     """Write ``index.json`` and every ``detail/<id>.json``. Return the index."""
     albums = db.list_albums(conn)
-    records = [index_record(album) for album in albums]
+    loans = db.list_loans(conn)
+    records = []
+    for album in albums:
+        record = index_record(album)
+        loan = loans.get(record["id"])
+        if loan:
+            record["lent"] = loan
+        records.append(record)
     order = section_order(config.sections)
     present = {record["section"] for record in records}
     index = {

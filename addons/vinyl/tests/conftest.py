@@ -203,3 +203,104 @@ async def mcp_session(app: ASGIApp, headers: dict[str, str] | None = None):
                     yield session
     finally:
         await client.aclose()
+
+
+class FakeWriteDiscogs(FakeDiscogs):
+    """The fake with the search and the two writes, for the intake tests.
+
+    ``search_results`` is keyed by the search parameter that finds them, so a
+    test can say what a barcode finds and what a catalog number finds.
+    """
+
+    def __init__(self, items: list[dict[str, Any]] | None = None) -> None:
+        super().__init__(items)
+        self.search_results: dict[str, list[dict[str, Any]]] = {}
+        self.searches: list[dict[str, Any]] = []
+        self.added: list[tuple[str, int, int]] = []
+        self.notes: list[tuple[int, int, str]] = []
+        self.next_instance = 500_001
+        self.note_fails = False
+        self.copies: dict[int, list[dict[str, Any]]] = {}
+        for n, item in enumerate(self.items, start=1):
+            self.copies.setdefault(int(item["id"]), []).append(
+                {
+                    "id": int(item["id"]),
+                    "instance_id": item.get("instance_id") or 800_000 + n,
+                    "folder_id": 1,
+                    "date_added": item.get("date_added"),
+                    "notes": [],
+                }
+            )
+        self.removed: list[tuple[int, int]] = []
+        self.collection_fields = [
+            {"id": 1, "name": "Media Condition"},
+            {"id": 2, "name": "Sleeve Condition"},
+            {"id": 3, "name": "Notes"},
+        ]
+
+    def close(self) -> None:
+        return None
+
+    def instances(self, username: str, release_id: int) -> list[dict[str, Any]]:
+        return list(self.copies.get(int(release_id), []))
+
+    def remove_instance(
+        self, username: str, folder_id: int, release_id: int, instance_id: int
+    ) -> None:
+        kept = [
+            copy
+            for copy in self.copies.get(int(release_id), [])
+            if int(copy["instance_id"]) != int(instance_id)
+        ]
+        self.copies[int(release_id)] = kept
+        self.removed.append((int(release_id), int(instance_id)))
+
+    def by(self, key: str, release_ids: list[int]) -> None:
+        """Say which releases a search on ``key`` finds."""
+        self.search_results[key] = [{"id": release_id} for release_id in release_ids]
+
+    def search(self, **params: Any) -> list[dict[str, Any]]:
+        self.searches.append(params)
+        for key in ("barcode", "catno", "release_title", "artist"):
+            if key in params and key in self.search_results:
+                return self.search_results[key]
+        return []
+
+    def identity(self) -> dict[str, Any]:
+        return {"username": "example-user"}
+
+    def fields(self, username: str) -> list[dict[str, Any]]:
+        return self.collection_fields
+
+    def add_release(self, username: str, folder_id: int, release_id: int) -> dict[str, Any]:
+        self.added.append((username, folder_id, release_id))
+        instance = self.next_instance
+        self.next_instance += 1
+        self.copies.setdefault(int(release_id), []).append(
+            {
+                "id": int(release_id),
+                "instance_id": instance,
+                "folder_id": folder_id,
+                "date_added": None,
+                "notes": [],
+            }
+        )
+        return {"instance_id": instance}
+
+    def set_field(
+        self,
+        username: str,
+        folder_id: int,
+        release_id: int,
+        instance_id: int,
+        field_id: int,
+        value: str,
+    ) -> None:
+        if self.note_fails:
+            raise RuntimeError("discogs returned 422")
+        self.notes.append((release_id, field_id, value))
+
+
+@pytest.fixture
+def fake_write_discogs() -> FakeWriteDiscogs:
+    return FakeWriteDiscogs()

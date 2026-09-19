@@ -14,26 +14,35 @@ from __future__ import annotations
 import asyncio
 import hmac
 import os
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from joshua_vinyl import db
+from joshua_vinyl import db, identify, intake
+from joshua_vinyl import query as query_bundle
 from joshua_vinyl.bundle import read_index
-from joshua_vinyl.config import Settings, settings_from_env
+from joshua_vinyl.config import Settings, load_shelf_config, settings_from_env
+from joshua_vinyl.discogs import DiscogsClient
 from joshua_vinyl.log import get_logger
+from joshua_vinyl.musicbrainz import MusicBrainzClient
 from joshua_vinyl.scheduler import run_daily
-from joshua_vinyl.sync import META_LAST_RESULT, META_LAST_SYNC
+from joshua_vinyl.sync import META_LAST_RESULT, META_LAST_SYNC, migrate_overrides
 
 logger = get_logger("vinyl")
 
 PROTECTED_PREFIX = "/mcp"
+
+# How long the addon remembers a suggestion, so the same record does not come
+# up twice in a fortnight.
+SUGGEST_MEMORY_DAYS = 14
 
 # Set by ``build_app``. The lifespan and the status tool read it.
 _settings: Settings | None = None
@@ -72,8 +81,20 @@ def _scheduled_sync() -> None:
 
 @asynccontextmanager
 async def lifespan(server: MCPServer) -> AsyncIterator[dict[str, Any]]:
-    """Start the nightly sync loop when a schedule and a token are both set."""
+    """Import the corrections once, then start the nightly sync loop.
+
+    The import runs here as well as in the sync, because an addon that serves
+    a copied bundle and never syncs still has to take the corrections out of
+    the rules file before a tool files a record again.
+    """
     settings = _current_settings()
+    conn = db.connect(settings.db_path)
+    try:
+        migrate_overrides(conn, load_shelf_config(settings.config_path), now=datetime.now(UTC))
+    except Exception:  # noqa: BLE001 — a bad rules file must not stop the page
+        logger.warning({"message": "could not import the corrections from the rules file"})
+    finally:
+        conn.close()
     task: asyncio.Task[int] | None = None
     if settings.sync_time and settings.discogs_token:
         task = asyncio.create_task(run_daily(settings.sync_time, _scheduled_sync))
@@ -93,6 +114,474 @@ mcp = MCPServer(name="vinyl", lifespan=lifespan)
 def vinyl_status() -> dict[str, Any]:
     """Report the sync state: record count, last sync time, and last result."""
     return status(_current_settings())
+
+
+def _index_or_none() -> dict[str, Any] | None:
+    return read_index(_current_settings().bundle_dir)
+
+
+NO_BUNDLE = {"error": "The collection is not synced yet. No record is available."}
+
+
+@mcp.tool()
+def vinyl_search(
+    query: str | None = None,
+    genre: str | None = None,
+    decade: int | None = None,
+    year: int | None = None,
+    section: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Find records in the house collection.
+
+    ``query`` matches the album title, the artist, or the label, and it
+    tolerates a missing "The". Use a filter with no query to list a part of
+    the collection, for example every Jazz record, or everything from the
+    1970s. The answer gives the number found, and up to ``limit`` records
+    with the shelf section of each.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.search(
+        index, query, genre=genre, decade=decade, section=section, year=year, limit=limit
+    )
+
+
+@mcp.tool()
+def vinyl_details(record_id: int) -> dict[str, Any]:
+    """Report one record in full, by the id that ``vinyl_search`` gives.
+
+    The answer holds the shelf section, the label and catalog number, the
+    format, the country, the genres and styles, the tracklist, and the
+    lowest listed price with the date it was checked. Never present the
+    price as live: give the date with it.
+    """
+    record = query_bundle.detail(_current_settings().bundle_dir, record_id)
+    if record is None:
+        return {"error": f"No record with id {record_id} is in the collection."}
+    return record
+
+
+@mcp.tool()
+def vinyl_stats() -> dict[str, Any]:
+    """Report the shape of the collection: how many records, of what, and from when.
+
+    Use it for a question about the size of the collection, the genres in
+    it, the decades it covers, or which shelf sections are fullest.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.stats(index)
+
+
+@mcp.tool()
+def vinyl_recent(limit: int = 10) -> dict[str, Any]:
+    """List the records added most recently, newest first.
+
+    Use it for a question about what is new, or what came in this month.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.recent(index, limit)
+
+
+@mcp.tool()
+def vinyl_pick(
+    genre: str | None = None,
+    decade: int | None = None,
+    section: str | None = None,
+    exclude_ids: list[int] | None = None,
+    avoid_days: int = SUGGEST_MEMORY_DAYS,
+) -> dict[str, Any]:
+    """Choose one record to play, with a reason and the shelf section.
+
+    The choice is always a record the house owns, and never one that is out
+    with somebody. Give ``genre`` or ``decade`` for a mood.
+
+    The addon remembers what it suggested. A record suggested inside the
+    last ``avoid_days`` is left out while anything else fits, so asking
+    twice in a week gives two different records. When every record that
+    fits was suggested recently, the answer says so and repeats one.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    now = datetime.now(UTC)
+    with _database() as conn:
+        since = (now - timedelta(days=max(0, avoid_days))).isoformat(timespec="seconds")
+        avoid = db.recent_suggestions(conn, since) if avoid_days > 0 else set()
+        answer = query_bundle.pick(
+            index,
+            genre=genre,
+            decade=decade,
+            section=section,
+            exclude=exclude_ids,
+            avoid=avoid,
+        )
+        record = answer.get("record")
+        if record:
+            db.log_suggestion(conn, int(record["id"]), now.isoformat(timespec="seconds"))
+            conn.commit()
+    return answer
+
+
+WRITE_HELP = (
+    "The addon has no Discogs token, so it can read the shelf but it cannot "
+    "search Discogs or add a record. Set DISCOGS_TOKEN and DISCOGS_USERNAME."
+)
+
+
+@contextmanager
+def _discogs() -> Iterator[tuple[Any, str]]:
+    """A Discogs client and the account name, closed at the end of the tool."""
+    settings = _current_settings()
+    if not settings.discogs_token:
+        raise ToolError(WRITE_HELP)
+    client = DiscogsClient(settings.discogs_token, settings.user_agent)
+    try:
+        username = settings.discogs_username or client.identity()["username"]
+        yield client, username
+    finally:
+        client.close()
+
+
+@contextmanager
+def _database() -> Iterator[Any]:
+    conn = db.connect(_current_settings().db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+def vinyl_owned(
+    artist: str | None = None,
+    title: str | None = None,
+    release_id: int | None = None,
+    master_id: int | None = None,
+) -> dict[str, Any]:
+    """Answer whether the house owns an album already, before somebody buys it.
+
+    This is the question asked in a shop with a record in hand, so it reads
+    the local shelf only and answers at once, with no network. A match on the
+    title alone is a maybe, never a yes.
+    """
+    index = _index_or_none()
+    if index is None:
+        return NO_BUNDLE
+    return query_bundle.owned(
+        index, artist=artist, title=title, release_id=release_id, master_id=master_id
+    )
+
+
+@mcp.tool()
+def vinyl_lookup(
+    artist: str | None = None,
+    title: str | None = None,
+    catalog_no: str | None = None,
+    barcode: str | None = None,
+    label: str | None = None,
+    matrix: str | None = None,
+    year: int | None = None,
+    country: str | None = None,
+    tracks: list[str] | None = None,
+) -> dict[str, Any]:
+    """Find the release on Discogs from what you read on the record itself.
+
+    Read the photograph yourself and pass what is printed, not what you know.
+    Ask for a photograph of the disc **label**, which carries the catalog
+    number, the label name and the pressing details. Cover art identifies
+    nothing: a bowler-hat sleeve once read as the wrong album entirely, and
+    the label photograph settled it.
+
+    Give every field you can see. The catalog number goes in as printed,
+    including a leading X. Give the track titles as well: a tracklist never
+    names a release, but it is the one thing a wrong match cannot fake.
+
+    The answer holds at most three candidates, each with the full format
+    line, the release notes, the country and the year. Read those four before
+    you choose. A candidate that says Picture Disc, Test Pressing or
+    Quadraphonic is usually the wrong pressing, and a promotional copy often
+    hides in the notes while the format line stays ordinary.
+
+    Nothing here is a decision. Call vinyl_label_images on the candidates and
+    compare the pictures against the photograph, which is the check that
+    catches most wrong picks. An empty answer is usually a misread or a
+    different spelling of the artist, not a record Discogs lacks.
+    """
+    with _database() as conn:
+        owned_releases, owned_masters = db.collection_ids(conn)
+    with _discogs() as (client, _username):
+        result = intake.find_candidates(
+            client,
+            artist=artist,
+            title=title,
+            catalog_no=catalog_no,
+            barcode=barcode,
+            label=label,
+            year=year,
+            country=country,
+            tracks=tracks,
+            owned_release_ids=owned_releases,
+            owned_master_ids=owned_masters,
+        )
+    if matrix:
+        result["matrix_read"] = matrix
+        result["matrix_note"] = (
+            "Discogs stores the label matrix as 'Matrix / Runout (Label side A)'. "
+            "Compare it against each candidate by eye; a matching matrix narrows "
+            "the field and does not settle it, because two releases can share one."
+        )
+    return result
+
+
+@mcp.tool()
+def vinyl_label_images(release_id: int, limit: int = 3) -> list[Image]:
+    """Show the disc labels Discogs holds for one release, as pictures.
+
+    Compare them against the photograph of the record in hand. Look at the
+    layout first, then the text, then the colour: where the copyright sits,
+    whether STEREO is printed, which side of the spindle the catalog number
+    is on. Lighting changes colour and does not change layout.
+
+    This comparison overturned nineteen otherwise clean matches across three
+    batches, and no automatic check caught any of them.
+    """
+    with _discogs() as (client, _username):
+        release = client.release(int(release_id))
+        urls = identify.label_image_urls(release, limit=max(1, min(int(limit), 5)))
+        images: list[Image] = []
+        for url in urls:
+            images.append(Image(data=client.download(url), format="jpeg"))
+    if not images:
+        raise ToolError(f"Discogs has no image for release {release_id}.")
+    return images
+
+
+@mcp.tool()
+def vinyl_add(
+    release_id: int,
+    note: str | None = None,
+    pressing_confirmed: bool = False,
+    confirm: bool = False,
+    allow_duplicate: bool = False,
+) -> dict[str, Any]:
+    """Put one record in the collection. It plans first and writes only on confirm.
+
+    Call it once with no confirm and show the person the plan: the release,
+    the format line, the release notes, whether the album is on the shelf
+    already, and the note that would be written. Call it again with confirm
+    once they agree. Never confirm on your own.
+
+    Set pressing_confirmed only when the evidence names this exact pressing,
+    which usually means a barcode, a label matrix, or a label picture that
+    matches. Otherwise the note carries pressing-unconfirmed, which is how a
+    later pass finds the records that still need one.
+
+    The note is for what the record is and how it was identified. It is cut
+    to 255 characters, so put the important half first.
+
+    After a write the record is on the shelf page at once, and the answer
+    says which section to file it under.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn, _discogs() as (client, username):
+        musicbrainz = MusicBrainzClient(settings.user_agent)
+        try:
+            return intake.add_record(
+                conn,
+                client,
+                username=username,
+                release_id=int(release_id),
+                config=config,
+                art_dir=settings.art_dir,
+                bundle_dir=settings.bundle_dir,
+                musicbrainz=musicbrainz,
+                note=note,
+                pressing_confirmed=pressing_confirmed,
+                confirm=confirm,
+                allow_duplicate=allow_duplicate,
+                currency=settings.currency,
+            )
+        finally:
+            musicbrainz.close()
+
+
+@mcp.tool()
+def vinyl_remove(
+    release_id: int,
+    instance_id: int | None = None,
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """Take one record out of the collection, for good.
+
+    Use it when a record is sold, given away, or lost, and when a record was
+    matched to the wrong pressing. A record that is lent to somebody is not
+    removed: use vinyl_lend, which keeps the record and marks it out.
+
+    Call it once with no confirm and show the person the plan. Call it again
+    with confirm once they agree. Never confirm on your own: the record
+    leaves Discogs as well, and adding it again means identifying the
+    pressing again.
+
+    When the house owns two copies of one release, the plan lists both with
+    the note and the date each was added, and you pass the instance_id of the
+    one that left.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn, _discogs() as (client, username):
+        return intake.remove_record(
+            conn,
+            client,
+            username=username,
+            release_id=int(release_id),
+            config=config,
+            bundle_dir=settings.bundle_dir,
+            instance_id=instance_id,
+            confirm=confirm,
+        )
+
+
+@mcp.tool()
+def vinyl_lend(release_id: int, to: str, note: str | None = None) -> dict[str, Any]:
+    """Mark one record as out with somebody, without giving it up.
+
+    The record stays in the collection with its note and the date it was
+    first added, so nobody identifies the pressing again when it comes back.
+    Until then it is off the shelf: vinyl_pick never suggests it, and the
+    browse page says who has it.
+
+    Use the person's name as ``to``. This needs no Discogs token and nothing
+    is written to Discogs.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.lend_record(
+            conn,
+            release_id=int(release_id),
+            person=to,
+            note=note,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+        )
+
+
+@mcp.tool()
+def vinyl_return(release_id: int) -> dict[str, Any]:
+    """Put a record that was out with somebody back on the shelf."""
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.return_record(
+            conn,
+            release_id=int(release_id),
+            config=config,
+            bundle_dir=settings.bundle_dir,
+        )
+
+
+@mcp.tool()
+def vinyl_lent_out() -> dict[str, Any]:
+    """List every record that is out with somebody, and who has it."""
+    with _database() as conn:
+        loans = db.list_loans(conn)
+        records = []
+        for release_id, loan in loans.items():
+            album = db.get_album(conn, release_id)
+            records.append(
+                {
+                    "id": release_id,
+                    "title": album["title"] if album else None,
+                    "artist": album["artist"] if album else None,
+                    **loan,
+                }
+            )
+    records.sort(key=lambda record: record["since"])
+    return {"count": len(records), "records": records}
+
+
+@mcp.tool()
+def vinyl_set_sort_name(artist: str, sort_name: str | None = None) -> dict[str, Any]:
+    """File an artist's records under a different name.
+
+    The shelf letter comes from the artist sort-name MusicBrainz publishes,
+    which files `Dylan, Bob` under D and `Beatles, The` under B. When that is
+    wrong for this house, say what the name should be: "Duane & Greg Allman"
+    filed as "Allman, Duane" moves those records to A.
+
+    Use the credit as it is written on the record. Leave sort_name out to drop
+    the correction and go back to what MusicBrainz says. Every record by that
+    artist is filed again at once, and the answer says which ones moved.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.set_correction(
+            conn,
+            kind=db.ARTIST_SORT,
+            key=artist,
+            value=sort_name,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+        )
+
+
+@mcp.tool()
+def vinyl_set_section(record_id: int, section: str | None = None) -> dict[str, Any]:
+    """Put one record behind a different divider.
+
+    Use it when the filing rules put a record somewhere the house does not
+    keep it. The section is a letter, `#`, or the name of a section after Z.
+    Leave section out to drop the correction.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.set_correction(
+            conn,
+            kind=db.SECTION,
+            key=str(int(record_id)),
+            value=section,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+            release_ids=[int(record_id)],
+        )
+
+
+@mcp.tool()
+def vinyl_set_genre(record_id: int, genre: str | None = None) -> dict[str, Any]:
+    """Change the genre one record sorts and filters under.
+
+    Discogs decides the genre, and it is sometimes not the one the house
+    thinks of. This changes the record's own genre, not the genre list. Leave
+    genre out to drop the correction.
+    """
+    settings = _current_settings()
+    config = load_shelf_config(settings.config_path)
+    with _database() as conn:
+        return intake.set_correction(
+            conn,
+            kind=db.PRIMARY_FACET,
+            key=str(int(record_id)),
+            value=genre,
+            config=config,
+            bundle_dir=settings.bundle_dir,
+            release_ids=[int(record_id)],
+        )
+
+
+@mcp.tool()
+def vinyl_corrections() -> dict[str, Any]:
+    """List every manual correction: the sort-names, the sections, the genres."""
+    with _database() as conn:
+        return intake.corrections(conn)
 
 
 class BearerAuthMiddleware:

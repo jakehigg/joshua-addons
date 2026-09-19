@@ -41,7 +41,16 @@ def test_connect_creates_every_table_and_the_parent_directory(tmp_path: Path) ->
     names = {
         row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
-    assert {"albums", "tracks", "prices", "tags", "plays", "artists", "meta"} <= names
+    assert {
+        "albums",
+        "tracks",
+        "prices",
+        "tags",
+        "suggestions",
+        "loans",
+        "artists",
+        "meta",
+    } <= names
     conn.close()
 
 
@@ -145,3 +154,35 @@ def test_meta_round_trip(tmp_path: Path) -> None:
     db.set_meta(conn, "last_sync", "2026-01-01")
     db.set_meta(conn, "last_sync", "2026-01-02")
     assert db.get_meta(conn, "last_sync") == "2026-01-02"
+
+
+def test_a_suggestion_is_remembered_and_ages_out(tmp_path) -> None:
+    conn = db.connect(tmp_path / "vinyl.db")
+    try:
+        db.log_suggestion(conn, 1, "2026-09-01T12:00:00+00:00")
+        db.log_suggestion(conn, 2, "2026-09-09T12:00:00+00:00")
+        assert db.recent_suggestions(conn, "2026-09-05T00:00:00+00:00") == {2}
+        assert db.recent_suggestions(conn, "2026-08-01T00:00:00+00:00") == {1, 2}
+    finally:
+        conn.close()
+
+
+def test_a_loan_is_set_read_and_cleared(tmp_path) -> None:
+    conn = db.connect(tmp_path / "vinyl.db")
+    try:
+        db.set_loan(conn, 7, "a neighbour", "2026-09-09T12:00:00+00:00", "at the barbecue")
+        assert db.get_loan(conn, 7)["person"] == "a neighbour"
+        assert db.list_loans(conn)[7]["note"] == "at the barbecue"
+        assert db.clear_loan(conn, 7) is True
+        assert db.clear_loan(conn, 7) is False
+        assert db.get_loan(conn, 7) is None
+    finally:
+        conn.close()
+
+
+def test_deleting_an_album_takes_its_rows_with_it(tmp_path) -> None:
+    conn = db.connect(tmp_path / "vinyl.db")
+    try:
+        assert db.delete_album(conn, 12345) is False
+    finally:
+        conn.close()
