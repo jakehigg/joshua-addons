@@ -39,3 +39,7 @@ The chart version, the chart `appVersion`, and every addon image tag in this
 repository are one string. A `v*` tag releases the chart and every addon image
 together, so a chart never meets an image it did not ship with, and an addon
 that did not change still gets the new tag.
+
+A push to a branch also publishes every addon image, tagged with the commit
+SHA and with `branch-<name>`. That image is for a test. It is not a release
+and has no version.

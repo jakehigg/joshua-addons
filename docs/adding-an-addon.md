@@ -26,7 +26,9 @@ order. `addons/hello/` is a worked example of every step.
    Dockerfile lands:
 
    - The CI test job runs `pytest` for the addon, with `--cov-fail-under=80`.
-   - The CI build job builds the image of the addon.
+   - The `dev-images` workflow builds the image of the addon on every push
+     to a branch, and publishes it tagged with the commit SHA and
+     `branch-<name>`, for `linux/amd64` only.
    - The release workflow builds and publishes the image of the addon, for
      both `linux/amd64` and `linux/arm64`, on every `v*` tag.
 
