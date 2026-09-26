@@ -87,7 +87,7 @@ spec:
         {{- if .Values.persistence.enabled }}
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "joshua-addon.fullname" . }}
+            claimName: {{ .Values.persistence.existingClaim | default (include "joshua-addon.fullname" .) }}
         {{- end }}
         {{- if .Values.configFile.enabled }}
         - name: config

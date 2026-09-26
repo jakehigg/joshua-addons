@@ -38,6 +38,7 @@ helm install hello charts/joshua-addon -f addons/hello/values.yaml
 | `ingress.tls.enabled` | `false` | Terminate TLS at the Ingress. |
 | `ingress.tls.secretName` | `""` | Empty means `<host>-tls`. |
 | `persistence.enabled` | `false` | Give the addon its own PersistentVolumeClaim. |
+| `persistence.existingClaim` | `""` | Mount this claim instead, and make no claim. A claim that another release owns, such as the joshua-ai data volume. |
 | `persistence.size` | `1Gi` | Requested storage. |
 | `persistence.storageClass` | `""` | Empty means the cluster default. |
 | `persistence.accessModes` | `[ReadWriteOnce]` | Access modes for the claim. |

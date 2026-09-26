@@ -1,0 +1,12 @@
+# Mirrors addons/mcp/values.yaml: an existing claim, not a claim of the
+# chart's own. No other file in this directory renders existingClaim.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-mcp
+persistence:
+  enabled: true
+  existingClaim: joshua-ai-data
+  mountPath: /data
+existingSecret: joshua-mcp
+env:
+  MCP_DATA_DIR: /data
+  MCP_TIMEZONE: UTC
