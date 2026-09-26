@@ -8,6 +8,12 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `mcp` gains `semantic_search(query, source?, limit?)`. It finds passages by
+  meaning, with Joshua's own index: it calls joshua-ai core's
+  `POST /v1/memory/search`. It needs `CORE_URL`, and `CORE_TOKEN` set to
+  joshua-ai's `JOSHUA_TOKEN_MCP`. It needs a joshua-ai release that has the
+  route. Without the settings, the other tools work as before.
+
 - `mcp` (joshua-mcp), an addon that gives a caller outside the agent access
   to Joshua's wiki, journal, and knowledge folder. Claude Code on a laptop is
   the first such caller. The tools are `search`, `read_page`,

@@ -1,6 +1,8 @@
 """The joshua-mcp addon: Joshua's wiki, journal, and knowledge folder over MCP.
 
-The addon serves MCP at ``/mcp`` over streamable HTTP. ``GET /healthz`` stays
+The addon serves MCP at ``/mcp`` over streamable HTTP. ``semantic_search`` asks
+joshua-ai core to search by meaning, when ``CORE_URL`` and ``CORE_TOKEN`` are
+set; every other tool reads or writes the data volume. ``GET /healthz`` stays
 open and names no path and no person. When a bearer is configured
 (``ADDON_TOKEN`` or ``MCP_TOKENS``), every other route needs
 ``Authorization: Bearer <token>``; a missing or wrong token gets 401. The
@@ -24,6 +26,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from joshua_mcp import wiki as wikifs
 from joshua_mcp.config import ANONYMOUS, Caller, Settings, settings_from_env
+from joshua_mcp.core import CoreError, CoreSearch
 from joshua_mcp.log import get_logger
 from joshua_mcp.search import Index
 
@@ -39,6 +42,8 @@ mcp = MCPServer(name="joshua-mcp")
 class _State:
     settings: Settings
     index: Index
+    # None when CORE_URL is not set.
+    core: CoreSearch | None = None
 
 
 _state: _State | None = None
@@ -140,6 +145,35 @@ async def search(query: str, ctx: Context, source: str | None = None, limit: int
     if src == wikifs.KNOWLEDGE:
         await _run(wikifs.require_knowledge, state.settings.wiki)
     return {"results": await _run(state.index.search, query, src, limit)}
+
+
+@mcp.tool()
+async def semantic_search(
+    query: str, ctx: Context, source: str | None = None, limit: int = 10
+) -> dict:
+    """Search the wiki and the journal by meaning, with Joshua's own index.
+
+    Returns passages, the best first. Use it for a question in your own words,
+    when you do not know the words a page uses. Use search to find exact words.
+
+    source is one of wiki (the pages and the profiles), journal (Joshua's
+    journal), or knowledge (the knowledge folder); leave it empty to search
+    all of them. limit is 1 to 25. Each result has the path, the title, the
+    heading of the passage, a snippet, the source, the date of a journal page,
+    and a score from 0 to 1. Joshua's core does the search, and it indexes a
+    new page within about a minute.
+    """
+    _caller(ctx)
+    src = _source(source)
+    state = _get_state()
+    if state.core is None:
+        raise ToolError("semantic search is not configured: set CORE_URL and CORE_TOKEN")
+    if src == wikifs.KNOWLEDGE:
+        await _run(wikifs.require_knowledge, state.settings.wiki)
+    try:
+        return {"results": await state.core.search(query, src, limit)}
+    except CoreError as exc:
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool()
@@ -286,7 +320,8 @@ def build_app(settings: Settings | None = None) -> ASGIApp:
     """
     global _state
     settings = settings or settings_from_env()
-    _state = _State(settings=settings, index=Index(settings.wiki))
+    core = CoreSearch(settings.core_url, settings.core_token) if settings.core_url else None
+    _state = _State(settings=settings, index=Index(settings.wiki), core=core)
     if not settings.wiki.is_dir():
         logger.warning({"message": "the wiki folder is missing; reads return nothing"})
     logger.info(
@@ -294,6 +329,7 @@ def build_app(settings: Settings | None = None) -> ASGIApp:
             "message": "joshua-mcp ready",
             "callers": sorted(c.name for c in settings.tokens.values()),
             "open": settings.open,
+            "semantic_search": core is not None,
         }
     )
     inner = mcp.streamable_http_app(streamable_http_path="/mcp", host="0.0.0.0")

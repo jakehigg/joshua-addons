@@ -543,6 +543,7 @@ version = "0.0.0"
 source = { editable = "addons/mcp" }
 dependencies = [
     { name = "anyio" },
+    { name = "httpx" },
     { name = "joshua-shared" },
     { name = "mcp" },
     { name = "pyyaml" },
@@ -553,6 +554,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=4" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "joshua-shared", git = "https://github.com/jakehigg/joshua-ai?subdirectory=shared&tag=v0.0.8" },
     { name = "mcp", specifier = ">=1.2" },
     { name = "pyyaml", specifier = ">=6" },

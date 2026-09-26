@@ -19,6 +19,7 @@ talk to Joshua, use the terminal channel.
 | Tool | What it does |
 |---|---|
 | `search(query, source?, limit?)` | Finds pages by words (BM25). Each result has the path, the title, a snippet, the source, and the date of a journal page. |
+| `semantic_search(query, source?, limit?)` | Finds passages by meaning, with Joshua's own index in core. Each result has the path, the title, the heading, a snippet, the source, the date, and a score. It needs `CORE_URL` and `CORE_TOKEN`. |
 | `read_page(path)` | Reads one page: the frontmatter and the body. |
 | `list(path?, source?)` | Lists one folder: its folders, its pages, and its other files. |
 | `write_page(path, markdown, message?)` | Creates or replaces one page, and commits it. |
@@ -27,9 +28,25 @@ talk to Joshua, use the terminal channel.
 | `knowledge_search(query, limit?)` | `search` in the knowledge folder only. |
 | `knowledge_read(path)` | `read_page` in the knowledge folder only. |
 
-A path is relative to the wiki, for example `people/alex.md`. The search is
-lexical: it finds words, not meanings. Joshua's own vector index stays in
-core, and core indexes a page that this addon writes within 60 seconds.
+A path is relative to the wiki, for example `people/alex.md`. `search` is
+lexical: it finds words, not meanings. `semantic_search` finds meanings: it
+asks joshua-ai core, which holds Joshua's vector index, through core's
+`POST /v1/memory/search`. Core indexes a page that this addon writes within 60
+seconds, so `semantic_search` finds a new page after that time. Core returns
+wiki pages, journal pages, and profiles only, never a person's own
+attachments.
+
+### Turn on `semantic_search`
+
+1. Get the `JOSHUA_TOKEN_MCP` value from joshua-ai. `make init-env` in
+   joshua-ai mints it into `.env`. On Kubernetes, it is in the core Secret.
+2. Make sure that `memory.search.allowed_callers` in `joshua.yaml` lists
+   `mcp`. It does by default.
+3. Set `CORE_URL` to the address of core, and `CORE_TOKEN` to the value from
+   step 1.
+
+Without these settings, `semantic_search` answers "semantic search is not
+configured". The other tools do not need core.
 
 When there is no knowledge folder, the knowledge tools, and `search` or `list`
 with `source: knowledge`, answer "no knowledge folder".
@@ -80,6 +97,8 @@ answers only `{"ok": true}`.
 | `MCP_READONLY` | empty | The callers that can only read, separated by commas. `anonymous` is the caller when no token is set. |
 | `MCP_DATA_DIR` | `/data` | The joshua-ai data volume. The wiki is `<MCP_DATA_DIR>/wiki`. |
 | `MCP_TIMEZONE` | `UTC` | The timezone that sets "today" for the journal. Use the timezone in `joshua.yaml`. |
+| `CORE_URL` | empty | The address of joshua-ai core, for `semantic_search`. For example, `http://core:8000` on the joshua-ai compose network. Set it with `CORE_TOKEN`, or not at all. |
+| `CORE_TOKEN` | empty | The fleet token that the addon sends to core. It is the `JOSHUA_TOKEN_MCP` value of joshua-ai. |
 | `LOG_LEVEL` | `INFO` | The log level. |
 
 A bad value stops the addon at start, with a message that names the variable

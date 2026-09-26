@@ -7,6 +7,9 @@ Every setting is documented in the addon's README.md and values.yaml:
 - ``MCP_TOKENS``: one bearer for each caller, as ``name=token`` pairs.
 - ``MCP_READONLY``: the callers that can only read, as a list of names.
 - ``MCP_TIMEZONE``: the timezone that sets "today" for the journal.
+- ``CORE_URL``: joshua-ai core's base URL, for ``semantic_search``.
+- ``CORE_TOKEN``: the fleet token the addon sends to core. Core knows it as
+  ``JOSHUA_TOKEN_MCP``.
 """
 
 from __future__ import annotations
@@ -48,6 +51,10 @@ class Settings:
     tokens: Mapping[str, Caller] = field(default_factory=dict)
     # The caller when no bearer is configured.
     anonymous_readonly: bool = False
+    # Core's base URL and the addon's fleet token, for the search by meaning.
+    # None turns semantic_search off.
+    core_url: str | None = None
+    core_token: str = field(default="", repr=False)
 
     @property
     def wiki(self) -> Path:
@@ -109,9 +116,20 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ConfigError(f"MCP_TIMEZONE: unknown timezone {tz_name!r}") from exc
 
+    core_url = env.get("CORE_URL", "").strip() or None
+    core_token = env.get("CORE_TOKEN", "").strip()
+    if core_url and not core_token:
+        raise ConfigError("CORE_URL is set, and CORE_TOKEN is not")
+    if core_token and not core_url:
+        raise ConfigError("CORE_TOKEN is set, and CORE_URL is not")
+    if core_url and not core_url.startswith(("http://", "https://")):
+        raise ConfigError("CORE_URL must start with http:// or https://")
+
     return Settings(
         data_dir=Path(env.get("MCP_DATA_DIR", "").strip() or DEFAULT_DATA_DIR),
         timezone=tz,
         tokens=tokens,
         anonymous_readonly=ANONYMOUS in readonly,
+        core_url=core_url,
+        core_token=core_token,
     )

@@ -11,12 +11,15 @@ persistence:
   existingClaim: joshua-ai-data # the claim name the joshua-ai release made
   mountPath: /data
 
-# existingSecret: joshua-mcp # keys: ADDON_TOKEN, MCP_TOKENS
+# existingSecret: joshua-mcp # keys: ADDON_TOKEN, MCP_TOKENS, CORE_TOKEN
 
 env:
   MCP_DATA_DIR: /data
   MCP_TIMEZONE: UTC # set to the timezone in joshua.yaml, so "today" is the same day
   MCP_READONLY: "" # callers that can only read, such as laptop-ci
+  # semantic_search asks joshua-ai core. Set the core Service address, and put
+  # CORE_TOKEN (joshua-ai's JOSHUA_TOKEN_MCP) in the existingSecret.
+  # CORE_URL: http://joshua-core.<namespace>.svc.cluster.local:8000
 
 # The addon is for a caller outside the cluster, such as Claude Code on a
 # laptop. Turn the ingress on, with TLS, to reach it:
