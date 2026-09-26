@@ -52,7 +52,10 @@ helm install hello charts/joshua-addon -f addons/hello/values.yaml
 
 The chart version, the chart `appVersion`, and every addon image tag in this
 repository are the same string. Leave `image.tag` empty and the chart pulls
-the image that shipped with it. `scripts/check_chart_version.py` checks that
+the image that shipped with it. To test a branch, set `image.tag` to a commit
+SHA or to `branch-<name>`. Each push to a branch publishes those tags, amd64
+only. [docs/install.md](../../docs/install.md) shows the ArgoCD Application
+for a branch build. `scripts/check_chart_version.py` checks that
 the chart and the `docker-compose.yml` for every addon agree.
 
 ## ArgoCD

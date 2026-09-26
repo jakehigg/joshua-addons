@@ -54,7 +54,7 @@ from an environment variable that its `README.md` documents.
 ## Versioning
 
 One version for the whole repository. The chart version, the chart `appVersion`,
-and every image tag are the same string. A `v*` tag releases all of them
+and every release image tag are the same string. A `v*` tag releases all of them
 together, and an addon that did not change still gets the new tag. Never version
 one addon on its own.
 
@@ -64,7 +64,10 @@ Two paths ship here. `addons/<name>/docker-compose.yml` runs one addon on one
 Docker host. On Kubernetes, `charts/joshua-addon` is one generic chart: a person
 installs it once for each addon they want, with that addon's `values.yaml`. One
 Helm release, and one ArgoCD Application, for each addon. Neither path builds an
-image; both take a released image from the GitHub container registry.
+image; both take an image from the GitHub container registry. A release tag is
+the default. `.github/workflows/dev-images.yml` also publishes every addon
+image on each push to a branch, tagged with the commit SHA and
+`branch-<name>`, so a branch can run on a test cluster before a release.
 
 Never add the detail of one installation to this repository: no hostname, IP
 address, roster, credential, or manifest for a particular deployment. Every such

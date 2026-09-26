@@ -1,0 +1,56 @@
+# A weekly cleanup of the GitHub container registry. dev-images.yml tags every
+# push with its commit SHA and branch-<name>, so a busy branch leaves behind a
+# SHA tag for every push. This deletes an untagged layer and a SHA-tagged
+# branch build older than two weeks. It never deletes a release tag or a
+# current branch-<name> tag.
+#
+# The package list comes from the tree, the same way the other workflows find
+# an addon, so a new addon needs no edit here.
+#
+# A manual run (workflow_dispatch) is a dry run unless you set dry_run to
+# false: it logs what it would delete and deletes nothing.
+name: registry-cleanup
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Log what would be deleted, and delete nothing
+        type: boolean
+        default: true
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: name the packages
+        id: packages
+        run: |
+          packages=$(python3 scripts/list_addons.py | python3 -c 'import json, sys; print(",".join("joshua-addons-" + n for n in json.load(sys.stdin)))')
+          echo "packages=${packages}" >> "$GITHUB_OUTPUT"
+      - name: name the mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: ${{ steps.packages.outputs.packages }}
+          older-than: 14 days
+          delete-untagged: true
+          use-regex: true
+          exclude-tags: ^(\d+\.\d+\.\d+|branch-.*)$
+          dry-run: ${{ steps.mode.outputs.dry_run }}

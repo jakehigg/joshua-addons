@@ -8,6 +8,15 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- A push to any branch, `main` included, builds the image of every addon for
+  amd64 and publishes it tagged with the commit SHA and `branch-<name>`, so
+  `branch-main` always names the newest commit on `main`. To test a branch
+  before a release, point the ArgoCD Application at the branch and set
+  `image.tag` to `$ARGOCD_APP_REVISION`. `docs/install.md` shows how. A
+  release is still one `v*` tag, multi-arch, with a packaged chart. A weekly
+  job removes the SHA-tagged branch builds older than two weeks, and the
+  untagged layers, from the registry.
+
 - `mcp` (joshua-mcp), an addon that gives a caller outside the agent access
   to Joshua's wiki, journal, and knowledge folder. Claude Code on a laptop is
   the first such caller. The tools are `search`, `read_page`,

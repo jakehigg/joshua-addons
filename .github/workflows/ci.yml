@@ -127,14 +127,3 @@ jobs:
             helm template addon-ci charts/joshua-addon -f "$f" > /tmp/rendered.yaml
             kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered.yaml
           done
-
-  build:
-    if: github.event_name == 'push'
-    needs: [discover, lint, test]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        member: ${{ fromJSON(needs.discover.outputs.addons) }}
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker build -f addons/${{ matrix.member }}/Dockerfile .

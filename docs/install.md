@@ -158,6 +158,51 @@ spec:
 A person who runs many addons can use an ApplicationSet instead: one
 generator entry per addon, each with its own `valuesObject`.
 
+### Run a branch build
+
+Each push to a branch, `main` included, publishes the image of every addon,
+amd64 only. Each image gets two tags:
+
+- the full commit SHA, such as
+  `ghcr.io/jakehigg/joshua-addons-hello:<sha>`. This tag never moves.
+- `branch-<name>`, such as `branch-main`. This tag moves to the newest push
+  on that branch. A character that a tag cannot hold, such as `/`, becomes
+  `-`.
+
+To test a branch on the cluster, set `targetRevision` to the branch name and
+set `image.tag` to `$ARGOCD_APP_REVISION`. ArgoCD puts the commit SHA that it
+resolved in that variable, so each push renders the chart of the new commit
+with the images of the same commit:
+
+```yaml
+  source:
+    repoURL: https://github.com/jakehigg/joshua-addons
+    targetRevision: <branch>
+    path: charts/joshua-addon
+    helm:
+      valuesObject:
+        image:
+          repository: ghcr.io/jakehigg/joshua-addons-hello
+      parameters:
+        - name: image.tag
+          value: $ARGOCD_APP_REVISION
+```
+
+ArgoCD can see a commit before its build ends. The new pod waits in
+`ImagePullBackOff` until the image arrives. Use a branch build on an addon
+that you test, not on one that people use.
+
+Without ArgoCD, set `image.tag` to a commit SHA, or to `branch-<name>` to take
+the newest push at each `helm upgrade`. With Docker Compose, set
+`JOSHUA_ADDONS_VERSION` in the `.env` of the addon to the same tag.
+
+A branch build is not a release. The chart on a branch still holds the
+version of the last release, so an empty `image.tag` on a branch pulls the
+image of that release, which can be older than the templates. To go back to
+a release, set `targetRevision` to the release tag, such as `v0.0.1`, and
+remove the `image.tag` parameter. An empty `image.tag` then pulls the image
+that shipped with that chart.
+
 ### Point the gateway at the addon
 
 The gateway reaches an addon at the cluster Service DNS name, in the form

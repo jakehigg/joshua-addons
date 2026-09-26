@@ -38,8 +38,14 @@ Each addon has a `README.md` that says what it does and which settings it takes.
 ## Versions
 
 One version covers the whole repository. The chart version, the chart
-`appVersion`, and every image tag are the same string, and one tag releases all
+`appVersion`, and every release image tag are the same string, and one tag releases all
 of them.
+
+Each push to a branch also publishes the image of every addon, amd64 only,
+tagged with the commit SHA and with `branch-<name>`. Use one to test a branch
+before a release. A branch build is not a release, and it has no version.
+[docs/install.md](docs/install.md), section "Run a branch build", shows how to
+run one on Kubernetes and how to go back to a release.
 
 ## Contribute
 
