@@ -1,0 +1,23 @@
+[project]
+name = "joshua-mcp"
+version = "0.0.0"
+requires-python = ">=3.13"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "anyio>=4",
+    "joshua-shared",
+    "mcp>=1.2",
+    "pyyaml>=6",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
+
+# The wiki git helper and the journal layout come from joshua-ai itself, so
+# the addon writes the same paths and commits the same way core does. Pin the
+# tag of the joshua-ai release the instance runs.
+[tool.uv.sources]
+joshua-shared = { git = "https://github.com/jakehigg/joshua-ai", tag = "v0.0.8", subdirectory = "shared" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

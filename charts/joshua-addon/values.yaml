@@ -49,6 +49,7 @@ podSecurityContext:
 
 persistence:
   enabled: false # give the addon its own PersistentVolumeClaim
+  existingClaim: "" # mount this claim instead, and make no claim; size, storageClass, and accessModes are then unused
   size: 1Gi # requested storage
   storageClass: "" # empty means the cluster default
   accessModes:

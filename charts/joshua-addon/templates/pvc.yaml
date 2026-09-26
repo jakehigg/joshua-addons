@@ -1,5 +1,6 @@
-{{- if .Values.persistence.enabled }}
-{{/* One volume for the addon's own data, mounted at persistence.mountPath. */}}
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+{{/* One volume for the addon's own data, mounted at persistence.mountPath.
+     An existingClaim is a claim another release owns, so no claim is made here. */}}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

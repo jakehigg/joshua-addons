@@ -1,0 +1,28 @@
+# The joshua-mcp addon, installed with charts/joshua-addon. The addon reads and
+# writes Joshua's own data volume, so it mounts the joshua-ai data claim; it
+# makes no claim of its own. The claim must be ReadWriteMany (for example
+# Longhorn RWX), because the joshua-ai core and gateway pods mount it too.
+# Put ADDON_TOKEN and MCP_TOKENS in an existingSecret, never here.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-mcp
+
+persistence:
+  enabled: true
+  existingClaim: joshua-ai-data # the claim name the joshua-ai release made
+  mountPath: /data
+
+# existingSecret: joshua-mcp # keys: ADDON_TOKEN, MCP_TOKENS
+
+env:
+  MCP_DATA_DIR: /data
+  MCP_TIMEZONE: UTC # set to the timezone in joshua.yaml, so "today" is the same day
+  MCP_READONLY: "" # callers that can only read, such as laptop-ci
+
+# The addon is for a caller outside the cluster, such as Claude Code on a
+# laptop. Turn the ingress on, with TLS, to reach it:
+# ingress:
+#   enabled: true
+#   className: nginx
+#   host: joshua-mcp.example.com
+#   tls:
+#     enabled: true

@@ -1,0 +1,48 @@
+# Run the `mcp` addon (joshua-mcp) beside joshua-ai on one Docker host. `make up
+# ADDON=mcp` starts it. The image comes from the GitHub container registry,
+# so nothing is built here: set JOSHUA_ADDONS_VERSION in `.env` to take another
+# release.
+#
+# Secrets come only from `.env`. No secret is written in this file.
+#
+# Data: the addon reads and writes joshua-ai's own data volume, so it mounts
+# the volume that joshua-ai's compose file creates. Set JOSHUA_DATA_VOLUME to
+# that volume's name (`docker volume ls`) when it is not `joshua-ai_data`.
+#
+# Network: the addon joins `joshua`, the external network joshua-ai's compose
+# file creates. The joshua-mcp addon is for a caller outside the agent, such as
+# Claude Code on a laptop, so it publishes port 8000 on the host. Set a bearer
+# (ADDON_TOKEN or MCP_TOKENS) before you publish the port.
+services:
+  mcp:
+    image: ghcr.io/jakehigg/joshua-addons-mcp:${JOSHUA_ADDONS_VERSION:-0.1.3}
+    restart: unless-stopped
+    environment:
+      ADDON_TOKEN: ${ADDON_TOKEN:-}
+      MCP_TOKENS: ${MCP_TOKENS:-}
+      MCP_READONLY: ${MCP_READONLY:-}
+      MCP_TIMEZONE: ${MCP_TIMEZONE:-UTC}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${MCP_PORT:-8000}:8000"
+    volumes:
+      - joshua-data:/data
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - joshua
+
+volumes:
+  joshua-data:
+    external: true
+    name: ${JOSHUA_DATA_VOLUME:-joshua-ai_data}
+
+networks:
+  joshua:
+    external: true
+    name: ${JOSHUA_NETWORK:-joshua-ai_default}

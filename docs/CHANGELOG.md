@@ -8,6 +8,16 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `mcp` (joshua-mcp), an addon that gives a caller outside the agent access
+  to Joshua's wiki, journal, and knowledge folder. Claude Code on a laptop is
+  the first such caller. The tools are `search`, `read_page`,
+  `list`, `write_page`, `write_journal_entry`, `read_journal`,
+  `knowledge_search`, and `knowledge_read`. A write commits to the wiki
+  repository, and records the caller in the frontmatter. Each caller has its
+  own token (`MCP_TOKENS`), and a caller can be read-only
+  (`MCP_READONLY`). The addon mounts the joshua-ai data volume.
+- The chart gains `persistence.existingClaim`, to mount a claim that another
+  release owns.
 - `vinyl` gains the tools that answer a question about the collection, and
   the tools that change it. Seven read the static bundle, so an answer needs
   no network: `vinyl_search` matches the title, the artist or the label and
