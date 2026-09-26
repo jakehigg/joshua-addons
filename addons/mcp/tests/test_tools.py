@@ -35,6 +35,7 @@ async def test_the_tool_list_is_final(app) -> None:
         "read_journal",
         "read_page",
         "search",
+        "semantic_search",
         "write_journal_entry",
         "write_page",
     ]
