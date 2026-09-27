@@ -34,3 +34,15 @@ app.kubernetes.io/name: {{ include "joshua-addon.fullname" . }}
 {{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
+
+{{/* The ServiceAccount the pod runs as. When the chart makes one
+     (serviceAccount.create, or rbac.enabled), it is serviceAccount.name or
+     the release name. Otherwise it is serviceAccount.name, and empty means
+     the namespace default, so the Deployment sets no serviceAccountName. */}}
+{{- define "joshua-addon.serviceAccountName" -}}
+{{- if or .Values.serviceAccount.create .Values.rbac.enabled -}}
+{{- .Values.serviceAccount.name | default (include "joshua-addon.fullname" .) -}}
+{{- else -}}
+{{- .Values.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}

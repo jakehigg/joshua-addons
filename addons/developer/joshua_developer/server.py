@@ -317,6 +317,12 @@ def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | Non
         runtime = DockerRuntime(manager, settings)
         runtime.remove_orphans()
         return runtime
+    if settings.worker_runtime == "kubernetes":
+        from joshua_developer.runtime_k8s import KubernetesRuntime
+
+        k8s_runtime = KubernetesRuntime(manager, settings)
+        k8s_runtime.remove_orphans()
+        return k8s_runtime
     if settings.worker_runtime == "stub":
         return StubRuntime(manager, delay_s=stub_delay_s)
     raise RuntimeError(f"the {settings.worker_runtime} runtime is not in this release")

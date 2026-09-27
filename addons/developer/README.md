@@ -9,14 +9,16 @@ SQLite, and applies the rules: the repository list, the git host tokens, the
 personas, the worker limit, and one task at a time on one branch. After a
 worker pushes, the manager scans the diff and opens the pull request.
 
-Two runtimes start a worker:
+Three runtimes start a worker:
 
+- `kubernetes` starts one Job for each task, in the namespace of the
+  manager. See "Kubernetes".
 - `docker` starts one container for each task, through a Docker socket
   proxy. See "Workers".
 - `stub` starts no worker. It marks the task `running` and then records a
   fake `success` report. Use it to test the tools and the rules.
 
-The `docker` runtime runs the worker image
+The `kubernetes` and `docker` runtimes run the worker image
 `ghcr.io/jakehigg/joshua-addons-developer-worker`. `addons/developer-worker/`
 builds it, and its README tells what a worker does.
 
@@ -93,9 +95,11 @@ answers only `{"ok": true}`.
 | `CHANNELS_URL` | empty | The address of joshua-ai channels, for the task reports. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
 | `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the addon sends to channels. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token. The Claude forwarder puts it on each worker request. Without it, the forwarder answers 503. |
-| `WORKER_RUNTIME` | `stub` | The runtime that starts a worker: `stub` or `docker`. `kubernetes` stops the addon at start. |
-| `WORKER_IMAGE` | empty | The worker image. The `docker` runtime needs it. The compose file sets the worker of the same release. |
-| `MANAGER_HOST` | `developer` | The name a worker uses to reach the manager. |
+| `WORKER_RUNTIME` | `stub` | The runtime that starts a worker: `stub`, `docker`, or `kubernetes`. |
+| `WORKER_IMAGE` | empty | The worker image. The `docker` and `kubernetes` runtimes need it. Use the worker of the same release. |
+| `MANAGER_HOST` | `developer` | The name a worker uses to reach the manager. On Kubernetes, it is the Service name, which is the release name. |
+| `POD_NAMESPACE` | the namespace of the pod | The namespace of the worker Jobs. `values.yaml` sets it from the downward API. |
+| `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. |
 | `WORKER_NETWORK` | `developer_workers` | The Docker network of the workers. |
 | `PUBLIC_NETWORK` | `bridge` | The Docker network a worker also joins when `network: on`. |
 | `DOCKER_HOST` | empty | The Docker API address, for the `docker` runtime. Empty means the Docker SDK default. |
@@ -283,9 +287,54 @@ mcp:
 
 ### Kubernetes
 
-Install `charts/joshua-addon` with `values.yaml` from this folder. The chart
-makes a claim for `/data` and mounts `developer.yaml` from `configFile`. Put
-the tokens in a Secret, and set `existingSecret` to its name.
+Install `charts/joshua-addon` with `values.yaml` from this folder:
+
+```
+helm install developer charts/joshua-addon -f addons/developer/values.yaml
+```
+
+The chart makes a claim for `/data` and mounts `developer.yaml` from
+`configFile`. Put the tokens in a Secret, and set `existingSecret` to its
+name. The comment in `values.yaml` gives the keys.
+
+Set `MANAGER_HOST` to the release name. The release name is also the name
+of the Service, and a worker finds the manager with it. The Service has
+port 8000 for the gateway, and ports 8001 and 8002 for the workers.
+
+`rbac.enabled: true` makes a ServiceAccount, a Role, and a RoleBinding. The
+Role lets the manager create, read, and delete Jobs, and read pods and pod
+logs, in its own namespace only.
+
+The manager starts one Job for each task, with the name
+`dev-worker-<first 8 characters of the task id>`. The worker pod:
+
+- Runs as uid 1000, with no Linux capabilities, no privilege escalation,
+  the `RuntimeDefault` seccomp profile, and a read-only root file system.
+- Has an emptyDir at `/work` and an emptyDir at `/tmp`. The worker writes
+  its checkout and its home folder there.
+- Gets no ServiceAccount token, and no variables other than the four in
+  "Workers".
+- Has the `worker` memory and CPU of `developer.yaml` as its requests and
+  its limits.
+
+The Job never starts a second pod. The manager deletes the Job when the
+task ends, and at the persona timeout plus 120 seconds. The Job also has
+this time as its deadline, and Kubernetes deletes a finished Job after one
+hour.
+
+`networkPolicy.enabled: true` makes two NetworkPolicies. A worker can
+connect to the manager on ports 8001 and 8002, and to DNS. It cannot connect
+to other addresses. The manager accepts port 8000 from the namespaces in
+`networkPolicy.gatewayNamespaces`, or from every namespace when the list is
+empty. It accepts ports 8001 and 8002 from the workers only. The CNI of the
+cluster must enforce NetworkPolicy. If it does not, a worker can connect to
+all addresses.
+
+For `network: on` in `developer.yaml`, set
+`networkPolicy.workersInternetEgress: true`. Also set
+`networkPolicy.clusterCidrs` to the pod and Service CIDRs of your cluster.
+A worker can then connect to public addresses, but not to private addresses
+or to the cluster.
 
 ### Docker Compose
 

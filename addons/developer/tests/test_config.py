@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 from conftest import CONFIG
+from joshua_developer import config as config_module
 from joshua_developer.config import (
     ConfigError,
     builtin_personas,
@@ -200,20 +201,37 @@ def test_a_bad_environment_names_the_variable(tmp_path: Path, env: dict, key: st
     assert "same-secret" not in str(exc.value)
 
 
-def test_the_kubernetes_runtime_stops_the_start(tmp_path: Path) -> None:
+def test_a_runtime_that_is_not_in_the_release_stops_the_start(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(config_module, "IMPLEMENTED_RUNTIMES", frozenset({"stub", "docker"}))
     with pytest.raises(ConfigError) as exc:
         settings_from_env(
             {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml"), "WORKER_RUNTIME": "kubernetes"}
         )
-    assert "the kubernetes runtime is not in this release" in str(exc.value)
+    assert "the kubernetes runtime is not in this release; use one of docker, stub" in str(
+        exc.value
+    )
 
 
-def test_the_docker_runtime_needs_a_worker_image(tmp_path: Path) -> None:
-    env = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml"), "WORKER_RUNTIME": "docker"}
-    with pytest.raises(ConfigError, match="WORKER_IMAGE is required"):
+@pytest.mark.parametrize("runtime", ["docker", "kubernetes"])
+def test_a_container_runtime_needs_a_worker_image(tmp_path: Path, runtime: str) -> None:
+    env = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml"), "WORKER_RUNTIME": runtime}
+    with pytest.raises(
+        ConfigError, match=f"WORKER_IMAGE is required when WORKER_RUNTIME is {runtime}"
+    ):
         settings_from_env(env)
     settings = settings_from_env({**env, "WORKER_IMAGE": "example/worker:1"})
-    assert settings.worker_runtime == "docker"
+    assert settings.worker_runtime == runtime
+
+
+def test_the_kubernetes_settings_come_from_the_environment(tmp_path: Path) -> None:
+    base = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml")}
+    defaults = settings_from_env(base)
+    assert (defaults.pod_namespace, defaults.worker_image_pull_secret) == ("", "")
+    settings = settings_from_env(
+        {**base, "POD_NAMESPACE": " joshua ", "WORKER_IMAGE_PULL_SECRET": "ghcr-pull"}
+    )
+    assert settings.pod_namespace == "joshua"
+    assert settings.worker_image_pull_secret == "ghcr-pull"
 
 
 def test_the_worker_settings_come_from_the_environment(tmp_path: Path) -> None:

@@ -332,5 +332,5 @@ def test_server_start_builds_the_docker_runtime(tmp_path, monkeypatch) -> None:
 
 
 def test_server_start_refuses_a_runtime_it_does_not_have(tmp_path) -> None:
-    with pytest.raises(RuntimeError, match="kubernetes"):
-        server.start(make_settings(tmp_path, worker_runtime="kubernetes"))
+    with pytest.raises(RuntimeError, match="the podman runtime is not in this release"):
+        server.start(make_settings(tmp_path, worker_runtime="podman"))

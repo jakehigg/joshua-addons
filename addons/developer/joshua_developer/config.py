@@ -24,7 +24,7 @@ DEFAULT_DATA_DIR = "/data"
 DEFAULT_CONFIG = "/etc/joshua-addon/developer.yaml"
 RUNTIMES = ("stub", "docker", "kubernetes")
 # The runtimes this build can start. The others stop the addon at start.
-IMPLEMENTED_RUNTIMES = frozenset({"stub", "docker"})
+IMPLEMENTED_RUNTIMES = frozenset(RUNTIMES)
 DEFAULT_MANAGER_HOST = "developer"
 DEFAULT_WORKER_NETWORK = "developer_workers"
 DEFAULT_PUBLIC_NETWORK = "bridge"
@@ -273,6 +273,10 @@ class Settings:
     docker_host: str = ""
     # A CA bundle to trust for the git host API. Empty means the system CAs.
     git_ca_bundle: str = ""
+    # The namespace of the worker Jobs. Empty means the namespace of the pod.
+    pod_namespace: str = ""
+    # The image pull Secret of a worker pod. Empty means none.
+    worker_image_pull_secret: str = ""
 
     @property
     def open(self) -> bool:
@@ -345,12 +349,13 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if runtime not in RUNTIMES:
         raise ConfigError(f"WORKER_RUNTIME must be one of {', '.join(RUNTIMES)}")
     if runtime not in IMPLEMENTED_RUNTIMES:
+        usable = ", ".join(sorted(IMPLEMENTED_RUNTIMES))
         raise ConfigError(
-            f"WORKER_RUNTIME: the {runtime} runtime is not in this release; use stub or docker"
+            f"WORKER_RUNTIME: the {runtime} runtime is not in this release; use one of {usable}"
         )
     worker_image = env.get("WORKER_IMAGE", "").strip()
-    if runtime == "docker" and not worker_image:
-        raise ConfigError("WORKER_IMAGE is required when WORKER_RUNTIME is docker")
+    if runtime in ("docker", "kubernetes") and not worker_image:
+        raise ConfigError(f"WORKER_IMAGE is required when WORKER_RUNTIME is {runtime}")
     manager_host = env.get("MANAGER_HOST", "").strip() or DEFAULT_MANAGER_HOST
     if not _HOSTNAME_RE.match(manager_host):
         raise ConfigError("MANAGER_HOST must be a host name, such as developer")
@@ -373,4 +378,6 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         public_network=env.get("PUBLIC_NETWORK", "").strip() or DEFAULT_PUBLIC_NETWORK,
         docker_host=env.get("DOCKER_HOST", "").strip(),
         git_ca_bundle=git_ca_bundle,
+        pod_namespace=env.get("POD_NAMESPACE", "").strip(),
+        worker_image_pull_secret=env.get("WORKER_IMAGE_PULL_SECRET", "").strip(),
     )

@@ -18,6 +18,9 @@ spec:
       labels:
         {{- include "joshua-addon.labels" . | nindent 8 }}
     spec:
+      {{- with include "joshua-addon.serviceAccountName" . }}
+      serviceAccountName: {{ . }}
+      {{- end }}
       {{- with .Values.podSecurityContext }}
       # fsGroup makes a mounted volume group-writable for the app user. A
       # PersistentVolumeClaim mounts root-owned without it, and every addon
@@ -33,11 +36,14 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.port }}
-          {{- if or .Values.env .Values.existingSecret .Values.envFrom }}
+          {{- if or .Values.env .Values.extraEnv .Values.existingSecret .Values.envFrom }}
           env:
             {{- range $name, $value := .Values.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
           {{- if or .Values.envFrom .Values.existingSecret }}
