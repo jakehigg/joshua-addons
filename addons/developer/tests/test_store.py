@@ -1,0 +1,155 @@
+"""The SQLite task store and the person settings."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from joshua_developer.store import (
+    ALLOWED_UPDATE_FIELDS,
+    STATUS_COLUMNS,
+    TaskStore,
+    build_update_sql,
+)
+
+
+@pytest.fixture
+def store(tmp_path: Path):
+    store = TaskStore(tmp_path / "data" / "developer.db")
+    yield store
+    store.close()
+
+
+def add(store: TaskStore, task_id: str, person: str = "alex", **extra) -> None:
+    fields = {
+        "task_id": task_id,
+        "person": person,
+        "task_type": "develop",
+        "repo": "github.com/example-home/app",
+        "scope": f"branch:{task_id}",
+        "persona": "opus",
+        "brief": "the brief",
+    }
+    fields.update(extra)
+    store.create_task(**fields)
+
+
+def test_build_update_sql() -> None:
+    sql, params = build_update_sql("task-1", {"status": "success", "pr_number": 9})
+    assert sql == "UPDATE tasks SET status = ?, pr_number = ? WHERE task_id = ?"
+    assert params == ["success", 9, "task-1"]
+
+
+def test_build_update_sql_serializes_a_report() -> None:
+    _, params = build_update_sql("t", {"report": {"summary": "x"}})
+    assert params[0] == '{"summary": "x"}'
+
+
+@pytest.mark.parametrize(
+    ("fields", "match"),
+    [
+        ({"status": "success", "evil; DROP TABLE": 1}, "unknown update fields"),
+        ({}, "no fields"),
+        ({"status": "in_progress"}, "unknown status"),
+        ({"person": "mia"}, "unknown update fields"),
+    ],
+)
+def test_build_update_sql_refuses(fields: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        build_update_sql("task-1", fields)
+
+
+def test_the_report_fields_are_allowed() -> None:
+    report_fields = {
+        "status",
+        "branch_name",
+        "commit_hash",
+        "summary",
+        "report",
+        "completed_at",
+        "pr_url",
+        "pr_number",
+        "input_tokens",
+        "output_tokens",
+        "estimated_cost",
+        "error",
+        "open_question",
+        "answer",
+    }
+    assert report_fields <= ALLOWED_UPDATE_FIELDS
+
+
+def test_create_get_and_update(store: TaskStore) -> None:
+    add(store, "t1", notify="telegram:dm:alex", branch_name="feature")
+    task = store.get_task("t1")
+    assert task is not None
+    assert tuple(task) == STATUS_COLUMNS
+    assert task["status"] == "dispatched"
+    assert task["notify"] == "telegram:dm:alex"
+    assert "brief" not in task
+    store.update_task("t1", status="success", report={"summary": "done", "files_changed": ["a"]})
+    full = store.get_task_full("t1")
+    assert full is not None
+    assert full["brief"] == "the brief"
+    assert full["report"] == {"summary": "done", "files_changed": ["a"]}
+    assert store.get_task("missing") is None
+    assert store.get_task_full("missing") is None
+
+
+def test_an_unknown_task_type_is_refused(store: TaskStore) -> None:
+    with pytest.raises(ValueError, match="unknown task type"):
+        add(store, "t1", task_type="deploy")
+
+
+def test_list_tasks_is_newest_first_and_per_person(store: TaskStore) -> None:
+    add(store, "a1")
+    add(store, "m1", person="mia")
+    add(store, "a2")
+    assert [t["task_id"] for t in store.list_tasks("alex")] == ["a2", "a1"]
+    assert [t["task_id"] for t in store.list_tasks("mia")] == ["m1"]
+    assert [t["task_id"] for t in store.list_tasks(None, limit=2)] == ["a2", "m1"]
+
+
+def test_fail_active_tasks(store: TaskStore) -> None:
+    add(store, "d")
+    add(store, "r")
+    add(store, "s")
+    store.update_task("r", status="running")
+    store.update_task("s", status="success")
+    changed = store.fail_active_tasks("manager restarted")
+    assert sorted(t["task_id"] for t in changed) == ["d", "r"]
+    for task_id in ("d", "r"):
+        task = store.get_task(task_id)
+        assert task is not None
+        assert task["status"] == "failed"
+        assert task["error"] == "manager restarted"
+        assert task["completed_at"]
+    assert store.get_task("s")["status"] == "success"  # type: ignore[index]
+    assert store.list_active_tasks() == []
+
+
+def test_settings_survive_a_reopen(tmp_path: Path) -> None:
+    path = tmp_path / "developer.db"
+    store = TaskStore(path)
+    assert store.get_settings("alex") == {
+        "git_name": None,
+        "git_email": None,
+        "default_persona": None,
+        "notify": None,
+    }
+    store.set_settings("alex", git_name="Alex", default_persona="fable")
+    store.set_settings("alex", notify="telegram:dm:alex", git_name=None)
+    store.close()
+
+    reopened = TaskStore(path)
+    assert reopened.get_settings("alex") == {
+        "git_name": "Alex",
+        "git_email": None,
+        "default_persona": "fable",
+        "notify": "telegram:dm:alex",
+    }
+    reopened.set_settings("alex", default_persona="")
+    assert reopened.get_settings("alex")["default_persona"] is None
+    with pytest.raises(ValueError, match="unknown settings fields"):
+        reopened.set_settings("alex", token="x")
+    reopened.close()

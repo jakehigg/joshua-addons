@@ -1,0 +1,36 @@
+# The developer addon, installed with charts/joshua-addon. developer.db needs
+# somewhere to live, so persistence is on, at /data. developer.yaml comes from
+# configFile. Put DEVELOPER_TOKENS, ADDON_TOKEN, JOSHUA_TOKEN_DEVELOPER, and
+# the git tokens that developer.yaml names in an existingSecret, never here.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-developer
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi
+
+# existingSecret: joshua-developer # keys: DEVELOPER_TOKENS, ADDON_TOKEN, JOSHUA_TOKEN_DEVELOPER, GITHUB_TOKEN
+
+configFile:
+  enabled: true
+  name: developer.yaml
+  mountPath: /etc/joshua-addon/developer.yaml
+  content: |
+    network: off
+    default_persona: opus
+    max_workers: 2
+    platforms:
+      github.com:
+        kind: github
+        token_env: GITHUB_TOKEN
+    repos: []
+    people: {}
+
+env:
+  DEVELOPER_DATA_DIR: /data
+  DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
+  WORKER_RUNTIME: stub
+  # Where a task report goes. Set the channels Service address, and put
+  # JOSHUA_TOKEN_DEVELOPER in the existingSecret.
+  # CHANNELS_URL: http://joshua-channels.<namespace>.svc.cluster.local:8000

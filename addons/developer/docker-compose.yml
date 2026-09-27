@@ -1,0 +1,51 @@
+# Run the `developer` addon (joshua-developer) beside joshua-ai on one Docker
+# host. `make up ADDON=developer` starts it. The image comes from the GitHub
+# container registry, so nothing is built here: set JOSHUA_ADDONS_VERSION in
+# `.env` to take another release.
+#
+# Secrets come only from `.env`. No secret is written in this file.
+#
+# Config: developer.yaml sits next to this file and is mounted read-only.
+# Copy the example in README.md to start.
+#
+# Data: developer.db lives in the `developer-data` volume.
+#
+# Network: the addon joins `joshua`, the external network joshua-ai's compose
+# file creates, so the gateway reaches it at http://developer:8000/mcp. It
+# publishes no port.
+services:
+  developer:
+    image: ghcr.io/jakehigg/joshua-addons-developer:${JOSHUA_ADDONS_VERSION:-0.1.3}
+    restart: unless-stopped
+    environment:
+      DEVELOPER_TOKENS: ${DEVELOPER_TOKENS:-}
+      ADDON_TOKEN: ${ADDON_TOKEN:-}
+      DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
+      DEVELOPER_DATA_DIR: /data
+      CHANNELS_URL: ${CHANNELS_URL:-}
+      JOSHUA_TOKEN_DEVELOPER: ${JOSHUA_TOKEN_DEVELOPER:-}
+      WORKER_RUNTIME: ${WORKER_RUNTIME:-stub}
+      WORKER_IMAGE: ${WORKER_IMAGE:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - developer-data:/data
+      - ./developer.yaml:/etc/joshua-addon/developer.yaml:ro
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - joshua
+
+  # The Docker socket proxy and the workers network come with the docker runtime (P3.2).
+
+volumes:
+  developer-data:
+
+networks:
+  joshua:
+    external: true
+    name: ${JOSHUA_NETWORK:-joshua-ai_default}
