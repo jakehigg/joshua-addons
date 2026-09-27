@@ -153,3 +153,45 @@ def test_settings_survive_a_reopen(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unknown settings fields"):
         reopened.set_settings("alex", token="x")
     reopened.close()
+
+
+def test_worker_tokens_are_found_and_cleared_when_the_task_ends(store: TaskStore) -> None:
+    add(store, "a", worker_token="token-a")
+    add(store, "b", worker_token="token-b")
+    add(store, "c")
+    assert store.find_task_by_worker_token("token-a") == "a"
+    assert store.find_task_by_worker_token("token-b") == "b"
+    assert store.find_task_by_worker_token("token-c") is None
+    assert store.find_task_by_worker_token("") is None
+    assert "worker_token" not in (store.get_task("a") or {})
+    store.update_task("a", status="success")
+    assert store.clear_ended_worker_tokens() == 1
+    assert store.find_task_by_worker_token("token-a") is None
+    assert store.find_task_by_worker_token("token-b") == "b"
+
+
+def test_an_old_database_gets_the_new_columns(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "developer.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, person TEXT NOT NULL, "
+        "task_type TEXT NOT NULL, repo TEXT NOT NULL, scope TEXT NOT NULL, "
+        "branch_name TEXT, base_branch TEXT, persona TEXT NOT NULL, "
+        "status TEXT NOT NULL DEFAULT 'dispatched', brief TEXT NOT NULL DEFAULT '', "
+        "instructions TEXT, pr_url TEXT, pr_number INTEGER, commit_hash TEXT, summary TEXT, "
+        "report TEXT, error TEXT, open_question TEXT, answer TEXT, input_tokens INTEGER, "
+        "output_tokens INTEGER, estimated_cost REAL, notify TEXT, created_at TEXT NOT NULL, "
+        "started_at TEXT, completed_at TEXT)"
+    )
+    conn.commit()
+    conn.close()
+    store = TaskStore(path)
+    add(store, "a", worker_token="t")
+    assert store.append_session_log("a", "line\n")
+    full = store.get_task_full("a")
+    assert full is not None
+    assert full["worker_token"] == "t"
+    assert full["session_log"] == "line\n"
+    store.close()

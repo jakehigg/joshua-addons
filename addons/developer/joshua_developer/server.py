@@ -7,6 +7,10 @@ or ``ADDON_TOKEN``), every other route needs ``Authorization: Bearer
 names a person. The ``ADDON_TOKEN`` bearer names no person: it may read every
 task and list the personas, and every other tool gives it "403 forbidden".
 A person sees only their own tasks.
+
+``start`` also builds the worker side: the worker API for port 8001
+(``worker_api``) and the git host tunnel for port 8002 (``git_proxy``).
+``python -m joshua_developer`` serves all three in one process.
 """
 
 from __future__ import annotations
@@ -24,11 +28,13 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from joshua_developer.config import Caller, Settings, settings_from_env
+from joshua_developer.git_proxy import GitProxy, task_target
 from joshua_developer.locks import LockManager
 from joshua_developer.log import get_logger
 from joshua_developer.manager import Manager, rejected
-from joshua_developer.runtime import StubRuntime
+from joshua_developer.runtime import Runtime, StubRuntime
 from joshua_developer.store import TaskStore
+from joshua_developer.worker_api import build_worker_app
 
 logger = get_logger("joshua_developer")
 
@@ -39,6 +45,9 @@ MAX_LIST = 100
 mcp = MCPServer(name="developer")
 
 _manager: Manager | None = None
+# The worker API app and the git host tunnel that start() built.
+worker_app: Starlette | None = None
+git_proxy: GitProxy | None = None
 
 
 def _get_manager() -> Manager:
@@ -186,7 +195,8 @@ async def task_output(task_id: str, ctx: Context) -> dict:
         "status": task["status"],
         "error": task["error"],
         "report": {key: value for key, value in report.items() if key != "log"} or None,
-        "log": report.get("log", ""),
+        # The report's log when the worker sent one, else the lines from /worker/log.
+        "log": report.get("log") or full.get("session_log") or "",
     }
 
 
@@ -295,16 +305,34 @@ async def healthz(request: Request) -> Response:
 mcp.custom_route("/healthz", methods=["GET"])(healthz)
 
 
+def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | None) -> Runtime:
+    """The runtime that ``WORKER_RUNTIME`` names."""
+    if settings.worker_runtime == "docker":
+        from joshua_developer.runtime_docker import DockerRuntime
+
+        runtime = DockerRuntime(manager, settings)
+        runtime.remove_orphans()
+        return runtime
+    if settings.worker_runtime == "stub":
+        return StubRuntime(manager, delay_s=stub_delay_s)
+    raise RuntimeError(f"the {settings.worker_runtime} runtime is not in this release")
+
+
 def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
-    """Open the store, build the manager and its runtime, and recover from a restart."""
-    global _manager
+    """Open the store, build the manager and its runtime, and recover from a restart.
+
+    It also builds the worker API app and the git host tunnel for the manager.
+    """
+    global _manager, worker_app, git_proxy
     if _manager is not None:
         _manager.store.close()
     store = TaskStore(settings.db_path)
     manager = Manager(settings, store, LockManager())
-    manager.runtime = StubRuntime(manager, delay_s=stub_delay_s)
-    manager.recover()
     _manager = manager
+    manager.recover()
+    manager.runtime = make_runtime(manager, settings, stub_delay_s)
+    worker_app = build_worker_app(manager)
+    git_proxy = GitProxy(lambda token: task_target(manager, token))
     logger.info(
         {
             "message": "developer ready",

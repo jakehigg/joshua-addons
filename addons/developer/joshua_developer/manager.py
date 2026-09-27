@@ -4,10 +4,16 @@ The MCP tools call this class. A call that breaks a rule gets a dict with
 ``status: "rejected"``, a ``reason``, and a ``message``. The reasons are
 ``invalid_arguments``, ``repo_not_allowed``, ``unknown_persona``,
 ``concurrency_limit``, ``locked``, and ``not_waiting``.
+
+The manager also serves the worker side: it mints the task token of each
+task, takes a question from a worker, and wakes the worker that waits for
+the answer.
 """
 
 from __future__ import annotations
 
+import asyncio
+import secrets
 import uuid
 from typing import Any
 
@@ -24,7 +30,7 @@ from joshua_developer.repos import (
     repo_allowed,
 )
 from joshua_developer.runtime import Report, Runtime
-from joshua_developer.store import TERMINAL_STATUSES, TaskStore, now_iso
+from joshua_developer.store import ACTIVE_STATUSES, TERMINAL_STATUSES, TaskStore, now_iso
 
 logger = get_logger("joshua_developer.manager")
 
@@ -32,6 +38,7 @@ RESTART_ERROR = "manager restarted"
 # The time a lock outlives the persona's timeout before a new task may take it.
 LOCK_MARGIN_S = 600
 MAX_TEXT = 100_000
+MAX_QUESTION = 10_000
 
 
 def rejected(reason: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -47,6 +54,10 @@ class Manager:
         self.locks = locks
         self.runtime: Runtime | None = None
         self.recovered: list[str] = []
+        # One event for each task with an open question. answer() sets it.
+        self._answer_events: dict[str, asyncio.Event] = {}
+        # The tasks whose session log is full. The drop is logged one time.
+        self._log_full: set[str] = set()
 
     @property
     def config(self) -> DeveloperConfig:
@@ -66,6 +77,7 @@ class Manager:
                 {"message": "task failed by a manager restart", "task_id": task["task_id"]}
             )
         self.recovered = [task["task_id"] for task in failed]
+        self.store.clear_ended_worker_tokens()
         return list(self.recovered)
 
     async def send_recovered_reports(self) -> None:
@@ -74,7 +86,7 @@ class Manager:
         for task_id in pending:
             full = self.store.get_task_full(task_id)
             if full is not None:
-                await notify.send_report(self.settings, full)
+                await notify.send_report(self.settings, full, self._default_notify(full))
 
     # --- effective values --------------------------------------------------
 
@@ -95,6 +107,9 @@ class Manager:
             or self.config.default_persona,
             "notify": row["notify"] or (entry.notify if entry else None),
         }
+
+    def _default_notify(self, task: dict[str, Any]) -> str | None:
+        return self.effective_settings(task["person"])["notify"]
 
     def allowed_patterns(self, person: str) -> list[str]:
         """The instance repository patterns plus the person's own."""
@@ -238,6 +253,7 @@ class Manager:
             scope=scope,
             persona=chosen,
             notify=destination,
+            worker_token=secrets.token_urlsafe(32),
             **fields,
         )
         logger.info(
@@ -309,6 +325,11 @@ class Manager:
 
     # --- the Reporter side -------------------------------------------------
 
+    def is_active(self, task_id: str) -> bool:
+        """True when the task is dispatched or running: no report has come."""
+        task = self.store.get_task(task_id)
+        return task is not None and task["status"] in ACTIVE_STATUSES
+
     def mark_running(self, task_id: str) -> None:
         """Mark a dispatched task as running."""
         task = self.store.get_task(task_id)
@@ -348,10 +369,14 @@ class Manager:
             fields["pr_number"] = report.pr_number
         self.store.update_task(task_id, **fields)
         self._release(task["repo"], task["scope"], task_id)
+        event = self._answer_events.pop(task_id, None)
+        if event is not None:
+            event.set()
+        self._log_full.discard(task_id)
         logger.info({"message": "task ended", "task_id": task_id, "status": report.status})
         full = self.store.get_task_full(task_id)
         assert full is not None
-        await notify.send_report(self.settings, full)
+        await notify.send_report(self.settings, full, self._default_notify(full))
         return self.store.get_task(task_id)
 
     # --- answer ------------------------------------------------------------
@@ -378,9 +403,51 @@ class Manager:
                 "not_waiting", f"task {task['task_id']} already has an answer to its question"
             )
         self.store.update_task(task["task_id"], answer=text)
+        event = self._answer_events.get(task["task_id"])
+        if event is not None:
+            event.set()
         logger.info({"message": "answer stored", "task_id": task["task_id"], "person": person})
         return {
             "task_id": task["task_id"],
             "status": "answered",
             "message": "The answer is stored for the worker.",
         }
+
+    # --- the worker side ---------------------------------------------------
+
+    def answer_event(self, task_id: str) -> asyncio.Event:
+        """The event that ``answer`` sets for the open question of ``task_id``."""
+        event = self._answer_events.get(task_id)
+        if event is None:
+            event = self._answer_events[task_id] = asyncio.Event()
+        return event
+
+    async def ask(self, task_id: str, question: str) -> bool:
+        """Open a question for a task and send it to the person's chat.
+
+        The question replaces an earlier one, and clears its answer. Returns
+        True when channels accepted the event.
+        """
+        self.store.update_task(task_id, open_question=question, answer=None)
+        old = self._answer_events.get(task_id)
+        self._answer_events[task_id] = asyncio.Event()
+        if old is not None:
+            # A worker that still waits on the old question checks again.
+            old.set()
+        logger.info({"message": "worker asked a question", "task_id": task_id})
+        full = self.store.get_task_full(task_id)
+        assert full is not None
+        return await notify.send_question(self.settings, full, question, self._default_notify(full))
+
+    def append_log(self, task_id: str, text: str) -> bool:
+        """Add worker text to the session log. Returns False when the log is full.
+
+        After the first drop, every later text of the task is dropped too, so
+        the log has no gaps.
+        """
+        if task_id not in self._log_full and self.store.append_session_log(task_id, text):
+            return True
+        if task_id not in self._log_full:
+            self._log_full.add(task_id)
+            logger.warning({"message": "session log full; worker text dropped", "task_id": task_id})
+        return False

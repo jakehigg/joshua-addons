@@ -71,16 +71,34 @@ def test_a_bare_yaml_off_and_on_mean_the_network_setting(tmp_path: Path) -> None
     assert load_config(write_config(tmp_path, "network: on\n")).network == "on"
 
 
-def test_personas_in_the_file_replace_the_builtins() -> None:
+def test_personas_in_the_file_merge_over_the_builtins() -> None:
     config = parse_config(
         {
             "default_persona": "quick",
-            "personas": {"quick": {"model": "claude-haiku-5", "max_turns": 5, "timeout_s": 60}},
+            "personas": {
+                "quick": {"model": "claude-haiku-5", "max_turns": 5, "timeout_s": 60},
+                "opus": {"model": "claude-opus-5", "max_turns": 10, "timeout_s": 600},
+            },
         }
     )
-    assert set(config.personas) == {"quick"}
+    assert set(config.personas) == {"quick", "sonnet", "opus", "fable"}
     assert config.personas["quick"].effort == "high"
+    assert config.personas["opus"].max_turns == 10
+    assert config.personas["opus"].timeout_s == 600
+    assert config.personas["sonnet"] == builtin_personas()["sonnet"]
     assert set(builtin_personas()) == {"sonnet", "opus", "fable"}
+
+
+def test_worker_limits_have_defaults_and_refuse_a_bad_value() -> None:
+    config = parse_config({})
+    assert config.worker.memory == "2g"
+    assert config.worker.cpus == 2.0
+    custom = parse_config({"worker": {"memory": "512m", "cpus": 0.5}})
+    assert custom.worker.memory == "512m"
+    for bad in ({"memory": "lots"}, {"cpus": 0}, {"swap": "1g"}):
+        with pytest.raises(ConfigError) as exc:
+            parse_config({"worker": bad})
+        assert "worker" in str(exc.value)
 
 
 @pytest.mark.parametrize(
@@ -182,11 +200,47 @@ def test_a_bad_environment_names_the_variable(tmp_path: Path, env: dict, key: st
     assert "same-secret" not in str(exc.value)
 
 
-@pytest.mark.parametrize("runtime", ["docker", "kubernetes"])
-def test_a_runtime_that_is_not_built_stops_the_start(tmp_path: Path, runtime: str) -> None:
+def test_the_kubernetes_runtime_stops_the_start(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as exc:
-        settings_from_env({"DEVELOPER_CONFIG": str(tmp_path / "x.yaml"), "WORKER_RUNTIME": runtime})
-    assert f"the {runtime} runtime is not in this release" in str(exc.value)
+        settings_from_env(
+            {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml"), "WORKER_RUNTIME": "kubernetes"}
+        )
+    assert "the kubernetes runtime is not in this release" in str(exc.value)
+
+
+def test_the_docker_runtime_needs_a_worker_image(tmp_path: Path) -> None:
+    env = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml"), "WORKER_RUNTIME": "docker"}
+    with pytest.raises(ConfigError, match="WORKER_IMAGE is required"):
+        settings_from_env(env)
+    settings = settings_from_env({**env, "WORKER_IMAGE": "example/worker:1"})
+    assert settings.worker_runtime == "docker"
+
+
+def test_the_worker_settings_come_from_the_environment(tmp_path: Path) -> None:
+    base = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml")}
+    defaults = settings_from_env(base)
+    assert defaults.manager_host == "developer"
+    assert defaults.worker_network == "developer_workers"
+    assert defaults.public_network == "bridge"
+    assert defaults.docker_host == ""
+    assert defaults.claude_token == ""
+    settings = settings_from_env(
+        {
+            **base,
+            "CLAUDE_CODE_OAUTH_TOKEN": "claude-secret-value",
+            "MANAGER_HOST": "dev-manager",
+            "WORKER_NETWORK": "w",
+            "PUBLIC_NETWORK": "p",
+            "DOCKER_HOST": "tcp://docker-socket-proxy:2375",
+        }
+    )
+    assert settings.claude_token == "claude-secret-value"
+    assert "claude-secret-value" not in repr(settings)
+    assert settings.manager_host == "dev-manager"
+    assert (settings.worker_network, settings.public_network) == ("w", "p")
+    assert settings.docker_host == "tcp://docker-socket-proxy:2375"
+    with pytest.raises(ConfigError, match="MANAGER_HOST"):
+        settings_from_env({**base, "MANAGER_HOST": "http://x/"})
 
 
 def test_parse_tokens() -> None:

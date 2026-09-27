@@ -42,6 +42,10 @@ class Report(BaseModel):
 class Reporter(Protocol):
     """The manager side that a runtime reports to."""
 
+    def is_active(self, task_id: str) -> bool:
+        """True while the task has no report."""
+        ...
+
     def mark_running(self, task_id: str) -> None: ...
 
     async def record_report(self, task_id: str, report: Report) -> dict[str, Any] | None: ...

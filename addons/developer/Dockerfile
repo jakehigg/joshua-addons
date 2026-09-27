@@ -21,5 +21,6 @@ RUN mkdir /data && chown 1000:1000 /data
 ENV PATH="/app/.venv/bin:$PATH" \
     DEVELOPER_DATA_DIR=/data
 USER 1000
-EXPOSE 8000
+# 8000 MCP, 8001 the worker API, 8002 the git host tunnel.
+EXPOSE 8000 8001 8002
 ENTRYPOINT ["python", "-m", "joshua_developer"]

@@ -133,7 +133,7 @@ async def test_recover_sends_one_report_for_each_failed_task(settings, monkeypat
 
     sent: list[dict] = []
 
-    async def fake_send(settings, task) -> bool:
+    async def fake_send(settings, task, default=None) -> bool:
         sent.append(task)
         return True
 
@@ -153,7 +153,7 @@ async def test_the_app_lifespan_sends_the_recovered_reports(settings, monkeypatc
 
     sent: list[str] = []
 
-    async def fake_send(settings, task) -> bool:
+    async def fake_send(settings, task, default=None) -> bool:
         sent.append(task["task_id"])
         return True
 

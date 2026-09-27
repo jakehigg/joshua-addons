@@ -24,13 +24,20 @@ DEFAULT_DATA_DIR = "/data"
 DEFAULT_CONFIG = "/etc/joshua-addon/developer.yaml"
 RUNTIMES = ("stub", "docker", "kubernetes")
 # The runtimes this build can start. The others stop the addon at start.
-IMPLEMENTED_RUNTIMES = frozenset({"stub"})
+IMPLEMENTED_RUNTIMES = frozenset({"stub", "docker"})
+DEFAULT_MANAGER_HOST = "developer"
+DEFAULT_WORKER_NETWORK = "developer_workers"
+DEFAULT_PUBLIC_NETWORK = "bridge"
+# The worker API (brief, report, ask, the Claude forwarder) and the git host tunnel.
+WORKER_API_PORT = 8001
+GIT_PROXY_PORT = 8002
 
 # Text that starts like one of these is a token, not a name.
 TOKEN_PREFIXES = ("sk-ant-", "glpat-", "ghp_", "github_pat_", "xoxb-")
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}\Z")
+_HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?\Z")
 
 
 class ConfigError(ValueError):
@@ -105,13 +112,23 @@ class Person(_Model):
     repos: list[str] = Field(default_factory=list)
 
 
+class WorkerLimits(_Model):
+    """The memory and CPU limits of one worker container."""
+
+    memory: str = Field(default="2g", pattern=r"^[0-9]+[bkmg]?$")
+    cpus: float = Field(default=2.0, gt=0, le=64)
+
+
 class DeveloperConfig(_Model):
     """The contents of ``developer.yaml``."""
 
     network: Literal["off", "on"] = "off"
     default_persona: str = "opus"
     max_workers: int = Field(default=2, gt=0)
+    # A persona in the file replaces the built-in persona of the same name.
+    # The other built-in personas stay.
     personas: dict[str, Persona] = Field(default_factory=builtin_personas)
+    worker: WorkerLimits = Field(default_factory=WorkerLimits)
     platforms: dict[str, Platform] = Field(default_factory=dict)
     repos: list[str] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
@@ -125,6 +142,11 @@ class DeveloperConfig(_Model):
         if value is False:
             return "off"
         return value
+
+    @field_validator("personas", mode="after")
+    @classmethod
+    def _merge_personas(cls, value: dict[str, Persona]) -> dict[str, Persona]:
+        return {**builtin_personas(), **value}
 
 
 def _find_literal_token(value: Any, path: str) -> str | None:
@@ -241,6 +263,14 @@ class Settings:
     channels_token: str = field(default="", repr=False)
     worker_image: str = ""
     worker_runtime: str = "stub"
+    # The Claude token the forwarder puts on each worker request.
+    claude_token: str = field(default="", repr=False)
+    # The name a worker uses to reach the manager.
+    manager_host: str = DEFAULT_MANAGER_HOST
+    worker_network: str = DEFAULT_WORKER_NETWORK
+    public_network: str = DEFAULT_PUBLIC_NETWORK
+    # The Docker API address. Empty means the SDK default.
+    docker_host: str = ""
 
     @property
     def open(self) -> bool:
@@ -313,7 +343,15 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if runtime not in RUNTIMES:
         raise ConfigError(f"WORKER_RUNTIME must be one of {', '.join(RUNTIMES)}")
     if runtime not in IMPLEMENTED_RUNTIMES:
-        raise ConfigError(f"WORKER_RUNTIME: the {runtime} runtime is not in this release; use stub")
+        raise ConfigError(
+            f"WORKER_RUNTIME: the {runtime} runtime is not in this release; use stub or docker"
+        )
+    worker_image = env.get("WORKER_IMAGE", "").strip()
+    if runtime == "docker" and not worker_image:
+        raise ConfigError("WORKER_IMAGE is required when WORKER_RUNTIME is docker")
+    manager_host = env.get("MANAGER_HOST", "").strip() or DEFAULT_MANAGER_HOST
+    if not _HOSTNAME_RE.match(manager_host):
+        raise ConfigError("MANAGER_HOST must be a host name, such as developer")
 
     return Settings(
         config=config,
@@ -321,6 +359,11 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         tokens=tokens,
         channels_url=channels_url,
         channels_token=channels_token,
-        worker_image=env.get("WORKER_IMAGE", "").strip(),
+        worker_image=worker_image,
         worker_runtime=runtime,
+        claude_token=env.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip(),
+        manager_host=manager_host,
+        worker_network=env.get("WORKER_NETWORK", "").strip() or DEFAULT_WORKER_NETWORK,
+        public_network=env.get("PUBLIC_NETWORK", "").strip() or DEFAULT_PUBLIC_NETWORK,
+        docker_host=env.get("DOCKER_HOST", "").strip(),
     )

@@ -1,14 +1,37 @@
 from __future__ import annotations
 
+import asyncio
+
 import uvicorn
 
+from joshua_developer import server
+from joshua_developer.config import GIT_PROXY_PORT, WORKER_API_PORT
 from joshua_developer.log import configure_from_env
-from joshua_developer.server import build_app
+
+HOST = "0.0.0.0"
+MCP_PORT = 8000
+
+
+async def serve() -> None:
+    """Serve MCP on 8000, the worker API on 8001, and the git host tunnel on 8002."""
+    app = server.build_app()
+    assert server.worker_app is not None and server.git_proxy is not None
+    await server.git_proxy.start(HOST, GIT_PROXY_PORT)
+    mcp_server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=MCP_PORT, log_config=None))
+    worker_server = uvicorn.Server(
+        uvicorn.Config(server.worker_app, host=HOST, port=WORKER_API_PORT, log_config=None)
+    )
+    try:
+        # Each server stops on SIGTERM. The second one to start passes the
+        # signal on to the first when it stops.
+        await asyncio.gather(mcp_server.serve(), worker_server.serve())
+    finally:
+        await server.git_proxy.close()
 
 
 def main() -> None:
     configure_from_env("joshua-developer")
-    uvicorn.run(build_app(), host="0.0.0.0", port=8000, log_config=None)
+    asyncio.run(serve())
 
 
 if __name__ == "__main__":

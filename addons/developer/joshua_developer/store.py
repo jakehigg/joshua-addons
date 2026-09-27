@@ -1,6 +1,7 @@
 """The task store: SQLite at ``<DEVELOPER_DATA_DIR>/developer.db``.
 
-Two tables, created on first open. ``tasks`` holds one row for each
+Two tables, created on first open. A column added after the first release
+is added to an old database when it opens. ``tasks`` holds one row for each
 ``develop`` or ``rework`` call. ``settings`` holds the values a person changed
 from chat. One connection serves the process, behind a lock, so a call from
 any thread is safe.
@@ -8,6 +9,7 @@ any thread is safe.
 
 from __future__ import annotations
 
+import hmac
 import json
 import sqlite3
 import threading
@@ -48,7 +50,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     notify TEXT,
     created_at TEXT NOT NULL,
     started_at TEXT,
-    completed_at TEXT
+    completed_at TEXT,
+    worker_token TEXT,
+    session_log TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_person_created ON tasks(person, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -114,6 +118,12 @@ ALLOWED_UPDATE_FIELDS = frozenset(
 
 SETTINGS_FIELDS = ("git_name", "git_email", "default_persona", "notify")
 
+# Columns an older database does not have: name to type.
+ADDED_COLUMNS = {"worker_token": "TEXT", "session_log": "TEXT"}
+
+# The session log stops at this size. More text is dropped.
+MAX_SESSION_LOG_BYTES = 1024 * 1024
+
 
 def now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -165,6 +175,10 @@ class TaskStore:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(SCHEMA)
+            have = {row[1] for row in self._conn.execute("PRAGMA table_info(tasks)")}
+            for name, kind in ADDED_COLUMNS.items():
+                if name not in have:
+                    self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {kind}")
 
     def close(self) -> None:
         with self._lock:
@@ -192,6 +206,7 @@ class TaskStore:
         pr_number: int | None = None,
         pr_url: str | None = None,
         notify: str | None = None,
+        worker_token: str | None = None,
     ) -> None:
         if task_type not in TASK_TYPES:
             raise ValueError(f"unknown task type: {task_type!r}")
@@ -199,8 +214,9 @@ class TaskStore:
             """
             INSERT INTO tasks (
                 task_id, person, task_type, repo, scope, persona, status, brief,
-                instructions, branch_name, base_branch, pr_number, pr_url, notify, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?)
+                instructions, branch_name, base_branch, pr_number, pr_url, notify, created_at,
+                worker_token
+            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -217,6 +233,7 @@ class TaskStore:
                 pr_url,
                 notify,
                 now_iso(),
+                worker_token,
             ),
         )
 
@@ -267,6 +284,48 @@ class TaskStore:
         for task in active:
             self.update_task(task["task_id"], status="failed", error=error, completed_at=stamp)
         return active
+
+    # --- worker tokens and the session log ---------------------------------
+
+    def find_task_by_worker_token(self, token: str) -> str | None:
+        """The id of the task that holds ``token``, or None.
+
+        Every stored token is compared with ``hmac.compare_digest``, and the
+        loop does not stop at a match.
+        """
+        if not token:
+            return None
+        cursor = self._execute(
+            "SELECT task_id, worker_token FROM tasks WHERE worker_token IS NOT NULL"
+        )
+        found = None
+        provided = token.encode()
+        for task_id, stored in cursor.fetchall():
+            if hmac.compare_digest(provided, stored.encode()):
+                found = task_id
+        return found
+
+    def clear_ended_worker_tokens(self) -> int:
+        """Remove the worker token of every task that ended. Returns the count."""
+        cursor = self._execute(
+            "UPDATE tasks SET worker_token = NULL WHERE worker_token IS NOT NULL "
+            "AND status NOT IN ('dispatched', 'running')"
+        )
+        return cursor.rowcount
+
+    def append_session_log(self, task_id: str, text: str) -> bool:
+        """Add ``text`` to the session log of a task.
+
+        Returns False, and adds nothing, when the log would pass
+        ``MAX_SESSION_LOG_BYTES``.
+        """
+        size = len(text.encode("utf-8"))
+        cursor = self._execute(
+            "UPDATE tasks SET session_log = COALESCE(session_log, '') || ? "
+            "WHERE task_id = ? AND length(CAST(COALESCE(session_log, '') AS BLOB)) + ? <= ?",
+            (text, task_id, size, MAX_SESSION_LOG_BYTES),
+        )
+        return cursor.rowcount == 1
 
     # --- settings ----------------------------------------------------------
 

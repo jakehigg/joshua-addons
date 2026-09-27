@@ -10,7 +10,7 @@ persistence:
   mountPath: /data
   size: 1Gi
 
-# existingSecret: joshua-developer # keys: DEVELOPER_TOKENS, ADDON_TOKEN, JOSHUA_TOKEN_DEVELOPER, GITHUB_TOKEN
+# existingSecret: joshua-developer # keys: DEVELOPER_TOKENS, ADDON_TOKEN, JOSHUA_TOKEN_DEVELOPER, CLAUDE_CODE_OAUTH_TOKEN, GITHUB_TOKEN
 
 configFile:
   enabled: true
@@ -30,7 +30,13 @@ configFile:
 env:
   DEVELOPER_DATA_DIR: /data
   DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
+  # The Kubernetes runtime comes in a later release. Until then, stub.
   WORKER_RUNTIME: stub
+  # The worker image. The default release tag matches this chart.
+  # WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:<version>
+  # The name a worker uses to reach the manager: the Service name of this
+  # release, for the worker API (8001) and the git host tunnel (8002).
+  # MANAGER_HOST: joshua-developer
   # Where a task report goes. Set the channels Service address, and put
   # JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   # CHANNELS_URL: http://joshua-channels.<namespace>.svc.cluster.local:8000
