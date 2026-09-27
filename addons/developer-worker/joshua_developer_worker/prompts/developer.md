@@ -63,7 +63,8 @@ no other tool and no other server.
 
 When you need a fact you do not have, call `ask` once with one clear
 question. The answer comes from the person's assistant and may take minutes.
-If none comes, do the parts that do not depend on it and set `blocked`.
+If none comes, or `ask` says that nobody can be reached, do the parts that do
+not depend on it and set `blocked`.
 
 Do not use `ask` for a fact that you can find in the repository.
 

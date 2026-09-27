@@ -262,7 +262,8 @@ async def _work(
                 dest,
                 branch,
                 brief.get("base_branch"),
-                create_if_missing=brief.get("task_type") != "rework",
+                # A rework, or a resumed task, works on a branch that exists.
+                create_if_missing=brief.get("task_type") != "rework" and not brief.get("resumed"),
             )
     except git.GitError as exc:
         return Report(status="failed", branch=branch, error=str(exc), log=log_.text())

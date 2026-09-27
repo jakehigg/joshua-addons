@@ -2,7 +2,8 @@
 
 Two tables, created on first open. A column added after the first release
 is added to an old database when it opens. ``tasks`` holds one row for each
-``develop`` or ``rework`` call. ``settings`` holds the values a person changed
+``develop`` or ``rework`` call; ``history`` holds the reports of the
+earlier workers of a resumed task. ``settings`` holds the values a person changed
 from chat. One connection serves the process, behind a lock, so a call from
 any thread is safe.
 """
@@ -54,7 +55,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     worker_token TEXT,
     session_log TEXT,
     scan TEXT,
-    findings TEXT
+    findings TEXT,
+    history TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_person_created ON tasks(person, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -119,6 +121,8 @@ ALLOWED_UPDATE_FIELDS = frozenset(
         "completed_at",
         "scan",
         "findings",
+        "worker_token",
+        "history",
     }
 )
 
@@ -130,10 +134,11 @@ ADDED_COLUMNS = {
     "session_log": "TEXT",
     "scan": "TEXT",
     "findings": "TEXT",
+    "history": "TEXT",
 }
 
 # The columns that hold JSON.
-JSON_COLUMNS = ("report", "findings")
+JSON_COLUMNS = ("report", "findings", "history")
 
 # The session log stops at this size. More text is dropped.
 MAX_SESSION_LOG_BYTES = 1024 * 1024

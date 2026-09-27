@@ -166,14 +166,16 @@ async def rework(
 
 @mcp.tool()
 async def answer(task_id: str, text: str, ctx: Context) -> dict:
-    """Give a waiting task the answer to its question.
+    """Give a task the answer to its question.
 
     A task waits when task_status shows an open_question. The text is the
-    answer, from what you know or from what the person said.
+    answer, from what you know or from what the person said. When the task
+    is blocked or timed_out and its worker pushed the branch, the answer
+    resumes it: a new worker continues on the branch.
     """
     person = _person(ctx)
     task = _own_task(Caller(person=person), task_id)
-    return _get_manager().answer(person, task, text)
+    return await _get_manager().answer(person, task, text)
 
 
 @mcp.tool()
@@ -190,7 +192,10 @@ async def task_status(task_id: str, ctx: Context) -> dict:
 
 @mcp.tool()
 async def task_output(task_id: str, ctx: Context) -> dict:
-    """The full report and the session log of one task, for debugging."""
+    """The full report and the session log of one task, for debugging.
+
+    history holds the reports of the earlier workers of a resumed task.
+    """
     task = _own_task(_caller(ctx), task_id)
     full = _get_manager().store.get_task_full(task["task_id"]) or {}
     report = full.get("report") or {}
@@ -201,6 +206,7 @@ async def task_output(task_id: str, ctx: Context) -> dict:
         "report": {key: value for key, value in report.items() if key != "log"} or None,
         # The report's log when the worker sent one, else the lines from /worker/log.
         "log": report.get("log") or full.get("session_log") or "",
+        "history": full.get("history") or [],
     }
 
 

@@ -159,6 +159,21 @@ async def test_the_ask_tool_without_an_answer(manager: FakeManager) -> None:
     assert asker.open_question == "Which port?"
 
 
+async def test_the_ask_tool_returns_at_once_when_nobody_can_be_reached(
+    manager: FakeManager,
+) -> None:
+    manager.ask_reply = {"asked": True, "sent": False, "reason": "no_destination"}
+    asker = session.Asker(manager.client(), time.monotonic() + 3600)
+    started = time.monotonic()
+    reply = await asker({"question": "Which port?"})
+    assert time.monotonic() - started < 5
+    assert reply == {"content": [{"type": "text", "text": session.NOBODY}]}
+    assert "Nobody can be reached" in session.NOBODY and "`blocked`" in session.NOBODY
+    assert manager.polls == 0
+    # The question stays open, so a stop reports it.
+    assert asker.open_question == "Which port?"
+
+
 async def test_the_ask_tool_refuses_an_empty_question(manager: FakeManager) -> None:
     reply = await session.Asker(manager.client(), 0)({"question": "  "})
     assert reply["is_error"] is True

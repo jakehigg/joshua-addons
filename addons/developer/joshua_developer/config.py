@@ -34,6 +34,8 @@ GIT_PROXY_PORT = 8002
 
 # Text that starts like one of these is a token, not a name.
 TOKEN_PREFIXES = ("sk-ant-", "glpat-", "ghp_", "github_pat_", "xoxb-")
+# An AWS access key id: AKIA and 16 upper-case letters or digits, as the scan finds it.
+_AWS_KEY_RE = re.compile(r"AKIA[0-9A-Z]{16}")
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}\Z")
@@ -149,14 +151,19 @@ class DeveloperConfig(_Model):
         return {**builtin_personas(), **value}
 
 
+def _looks_like_token(text: str) -> bool:
+    stripped = text.strip()
+    return stripped.startswith(TOKEN_PREFIXES) or _AWS_KEY_RE.match(stripped) is not None
+
+
 def _find_literal_token(value: Any, path: str) -> str | None:
     """The key path of the first string that looks like a token, or None."""
     if isinstance(value, str):
-        return path if value.strip().startswith(TOKEN_PREFIXES) else None
+        return path if _looks_like_token(value) else None
     if isinstance(value, Mapping):
         for key, item in value.items():
             here = f"{path}.{key}" if path else str(key)
-            if isinstance(key, str) and key.strip().startswith(TOKEN_PREFIXES):
+            if isinstance(key, str) and _looks_like_token(key):
                 return path or "<top>"
             found = _find_literal_token(item, here)
             if found:

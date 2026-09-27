@@ -7,7 +7,13 @@ import time
 import httpx
 import pytest
 from conftest import MANAGER_URL, TASK_ID, TASK_TOKEN, FakeManager
-from joshua_developer_worker.manager_client import ManagerClient, ManagerError, Report, TaskEnded
+from joshua_developer_worker.manager_client import (
+    ManagerClient,
+    ManagerError,
+    NotSent,
+    Report,
+    TaskEnded,
+)
 
 
 async def test_brief_sends_the_task_token_and_the_task_id(manager: FakeManager) -> None:
@@ -79,6 +85,20 @@ async def test_ask_raises_task_ended_on_409(manager: FakeManager) -> None:
     manager.ended = True
     with pytest.raises(TaskEnded):
         await client.ask("Again?", time.monotonic() + 10)
+    await client.aclose()
+
+
+@pytest.mark.parametrize("reason", ["no_destination", "send_failed"])
+async def test_ask_raises_not_sent_at_once_when_nobody_gets_it(
+    manager: FakeManager, reason: str
+) -> None:
+    manager.ask_reply = {"asked": True, "sent": False, "reason": reason}
+    client = manager.client()
+    with pytest.raises(NotSent) as exc:
+        await client.ask("Which port?", time.monotonic() + 10)
+    assert exc.value.reason == reason
+    assert manager.questions == ["Which port?"]
+    assert manager.polls == 0
     await client.aclose()
 
 

@@ -12,14 +12,17 @@ directory has no compose file and no `values.yaml`.
    the repository through the git tunnel of the manager, and checks out the
    branch of the task. A `develop` task makes the branch from the base
    branch when the remote does not have it. A `rework` task uses the branch
-   that is there.
+   that is there. So does a resumed task: a brief with `resumed: true`
+   comes from an `answer` to a task whose earlier worker pushed the branch.
+   Its prompt starts the task with the note of that worker and the answer.
 3. It reads `CLAUDE.md` of the checkout as text, if there is one, and adds
    it to the prompt. It loads no other file from the checkout: no settings,
    no hooks, and no MCP config.
 4. It runs one Claude Code session with the tools Read, Edit, Write, Bash,
    Glob, and Grep, and one in-process MCP tool, `ask`. `ask` sends a
    question to the person's chat through the manager and waits for the
-   answer. The session never gets WebSearch or WebFetch.
+   answer. When the manager says nobody gets the question, `ask` returns at
+   once and tells the model to set `blocked`. The session never gets WebSearch or WebFetch.
 5. The session stops at the persona timeout minus 90 seconds. Then the
    worker commits all work that is not committed (`wip: developer stopped
    (<reason>)`), pushes the branch when it has new commits, and sends the

@@ -106,7 +106,7 @@ class Recorder:
         self.reports: list[tuple[str, Report]] = []
         self.active = True
 
-    def is_active(self, task_id: str) -> bool:
+    def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
         return self.active
 
     def mark_running(self, task_id: str) -> None:

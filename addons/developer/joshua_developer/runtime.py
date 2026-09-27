@@ -44,11 +44,25 @@ class Report(BaseModel):
     log: str = ""
 
 
+def worker_name(task: dict[str, Any]) -> str:
+    """The container or Job name of the worker of ``task`` (the full row).
+
+    A resumed task gets a new name for each worker, so a new worker never
+    meets the name of the one before it.
+    """
+    name = f"dev-worker-{task['task_id'][:8]}"
+    runs = len(task.get("history") or [])
+    return f"{name}-r{runs}" if runs else name
+
+
 class Reporter(Protocol):
     """The manager side that a runtime reports to."""
 
-    def is_active(self, task_id: str) -> bool:
-        """True while the task has no report."""
+    def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
+        """True while the task has no report.
+
+        With ``worker_token``, True only while the task still has that token.
+        """
         ...
 
     def mark_running(self, task_id: str) -> None: ...

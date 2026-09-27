@@ -43,7 +43,7 @@ from kubernetes.client.exceptions import ApiException
 
 from joshua_developer.config import Settings
 from joshua_developer.log import get_logger
-from joshua_developer.runtime import Report, Reporter
+from joshua_developer.runtime import Report, Reporter, worker_name
 from joshua_developer.runtime_docker import (
     GRACE_S,
     LABEL,
@@ -65,10 +65,6 @@ WORKER_UID = 1000
 SA_NAMESPACE_FILE = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 DEFAULT_NAMESPACE = "default"
 _MEMORY_UNITS = {"b": "", "k": "Ki", "m": "Mi", "g": "Gi"}
-
-
-def job_name(task_id: str) -> str:
-    return f"dev-worker-{task_id[:8]}"
 
 
 def memory_quantity(memory: str) -> str:
@@ -150,7 +146,7 @@ def job_manifest(
     return {
         "apiVersion": "batch/v1",
         "kind": "Job",
-        "metadata": {"name": job_name(task["task_id"]), "namespace": namespace, "labels": labels},
+        "metadata": {"name": worker_name(task), "namespace": namespace, "labels": labels},
         "spec": {
             # A worker that stops is reported failed, never started again: a
             # second pod would run the model twice on one task.
@@ -244,12 +240,16 @@ class KubernetesRuntime:
         )
         self.reporter.mark_running(task["task_id"])
         logger.info({"message": "worker started", "task_id": task["task_id"], "job": name})
-        job = asyncio.create_task(self._supervise(task["task_id"], name, deadline_s))
+        job = asyncio.create_task(
+            self._supervise(task["task_id"], task.get("worker_token"), name, deadline_s)
+        )
         self._supervisors.add(job)
         job.add_done_callback(self._supervisors.discard)
         return name
 
-    async def _supervise(self, task_id: str, name: str, timeout_s: float) -> None:
+    async def _supervise(
+        self, task_id: str, token: str | None, name: str, timeout_s: float
+    ) -> None:
         deadline = time.monotonic() + timeout_s
         state: str | None = None
         try:
@@ -271,8 +271,8 @@ class KubernetesRuntime:
                     logger.warning({"message": "worker ran past its timeout", "task_id": task_id})
                     break
                 await asyncio.sleep(self.poll_s)
-            if self.reporter.is_active(task_id):
-                tail = await asyncio.to_thread(self._log_tail, task_id)
+            if self.reporter.is_active(task_id, token):
+                tail = await asyncio.to_thread(self._log_tail, name)
                 await self.reporter.record_report(task_id, _report(state, tail))
         except Exception as exc:
             logger.error(
@@ -285,11 +285,11 @@ class KubernetesRuntime:
         finally:
             await asyncio.to_thread(self._delete, name)
 
-    def _log_tail(self, task_id: str) -> str:
-        """The last characters of the worker pod log, or an empty string."""
+    def _log_tail(self, name: str) -> str:
+        """The last characters of the pod log of the Job ``name``, or an empty string."""
         try:
             pods = self.core.list_namespaced_pod(
-                namespace=self.namespace, label_selector=f"{TASK_LABEL}={task_id}"
+                namespace=self.namespace, label_selector=f"job-name={name}"
             ).items
             if not pods:
                 return ""

@@ -4,7 +4,8 @@ The MCP tools call this class. A call that breaks a rule gets a dict with
 ``status: "rejected"``, a ``reason``, and a ``message``. The reasons are
 ``invalid_arguments``, ``repo_not_allowed``, ``repo_not_configured``,
 ``token_missing``, ``pr_not_found``, ``pr_not_open``, ``platform_error``,
-``unknown_persona``, ``concurrency_limit``, ``locked``, and ``not_waiting``.
+``unknown_persona``, ``concurrency_limit``, ``locked``, ``not_waiting``, and
+``not_resumable``.
 
 When a worker reports a push, the manager gates the pull request: it reads
 the diff over the platform API and scans it for credentials. A hit deletes
@@ -12,7 +13,8 @@ the branch and fails the task. A clean diff gets a pull request.
 
 The manager also serves the worker side: it mints the task token of each
 task, takes a question from a worker, and wakes the worker that waits for
-the answer.
+the answer. An answer to a task that stopped ``blocked`` or ``timed_out``
+after a push starts a new worker for the same task, on the pushed branch.
 """
 
 from __future__ import annotations
@@ -51,6 +53,8 @@ MAX_QUESTION = 10_000
 DEFAULT_BASE_BRANCH = "main"
 # The states of a pull request that a rework cannot change.
 CLOSED_PR_STATES = frozenset({"closed", "merged", "locked"})
+# The states from which an answer resumes a task.
+RESUMABLE_STATUSES = ("blocked", "timed_out")
 
 
 def rejected(reason: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -354,27 +358,14 @@ class Manager:
                 f"the persona {persona!r} is not known; list_personas names the personas",
             )
 
-        runtime = self._runtime()
-        active = runtime.count_active()
-        limit = self.config.max_workers
-        if active >= limit:
-            return rejected(
-                "concurrency_limit",
-                f"{active} developer task(s) already running (limit {limit}). "
-                "Retry when one finishes.",
-            )
-
-        ttl = self.config.personas[chosen].timeout_s + LOCK_MARGIN_S
-        try:
-            self.locks.acquire(repo, scope, task_id, task_type, fields.get("branch_name"), ttl)
-        except LockedError as exc:
-            return rejected(
-                "locked",
-                str(exc),
-                lock_info=exc.lock_info,
-                hint="Another task already works on this. Wait for its report, "
-                "or check it with task_status.",
-            )
+        refused = self._check_capacity()
+        if refused is not None:
+            return refused
+        refused = self._take_lock(
+            repo, scope, task_id, task_type, fields.get("branch_name"), chosen
+        )
+        if refused is not None:
+            return refused
 
         destination = notify_to or self.effective_settings(person)["notify"]
         self.store.create_task(
@@ -398,32 +389,9 @@ class Manager:
                 "persona": chosen,
             }
         )
-
-        full = self.store.get_task_full(task_id)
-        assert full is not None
-        try:
-            await runtime.start(full)
-        except Exception as exc:
-            logger.error(
-                {
-                    "message": "the runtime could not start the worker",
-                    "task_id": task_id,
-                    "error_type": type(exc).__name__,
-                }
-            )
-            self.store.update_task(
-                task_id,
-                status="failed",
-                error=f"the worker did not start: {type(exc).__name__}",
-                completed_at=now_iso(),
-            )
-            self._release(repo, scope, task_id)
-            return {
-                "task_id": task_id,
-                "persona": chosen,
-                "status": "failed",
-                "error": "the worker did not start",
-            }
+        failed = await self._start_worker(task_id)
+        if failed is not None:
+            return {**failed, "persona": chosen}
 
         if self.settings.will_notify:
             message = (
@@ -444,6 +412,71 @@ class Manager:
             "message": message,
         }
 
+    def _check_capacity(self) -> dict[str, Any] | None:
+        """A ``concurrency_limit`` rejection when ``max_workers`` workers run, else None."""
+        active = self._runtime().count_active()
+        limit = self.config.max_workers
+        if active >= limit:
+            return rejected(
+                "concurrency_limit",
+                f"{active} developer task(s) already running (limit {limit}). "
+                "Retry when one finishes.",
+            )
+        return None
+
+    def _take_lock(
+        self,
+        repo: str,
+        scope: str,
+        task_id: str,
+        task_type: str,
+        branch: str | None,
+        persona: str,
+    ) -> dict[str, Any] | None:
+        """Take the lock of ``(repo, scope)`` for ``task_id``. A ``locked`` rejection, or None."""
+        persona_entry = (
+            self.config.personas.get(persona) or self.config.personas[self.config.default_persona]
+        )
+        ttl = persona_entry.timeout_s + LOCK_MARGIN_S
+        try:
+            self.locks.acquire(repo, scope, task_id, task_type, branch, ttl)
+        except LockedError as exc:
+            return rejected(
+                "locked",
+                str(exc),
+                lock_info=exc.lock_info,
+                hint="Another task already works on this. Wait for its report, "
+                "or check it with task_status.",
+            )
+        return None
+
+    async def _start_worker(self, task_id: str) -> dict[str, Any] | None:
+        """Start the worker of a dispatched task. On a failure, fail the task and free the lock.
+
+        Returns None when the worker started, else the result for the caller.
+        """
+        full = self.store.get_task_full(task_id)
+        assert full is not None
+        try:
+            await self._runtime().start(full)
+        except Exception as exc:
+            logger.error(
+                {
+                    "message": "the runtime could not start the worker",
+                    "task_id": task_id,
+                    "error_type": type(exc).__name__,
+                }
+            )
+            self.store.update_task(
+                task_id,
+                status="failed",
+                error=f"the worker did not start: {type(exc).__name__}",
+                completed_at=now_iso(),
+            )
+            self._release(full["repo"], full["scope"], task_id)
+            return {"task_id": task_id, "status": "failed", "error": "the worker did not start"}
+        return None
+
     def _runtime(self) -> Runtime:
         if self.runtime is None:
             raise RuntimeError("the manager has no runtime")
@@ -457,10 +490,17 @@ class Manager:
 
     # --- the Reporter side -------------------------------------------------
 
-    def is_active(self, task_id: str) -> bool:
-        """True when the task is dispatched or running: no report has come."""
-        task = self.store.get_task(task_id)
-        return task is not None and task["status"] in ACTIVE_STATUSES
+    def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
+        """True when the task is dispatched or running: no report has come.
+
+        With ``worker_token``, also True only while the task still has that
+        token, so the supervisor of a worker that a resume replaced does not
+        report for the new worker.
+        """
+        task = self.store.get_task_full(task_id)
+        if task is None or task["status"] not in ACTIVE_STATUSES:
+            return False
+        return worker_token is None or task["worker_token"] == worker_token
 
     def mark_running(self, task_id: str) -> None:
         """Mark a dispatched task as running."""
@@ -651,11 +691,13 @@ class Manager:
 
     # --- answer ------------------------------------------------------------
 
-    def answer(self, person: str, task: dict[str, Any], text: str) -> dict[str, Any]:
-        """Store the answer to the open question of ``task``.
+    async def answer(self, person: str, task: dict[str, Any], text: str) -> dict[str, Any]:
+        """Give ``task`` the answer to its question.
 
-        A task waits when it is running or blocked, has an open question, and
-        has no answer yet.
+        A running task with an open question and no answer yet gets the text
+        through the long poll of its worker. A task that ended ``blocked`` or
+        ``timed_out`` after its worker pushed the branch is resumed: a new
+        worker starts on that branch, with the answer in its brief.
         """
         if not text or not text.strip():
             return rejected("invalid_arguments", "text is required")
@@ -663,7 +705,9 @@ class Manager:
             return rejected("invalid_arguments", f"text is longer than {MAX_TEXT} characters")
         full = self.store.get_task_full(task["task_id"])
         assert full is not None
-        if full["status"] not in ("running", "blocked") or not full["open_question"]:
+        if full["status"] in RESUMABLE_STATUSES:
+            return await self._resume(person, full, text)
+        if full["status"] != "running" or not full["open_question"]:
             return rejected(
                 "not_waiting",
                 f"task {task['task_id']} has no open question (status {full['status']})",
@@ -683,6 +727,63 @@ class Manager:
             "message": "The answer is stored for the worker.",
         }
 
+    async def _resume(self, person: str, full: dict[str, Any], text: str) -> dict[str, Any]:
+        """Start a new worker for a task that stopped, where the last worker stopped.
+
+        The task keeps its id, person, repository, branch, persona, and brief.
+        The last report moves to ``history``. The new worker gets a new task
+        token, and its brief holds the answer and the last summary as a note.
+        """
+        task_id = full["task_id"]
+        history: list[dict[str, Any]] = list(full.get("history") or [])
+        previous = full.get("report") or {}
+        if not previous.get("pushed") and not any(entry.get("pushed") for entry in history):
+            return rejected(
+                "not_resumable",
+                f"the worker of task {task_id} pushed nothing, so no branch holds its work. "
+                "Call develop again with the brief and the answer.",
+            )
+        refused = self._check_capacity()
+        if refused is not None:
+            return refused
+        refused = self._take_lock(
+            full["repo"],
+            full["scope"],
+            task_id,
+            full["task_type"],
+            full["branch_name"],
+            full["persona"],
+        )
+        if refused is not None:
+            return refused
+        history.append({**previous, "completed_at": full["completed_at"]})
+        self.store.update_task(
+            task_id,
+            status="dispatched",
+            worker_token=secrets.token_urlsafe(32),
+            history=history,
+            answer=text,
+            report=None,
+            summary=None,
+            error=None,
+            open_question=None,
+            scan=None,
+            findings=None,
+            started_at=None,
+            completed_at=None,
+        )
+        self._log_full.discard(task_id)
+        logger.info({"message": "task resumed", "task_id": task_id, "person": person})
+        failed = await self._start_worker(task_id)
+        if failed is not None:
+            return {**failed, "resumed": True}
+        return {
+            "task_id": task_id,
+            "status": "dispatched",
+            "resumed": True,
+            "message": "A new worker continues the task on its branch, with the answer.",
+        }
+
     # --- the worker side ---------------------------------------------------
 
     def answer_event(self, task_id: str) -> asyncio.Event:
@@ -692,11 +793,14 @@ class Manager:
             event = self._answer_events[task_id] = asyncio.Event()
         return event
 
-    async def ask(self, task_id: str, question: str) -> bool:
+    async def ask(self, task_id: str, question: str) -> tuple[bool, str | None]:
         """Open a question for a task and send it to the person's chat.
 
-        The question replaces an earlier one, and clears its answer. Returns
-        True when channels accepted the event.
+        The question replaces an earlier one, and clears its answer. The
+        question is stored also when nobody gets it. Returns ``(True, None)``
+        when channels accepted the event, else ``(False, reason)``: the reason
+        is ``no_destination`` when the task and the person have no chat, or
+        ``send_failed`` when the event did not go through.
         """
         self.store.update_task(task_id, open_question=question, answer=None)
         old = self._answer_events.get(task_id)
@@ -707,7 +811,13 @@ class Manager:
         logger.info({"message": "worker asked a question", "task_id": task_id})
         full = self.store.get_task_full(task_id)
         assert full is not None
-        return await notify.send_question(self.settings, full, question, self._default_notify(full))
+        default = self._default_notify(full)
+        if not notify.destination_for(self.settings, full, default):
+            logger.info({"message": "question not sent: no destination", "task_id": task_id})
+            return False, "no_destination"
+        if await notify.send_question(self.settings, full, question, default):
+            return True, None
+        return False, "send_failed"
 
     def append_log(self, task_id: str, text: str) -> bool:
         """Add worker text to the session log. Returns False when the log is full.

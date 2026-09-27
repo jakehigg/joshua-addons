@@ -71,6 +71,27 @@ def test_a_rework_brief_holds_the_feedback_the_note_and_the_answer(tmp_path: Pat
     assert "Base branch" not in text
 
 
+def test_a_resumed_brief_gets_the_resume_block_before_the_brief(tmp_path: Path) -> None:
+    brief = make_brief(
+        tmp_path,
+        resumed=True,
+        note="Stopped: blocked on a question.",
+        answer="Use port 8080.",
+    )
+    text = prompt.compose(brief, None)
+    block = (
+        "You are resuming a task. A previous worker stopped. "
+        "Its note: Stopped: blocked on a question. "
+        "The answer to its question: Use port 8080."
+    )
+    assert block in text
+    assert text.index(block) < text.index("### Brief")
+    assert "### Where the last worker stopped" not in text
+    assert "### The answer to the last question" not in text
+    bare = prompt.compose(make_brief(tmp_path, resumed=True), None)
+    assert "Its note: none. The answer to its question: none." in bare
+
+
 def test_the_prompt_tells_the_model_to_commit_and_not_push() -> None:
     base = " ".join(prompt.base_prompt().split())
     assert "You must not push." in base

@@ -54,6 +54,14 @@ class TaskEnded(Exception):
     """The manager answered 409: the task has ended."""
 
 
+class NotSent(Exception):
+    """The manager stored the question, but nobody gets it (``no_destination``, ``send_failed``)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"the question was not sent: {reason}")
+        self.reason = reason
+
+
 class ManagerError(Exception):
     """The manager answered with a status that is not 2xx and not 409."""
 
@@ -156,9 +164,13 @@ class ManagerClient:
 
         ``deadline`` is a ``time.monotonic()`` value. Returns the answer, or
         None when the deadline passes first. Raises TaskEnded when the task
-        ends while the worker waits.
+        ends while the worker waits, and NotSent at once when the manager
+        says nobody gets the question.
         """
-        await self._call("POST", "/worker/ask", json={"question": question})
+        asked = await self._call("POST", "/worker/ask", json={"question": question})
+        data = asked.json() if asked.content else {}
+        if isinstance(data, dict) and data.get("sent") is False:
+            raise NotSent(str(data.get("reason") or "unknown"))
         read = httpx.Timeout(connect=10.0, read=ANSWER_READ_S, write=30.0, pool=10.0)
         while time.monotonic() < deadline:
             response = await self._call("GET", "/worker/answer", http_timeout=read)

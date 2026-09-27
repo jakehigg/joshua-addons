@@ -319,6 +319,44 @@ async def test_a_rework_on_a_missing_branch_fails_before_the_session(
     assert report["pushed"] is False and report["head"] is None
 
 
+async def test_a_resumed_task_takes_the_pushed_branch(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
+) -> None:
+    before = remote_head(bare_repo, "feature")
+    manager.brief = make_brief(
+        bare_repo,
+        branch="feature",
+        resumed=True,
+        note="Stopped: blocked on a question.",
+        answer="Use port 8080.",
+    )
+    code, made = await run(
+        tmp_path, home, manager, [write_file("more.txt", commit=True), result({"summary": "Ok."})]
+    )
+    assert code == 0
+    [report] = manager.reports
+    assert report["status"] == "success" and report["pushed"] is True
+    # The work continues on top of the pushed branch.
+    parent = run_git("rev-parse", "feature~1", cwd=bare_repo).strip()
+    assert parent == before
+    system = made[0].options.system_prompt
+    assert "You are resuming a task. A previous worker stopped." in system
+    assert "The answer to its question: Use port 8080." in system
+
+
+async def test_a_resumed_task_never_creates_its_branch(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
+) -> None:
+    manager.brief = make_brief(bare_repo, branch="gone", resumed=True)
+    code, made = await run(tmp_path, home, manager, [])
+    assert code == 0
+    assert made == []
+    [report] = manager.reports
+    assert report["status"] == "failed"
+    assert "no branch gone" in report["error"]
+    assert remote_head(bare_repo, "gone") is None
+
+
 async def test_a_person_with_no_git_identity_fails(
     tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
 ) -> None:

@@ -32,7 +32,12 @@ from claude_agent_sdk import (
 
 from joshua_developer_worker.git import scrub
 from joshua_developer_worker.log import get_logger
-from joshua_developer_worker.manager_client import ManagerClient, ManagerError, TaskEnded
+from joshua_developer_worker.manager_client import (
+    ManagerClient,
+    ManagerError,
+    NotSent,
+    TaskEnded,
+)
 
 logger = get_logger("joshua_developer_worker.session")
 
@@ -53,6 +58,10 @@ RESULT_SCHEMA: dict[str, Any] = {
 }
 NO_ANSWER = (
     "No answer arrived before the deadline. Commit your work and report what you still need."
+)
+NOBODY = (
+    "Nobody can be reached to answer this. Do the parts of the task that do not need "
+    "the answer, and set `blocked` with your question in the final result."
 )
 ASK_DESCRIPTION = (
     "Ask the person's assistant one clear question, for a fact that is not in the "
@@ -119,6 +128,11 @@ class Asker:
             answer = await self.client.ask(question, self.deadline)
         except TaskEnded:
             return _text("The task ended. Stop now.", is_error=True)
+        except NotSent as exc:
+            logger.info(
+                {"message": "ask not sent", "task_id": self.client.task_id, "reason": exc.reason}
+            )
+            return _text(NOBODY)
         except (ManagerError, httpx.HTTPError):
             return _text(
                 "The question could not be sent. Do the parts that do not depend on it "

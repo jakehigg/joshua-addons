@@ -173,7 +173,7 @@ async def test_the_log_never_holds_the_brief(settings, caplog) -> None:
     with caplog.at_level(logging.DEBUG):
         result = await manager.develop("alex", REPO, "SECRET-BRIEF-TEXT")
         manager.store.update_task(result["task_id"], status="running", open_question="q?")
-        manager.answer("alex", {"task_id": result["task_id"]}, "SECRET-ANSWER-TEXT")
+        await manager.answer("alex", {"task_id": result["task_id"]}, "SECRET-ANSWER-TEXT")
     text = " ".join(str(record.msg) for record in caplog.records)
     assert "task dispatched" in text
     assert "SECRET-BRIEF-TEXT" not in text

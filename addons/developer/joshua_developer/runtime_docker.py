@@ -33,7 +33,7 @@ from docker.errors import DockerException, ImageNotFound, NotFound
 
 from joshua_developer.config import GIT_PROXY_PORT, WORKER_API_PORT, Settings
 from joshua_developer.log import get_logger
-from joshua_developer.runtime import Report, Reporter
+from joshua_developer.runtime import Report, Reporter, worker_name
 
 logger = get_logger("joshua_developer.runtime_docker")
 
@@ -119,7 +119,7 @@ class DockerRuntime:
     def _create(self, task: dict[str, Any]) -> Any:
         limits = self.settings.config.worker
         kwargs: dict[str, Any] = {
-            "name": f"dev-worker-{task['task_id'][:8]}",
+            "name": worker_name(task),
             "environment": worker_environment(self.settings, task),
             "labels": {LABEL: LABEL_VALUE, TASK_LABEL: task["task_id"]},
             "network": self.settings.worker_network,
@@ -151,13 +151,17 @@ class DockerRuntime:
         logger.info(
             {"message": "worker started", "task_id": task["task_id"], "container": container.name}
         )
-        supervise = self._supervise(task["task_id"], container, self._timeout_s(task))
+        supervise = self._supervise(
+            task["task_id"], task.get("worker_token"), container, self._timeout_s(task)
+        )
         job = asyncio.create_task(supervise)
         self._supervisors.add(job)
         job.add_done_callback(self._supervisors.discard)
         return str(container.name)
 
-    async def _supervise(self, task_id: str, container: Any, timeout_s: float) -> None:
+    async def _supervise(
+        self, task_id: str, token: str | None, container: Any, timeout_s: float
+    ) -> None:
         deadline = time.monotonic() + timeout_s
         timed_out = False
         try:
@@ -174,7 +178,7 @@ class DockerRuntime:
                     await asyncio.to_thread(_kill, container)
                     break
                 await asyncio.sleep(self.poll_s)
-            if self.reporter.is_active(task_id):
+            if self.reporter.is_active(task_id, token):
                 await self.reporter.record_report(task_id, self._report(container, timed_out))
         except Exception as exc:
             logger.error(

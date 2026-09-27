@@ -163,6 +163,7 @@ async def test_the_brief_has_what_the_worker_needs(manager) -> None:
         "brief": "Add a health check.",
         "feedback": None,
         "answer": None,
+        "resumed": False,
         "note": None,
     }
     assert token not in response.text
@@ -172,11 +173,12 @@ async def test_the_brief_of_a_rework_and_of_a_persona_that_is_gone(manager) -> N
     result = await manager.rework("alex", REPO, 5, "Rename the flag.")
     full = manager.store.get_task_full(result["task_id"])
     assert full is not None
-    brief = build_brief(manager, {**full, "persona": "retired", "report": {"summary": "half"}})
+    brief = build_brief(manager, {**full, "persona": "retired", "history": [{"summary": "half"}]})
     assert brief["task_type"] == "rework"
     assert brief["feedback"] == "Rename the flag."
     assert brief["persona"]["name"] == "opus"
     assert brief["note"] == "half"
+    assert brief["resumed"] is True
     assert repo_url("gitlab.example.net:8443/g/s/p") == "https://gitlab.example.net:8443/g/s/p.git"
 
 
@@ -215,7 +217,7 @@ async def test_ask_then_answer_wakes_the_long_poll(manager, sent) -> None:
         waiting = asyncio.create_task(client.get("/worker/answer"))
         await asyncio.sleep(0.05)
         assert not waiting.done()
-        result = manager.answer("alex", {"task_id": task_id}, "SQLite")
+        result = await manager.answer("alex", {"task_id": task_id}, "SQLite")
         answer = await asyncio.wait_for(waiting, 2)
         at_once = await client.get("/worker/answer")
     assert empty.status_code == 400
@@ -238,10 +240,10 @@ async def test_a_second_ask_clears_the_old_answer(manager, sent) -> None:
     task_id, token = await dispatch(manager)
     async with worker_client(manager, token, poll_s=0.01) as client:
         await client.post("/worker/ask", json={"question": "first?"})
-        manager.answer("alex", {"task_id": task_id}, "one")
+        await manager.answer("alex", {"task_id": task_id}, "one")
         await client.post("/worker/ask", json={"question": "second?"})
         after = await client.get("/worker/answer")
-        accepted = manager.answer("alex", {"task_id": task_id}, "two")
+        accepted = await manager.answer("alex", {"task_id": task_id}, "two")
         second = await client.get("/worker/answer")
     assert after.status_code == 204
     assert accepted["status"] == "answered"
@@ -434,7 +436,7 @@ async def test_a_fake_worker_drives_one_task_through_the_api(manager, sent) -> N
         await worker.post("/worker/ask", json={"question": "Which port?"})
         poll = asyncio.create_task(worker.get("/worker/answer"))
         await asyncio.sleep(0.05)
-        manager.answer("alex", {"task_id": task_id}, "8080")
+        await manager.answer("alex", {"task_id": task_id}, "8080")
         answer = (await poll).json()["answer"]
         await worker.post("/worker/log", json={"text": f"answer {answer}\n"})
         done = await worker.post(

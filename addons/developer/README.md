@@ -34,7 +34,7 @@ pushes one branch, sends one report, and stops.
 |---|---|
 | `develop(repo, brief, base_branch?, branch?, persona?, notify?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. |
 | `rework(repo, feedback, pr?, branch?, persona?, notify?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. |
-| `answer(task_id, text)` | Gives a waiting worker the answer to its question. |
+| `answer(task_id, text)` | Gives a waiting worker the answer to its question. On a task that stopped `blocked` or `timed_out` after a push, starts a new worker that continues on the branch. |
 | `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, and the open question. |
 | `task_output(task_id)` | The full report and the session log. |
 | `list_tasks(limit?)` | The recent tasks of the person, newest first. `limit` is 1 to 100, default 10. |
@@ -44,7 +44,11 @@ pushes one branch, sends one report, and stops.
 
 A worker that needs a fact calls `ask`. The manager sends the question to the
 person's chat as an event, and Joshua answers with `answer`, from what it
-knows or after it asks the person.
+knows or after it asks the person. When the task and the person have no
+`notify` chat, or the event does not go through, the manager keeps the
+question in `open_question` but nobody gets it. The worker then does not
+wait: it does the work that does not need the answer, and stops `blocked`
+with the question.
 
 The status of a task is `dispatched`, `running`, `success`, `failed`,
 `blocked`, or `timed_out`. `repo` is a URL or `host/owner/name`, such as
@@ -53,8 +57,8 @@ The status of a task is `dispatched`, `running`, `success`, `failed`,
 A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
 `repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
-`platform_error`, `unknown_persona`, `concurrency_limit`, `locked`, and
-`not_waiting`. The rules:
+`platform_error`, `unknown_persona`, `concurrency_limit`, `locked`,
+`not_waiting`, and `not_resumable`. The rules:
 
 - One task at a time works on one branch of a repository, or on one pull
   request. A second call gets `locked` and the id of the first task.
@@ -62,7 +66,14 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - The persona is the `persona` argument, else the default of the person,
   else `default_persona`.
 - A person sees only their own tasks.
-- `answer` works only when the task has an open question and no answer yet.
+- `answer` on a `running` task works only when the task has an open
+  question and no answer yet.
+- `answer` on a `blocked` or `timed_out` task resumes it, when a worker of
+  the task pushed the branch. The task keeps its id, and a new worker gets
+  the answer and the summary of the last worker. `max_workers` and the lock
+  apply. When no worker pushed, the result is `not_resumable`: call
+  `develop` again. `task_output` shows the reports of the earlier workers in
+  `history`.
 - When the manager starts, each task that is `dispatched` or `running`
   changes to `failed` with the error `manager restarted`, and its report
   goes to the chat.
@@ -147,12 +158,13 @@ name of a built-in persona replaces it. The other built-in personas stay.
 `effort` is `low`, `medium`, `high`, `xhigh`, or `max`.
 
 Give each person a `notify` chat. Without one, a report and a question go
-nowhere, and a worker that asks waits until its time ends. `notify` is a
+nowhere, and a worker that asks stops `blocked`. `notify` is a
 channels destination: a logical name or a reference such as
 `telegram:dm:alex`.
 
 The addon refuses a value that looks like a token (`sk-ant-`, `glpat-`,
-`ghp_`, `github_pat_`, `xoxb-`). A person can change the git name, the
+`ghp_`, `github_pat_`, `xoxb-`, or `AKIA` and 16 upper-case letters or
+digits). A person can change the git name, the
 git email, `default_persona`, and `notify` with `set_settings`. The change
 applies before the value in the file.
 
@@ -300,7 +312,8 @@ worker can then connect to public addresses, but not to private addresses or
 to the cluster.
 
 The manager starts one Job for each task, named
-`dev-worker-<first 8 characters of the task id>`. The worker pod runs as uid
+`dev-worker-<first 8 characters of the task id>`, with `-r<n>` added for
+the worker of a resumed task. The worker pod runs as uid
 1000 with no Linux capabilities, the `RuntimeDefault` seccomp profile, and a
 read-only root file system. It writes to two emptyDirs, `/work` and `/tmp`.
 It gets no ServiceAccount token. The `worker` limits are its requests and its
@@ -354,8 +367,8 @@ After the worker pushes, the manager:
 `scan` in `task_status` is `clean`, `partial` (the host sent no text for a
 file), `hit`, or `unavailable` (a `git` host has no diff API). A task that
 ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
-request. To continue, call `develop` again with the same `branch`, and put
-the answer or the next step in the brief.
+request. One `answer` call resumes it. A new `develop` with the same
+`branch` also continues the work, as a new task.
 
 ## The first run
 

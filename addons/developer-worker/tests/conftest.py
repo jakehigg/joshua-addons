@@ -114,6 +114,7 @@ class FakeManager:
     questions: list[str] = field(default_factory=list)
     polls: int = 0
     unauthorized: int = 0
+    ask_reply: dict[str, Any] = field(default_factory=lambda: {"asked": True, "sent": True})
 
     def _check(self, request: Request) -> Response | None:
         auth = request.headers.get("authorization")
@@ -154,7 +155,7 @@ class FakeManager:
                 return refused
             self.questions.append((await request.json())["question"])
             self.polls = 0
-            return JSONResponse({"asked": True, "sent": True}, status_code=202)
+            return JSONResponse(self.ask_reply, status_code=202)
 
         async def answer(request: Request) -> Response:
             if (refused := self._check(request)) is not None:

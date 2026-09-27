@@ -102,7 +102,7 @@ class Recorder:
         self.active = True
         self.active_ids: set[str] | None = None
 
-    def is_active(self, task_id: str) -> bool:
+    def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
         if self.active_ids is not None:
             return task_id in self.active_ids
         return self.active
@@ -285,7 +285,7 @@ async def test_an_end_without_a_report_records_failed_with_the_log_tail(
     assert report.error == error
     assert len(report.log) == 4000 and report.log.endswith("the end")
     assert "tok-value" not in (report.error or "")
-    assert core.pod_selectors == [f"task-id={TASK['task_id']}"]
+    assert core.pod_selectors == ["job-name=dev-worker-12345678"]
     assert core.log_calls == [
         {"name": "dev-worker-12345678-abcde", "namespace": "joshua", "tail_lines": 1000}
     ]

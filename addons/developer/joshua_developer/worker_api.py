@@ -15,6 +15,9 @@ Routes:
 - ``POST /worker/running``: the worker started.
 - ``POST /worker/report``: the report (``runtime.Report``). The task ends.
 - ``POST /worker/ask`` ``{"question"}``: send a question to the person's chat.
+  202 ``{"asked": true, "sent": true}``, or ``{"asked": true, "sent": false,
+  "reason"}`` when nobody gets it (``no_destination`` or ``send_failed``).
+  The question is stored in both cases.
 - ``GET /worker/answer``: wait up to 25 s for the answer. 200 with the answer,
   or 204 when no answer came in that time.
 - ``POST /worker/log`` ``{"text"}``: add text to the session log.
@@ -116,7 +119,8 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         persona_name = manager.config.default_persona
         persona = manager.config.personas[persona_name]
     person = manager.effective_settings(task["person"])
-    previous = task.get("report") or {}
+    history = task.get("history") or []
+    previous = history[-1] if history else {}
     return {
         "task_id": task["task_id"],
         "task_type": task["task_type"],
@@ -132,7 +136,9 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "brief": task["brief"],
         "feedback": task["instructions"],
         "answer": task["answer"],
-        # Where an earlier worker stopped, for a resumed task.
+        # A resumed task: an earlier worker pushed the branch and stopped.
+        "resumed": bool(history),
+        # Where the earlier worker stopped, for a resumed task.
         "note": previous.get("summary") or None,
     }
 
@@ -241,8 +247,11 @@ def build_worker_app(
             return _error(400, "bad_request")
         if len(question) > MAX_QUESTION:
             return _error(400, "question_too_long")
-        sent = await manager.ask(task_id, question.strip())
-        return JSONResponse({"asked": True, "sent": sent}, status_code=202)
+        sent, reason = await manager.ask(task_id, question.strip())
+        body: dict[str, Any] = {"asked": True, "sent": sent}
+        if not sent:
+            body["reason"] = reason
+        return JSONResponse(body, status_code=202)
 
     async def answer(request: Request) -> Response:
         found = authorize(request)

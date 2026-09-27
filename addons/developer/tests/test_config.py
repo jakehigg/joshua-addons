@@ -134,6 +134,7 @@ def test_a_bad_value_names_its_key(data: dict, key: str) -> None:
         "ghp_SECRETSECRET",
         "github_pat_SECRETSECRET",
         "xoxb-SECRETSECRET",
+        "AKIASECRETSECRET1234",
     ],
 )
 def test_a_literal_token_is_refused_and_never_repeated(tmp_path: Path, token: str) -> None:
@@ -157,6 +158,17 @@ def test_a_literal_token_in_a_list_or_a_key_is_refused() -> None:
         parse_config({"people": {"ghp_SECRET": {}}})
     assert "people" in str(exc.value)
     assert "ghp_SECRET" not in str(exc.value)
+
+
+def test_a_word_that_starts_with_akia_is_not_a_token() -> None:
+    config = parse_config(
+        {"people": {"akia": {}}, "repos": ["github.com/x/AKIA_ROLE", "github.com/x/AKIAshort"]}
+    )
+    assert "akia" in config.people
+    with pytest.raises(ConfigError) as exc:
+        parse_config({"repos": [" AKIAABCDEFGHIJ012345 "]})
+    assert "repos[0]" in str(exc.value)
+    assert "AKIAABCDEFGHIJ012345" not in str(exc.value)
 
 
 def test_a_file_that_is_not_yaml_or_not_a_mapping(tmp_path: Path) -> None:
