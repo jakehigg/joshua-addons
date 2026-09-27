@@ -16,8 +16,9 @@ Two runtimes start a worker:
 - `stub` starts no worker. It marks the task `running` and then records a
   fake `success` report. Use it to test the tools and the rules.
 
-The worker image comes in a later release. Until then, a `docker` worker has
-no image to run.
+The `docker` runtime runs the worker image
+`ghcr.io/jakehigg/joshua-addons-developer-worker`. `addons/developer-worker/`
+builds it, and its README tells what a worker does.
 
 ## Tools
 
