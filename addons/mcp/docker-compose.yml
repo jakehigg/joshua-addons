@@ -22,6 +22,11 @@ services:
       MCP_TOKENS: ${MCP_TOKENS:-}
       MCP_READONLY: ${MCP_READONLY:-}
       MCP_TIMEZONE: ${MCP_TIMEZONE:-UTC}
+      # semantic_search asks joshua-ai core. Set CORE_URL=http://core:8000
+      # and CORE_TOKEN to joshua-ai's JOSHUA_TOKEN_MCP. Leave both empty to
+      # turn semantic_search off.
+      CORE_URL: ${CORE_URL:-}
+      CORE_TOKEN: ${CORE_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "${MCP_PORT:-8000}:8000"

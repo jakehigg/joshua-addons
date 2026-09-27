@@ -52,6 +52,9 @@ def test_an_anonymous_caller_can_be_read_only() -> None:
         ({"MCP_TOKENS": "addon=t1", "ADDON_TOKEN": "t2"}, "ADDON_TOKEN"),
         ({"MCP_READONLY": "ghost"}, "unknown caller: ghost"),
         ({"MCP_TIMEZONE": "Mars/Olympus"}, "unknown timezone"),
+        ({"CORE_URL": "http://core:8000"}, "CORE_TOKEN is not"),
+        ({"CORE_TOKEN": "t"}, "CORE_URL is not"),
+        ({"CORE_URL": "core:8000", "CORE_TOKEN": "t"}, "http:// or https://"),
     ],
 )
 def test_a_bad_setting_is_refused(env, match) -> None:
@@ -67,3 +70,11 @@ def test_a_config_error_never_shows_a_token() -> None:
 
 def test_parse_tokens_skips_empty_items() -> None:
     assert parse_tokens(" , a=1 ,, ") == {"a": "1"}
+
+
+def test_core_settings() -> None:
+    assert settings_from_env({}).core_url is None
+    settings = settings_from_env({"CORE_URL": "http://core:8000", "CORE_TOKEN": "core-secret"})
+    assert settings.core_url == "http://core:8000"
+    assert settings.core_token == "core-secret"
+    assert "core-secret" not in repr(settings)
