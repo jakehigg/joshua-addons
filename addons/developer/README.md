@@ -1,127 +1,128 @@
 # joshua-developer
 
-The `developer` addon lets Joshua give a coding task to a worker. Joshua
-calls `develop` with a repository and a brief. The addon starts one worker for
-the task. The worker changes the code on a branch and sends a report.
+The `developer` addon lets Joshua give a coding task to a worker. It has two
+parts. The **manager** is this addon: an MCP server that the gateway calls.
+It holds every secret, keeps the tasks in SQLite, applies the rules, and
+opens the pull request. The **worker** is the image
+`ghcr.io/jakehigg/joshua-addons-developer-worker`, from
+`addons/developer-worker/`. The manager starts one worker container for each
+task. The worker clones the repository, runs one Claude Code session, commits,
+pushes one branch, sends one report, and stops.
 
-This addon is the manager. It serves MCP to the gateway, keeps the tasks in
-SQLite, and applies the rules: the repository list, the git host tokens, the
-personas, the worker limit, and one task at a time on one branch. After a
-worker pushes, the manager scans the diff and opens the pull request.
+## What it can do
 
-Three runtimes start a worker:
+- Change code in a repository on GitHub, GitHub Enterprise, GitLab, or a
+  plain git host, on a new branch or on the branch of an open pull request.
+- Open the pull request (GitHub) or the merge request (GitLab) after a clean
+  credential scan.
+- Ask Joshua one question in the middle of a task, and wait for the answer.
+- Run the tests of the project, when the tests need no download (see "The
+  network setting").
 
-- `kubernetes` starts one Job for each task, in the namespace of the
-  manager. See "Kubernetes".
-- `docker` starts one container for each task, through a Docker socket
-  proxy. See "Workers".
-- `stub` starts no worker. It marks the task `running` and then records a
-  fake `success` report. Use it to test the tools and the rules.
+## What it cannot do
 
-The `kubernetes` and `docker` runtimes run the worker image
-`ghcr.io/jakehigg/joshua-addons-developer-worker`. `addons/developer-worker/`
-builds it, and its README tells what a worker does.
+- Merge a pull request, move a label, or read an issue. The addon has no
+  tool for these. Joshua reads the issue and puts what the worker needs in
+  the brief.
+- Read the wiki, the journal, or any Joshua memory. The worker asks Joshua
+  with `ask`.
+- Start a task on a repository that is not in the lists in `developer.yaml`.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
 | `develop(repo, brief, base_branch?, branch?, persona?, notify?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. |
-| `rework(repo, feedback, pr?, branch?, persona?, notify?)` | Starts a task on a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. |
-| `answer(task_id, text)` | Gives a waiting task the answer to its question. |
+| `rework(repo, feedback, pr?, branch?, persona?, notify?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. |
+| `answer(task_id, text)` | Gives a waiting worker the answer to its question. |
 | `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, and the open question. |
 | `task_output(task_id)` | The full report and the session log. |
-| `list_tasks(limit?)` | The recent tasks of the person. |
+| `list_tasks(limit?)` | The recent tasks of the person, newest first. `limit` is 1 to 100, default 10. |
 | `get_settings()` | The git name, the git email, the default persona, and the chat for reports. |
 | `set_settings(git_name?, git_email?, default_persona?, notify?)` | Changes these four settings. An empty string removes the change. |
 | `list_personas()` | The personas, and the default persona of the person. |
 
+A worker that needs a fact calls `ask`. The manager sends the question to the
+person's chat as an event, and Joshua answers with `answer`, from what it
+knows or after it asks the person.
+
 The status of a task is `dispatched`, `running`, `success`, `failed`,
-`blocked`, or `timed_out`.
+`blocked`, or `timed_out`. `repo` is a URL or `host/owner/name`, such as
+`github.com/owner/name`.
 
-`repo` is a URL or `host/owner/name`, such as `github.com/owner/name`. The
-addon changes a URL to `host/owner/name` in lowercase.
+A call that breaks a rule gets `status: rejected`, a `reason`, and a
+`message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
+`repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
+`platform_error`, `unknown_persona`, `concurrency_limit`, `locked`, and
+`not_waiting`. The rules:
 
-### Rules
-
-- A call that breaks a rule gets `status: rejected`, a `reason`, and a
-  `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
-  `repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
-  `platform_error`, `unknown_persona`, `concurrency_limit`, `locked`, and
-  `not_waiting`.
-- A person can use only a repository that matches `repos` in
-  `developer.yaml`, or the person's own `repos`. The addon checks this
-  before it calls the git host.
-- The host of the repository must have a platform entry, and the variable
-  that the entry names must hold a token. If not, the call gets
-  `repo_not_configured` or `token_missing`. The message names the host or the
-  variable, and never a token.
 - One task at a time works on one branch of a repository, or on one pull
   request. A second call gets `locked` and the id of the first task.
 - `max_workers` sets how many tasks run at the same time.
-- The persona of a task is the `persona` argument. If there is no argument,
-  it is the default of the person, and then the default of the addon.
-- A person sees only their own tasks. The task of another person gets
-  "404 not found".
+- The persona is the `persona` argument, else the default of the person,
+  else `default_persona`.
+- A person sees only their own tasks.
 - `answer` works only when the task has an open question and no answer yet.
-- When the addon starts, each task that is `dispatched` or `running`
-  changes to `failed` with the error `manager restarted`.
+- When the manager starts, each task that is `dispatched` or `running`
+  changes to `failed` with the error `manager restarted`, and its report
+  goes to the chat.
 
-## Callers
+## Security
 
-The gateway connects one time for each person, with that person's token.
+The worker runs a model with Bash over code that a stranger can write. Text
+in that code can tell the model what to do. The addon treats the worker as
+hostile, and these rules limit what it can read and where its data can go:
 
-- `DEVELOPER_TOKENS` gives one token to each person:
-  `alex=<token>,mia=<token>`. Each person must be in `people` in
-  `developer.yaml`.
-- `ADDON_TOKEN` is a token with no person. It can use `task_status`,
-  `task_output`, `list_tasks`, and `list_personas` for all tasks. The other
-  tools give "403 forbidden: this tool needs a person".
+1. **The worker holds no Joshua secret.** It has the repository, a git token
+   for its host, and a task token that works only on its own task's routes on
+   the manager. It has no wiki, no journal, no gateway, and no MCP server but
+   `ask`. The git token can do on the host what its scope allows, so give it
+   the smallest scope.
+2. **The Claude token never goes into the worker.** The worker sends its
+   Claude requests to a forwarder on the manager, with the task token as a
+   fake Claude token. The manager puts the real token on each request.
+3. **By default, a worker reaches the manager and nothing else.** The
+   manager forwards two destinations for it: the Claude API, and the git host
+   of the task's repository.
+4. **The manager gates the pull request.** It scans the diff for credentials
+   before it opens the pull request. A hit deletes the branch and fails the
+   task. A person reads every pull request.
+5. **The worker's words are data, not instructions.** Its report and its
+   questions go to Joshua as events that say so.
+6. **The repository configures nothing.** The session loads no settings, no
+   hooks, and no MCP servers from the checkout. It reads `CLAUDE.md` as
+   plain text.
+7. **Each task is alone.** A new container, a new clone, and a new config
+   folder for each task, with limits on time, turns, memory, and CPU.
+8. **A person reaches only listed repositories.** The manager refuses a
+   repository outside the person's list before it calls the git host.
 
-When no token is set, the addon asks for no token. The network is then the
-only boundary. The caller has no person, so it cannot start a task.
+What a bad repository can still do: spend money on the Claude plan up to the
+persona limits, put text in a diff that a person reads, and send the content
+of the repository to Anthropic and to its own git host. With `network: on`, it
+can also send that content to any address.
 
-A missing or wrong token gets HTTP 401. `GET /healthz` needs no token and
-answers only `{"ok": true}`.
+## The network setting
 
-## Configuration
+`network` in `developer.yaml` is `off` or `on`, and `off` is the default. With
+`network: off`, a worker cannot install dependencies, so it cannot run most
+test suites. With `network: on`, a worker can connect to the internet, so
+dependency installs work, and a bad repository can send its content anywhere.
 
-| Variable | Default | What it does |
-|---|---|---|
-| `DEVELOPER_TOKENS` | empty | One bearer token for each person, as `person=token` pairs, separated by commas. |
-| `ADDON_TOKEN` | empty | A bearer token with no person. It can only read. |
-| `DEVELOPER_CONFIG` | `/etc/joshua-addon/developer.yaml` | The path of `developer.yaml`. If there is no file, the addon uses the defaults. |
-| `DEVELOPER_DATA_DIR` | `/data` | The folder for `developer.db`. |
-| `CHANNELS_URL` | empty | The address of joshua-ai channels, for the task reports. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
-| `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the addon sends to channels. |
-| `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token. The Claude forwarder puts it on each worker request. Without it, the forwarder answers 503. |
-| `WORKER_RUNTIME` | `stub` | The runtime that starts a worker: `stub`, `docker`, or `kubernetes`. |
-| `WORKER_IMAGE` | empty | The worker image. The `docker` and `kubernetes` runtimes need it. Use the worker of the same release. |
-| `MANAGER_HOST` | `developer` | The name a worker uses to reach the manager. On Kubernetes, it is the Service name, which is the release name. |
-| `POD_NAMESPACE` | the namespace of the pod | The namespace of the worker Jobs. `values.yaml` sets it from the downward API. |
-| `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. |
-| `WORKER_NETWORK` | `developer_workers` | The Docker network of the workers. |
-| `PUBLIC_NETWORK` | `bridge` | The Docker network a worker also joins when `network: on`. |
-| `DOCKER_HOST` | empty | The Docker API address, for the `docker` runtime. Empty means the Docker SDK default. |
-| `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. The manager trusts it for the git host API. |
-| one variable for each `token_env` | empty | The git tokens. See "Git hosts". |
-| `LOG_LEVEL` | `INFO` | The log level. |
-
-A bad value stops the addon at start. The message names the variable or the
-key, and never a token.
+## Settings
 
 ### developer.yaml
 
 ```yaml
-network: off                       # off or on
-default_persona: opus
-max_workers: 2
-worker: { memory: 2g, cpus: 2.0 }  # the limits of one worker container
-personas:                          # each entry replaces the built-in persona of that name
+network: off                       # off or on. See "The network setting".
+default_persona: opus              # the persona when neither the call nor the person names one
+max_workers: 2                     # tasks that run at the same time
+worker: { memory: 2g, cpus: 2.0 }  # the limits of one worker
+personas:                          # a model, its effort, and its limits
   sonnet: { model: claude-sonnet-5,  effort: medium, max_turns: 60,  timeout_s: 1200 }
   opus:   { model: claude-opus-5,    effort: high,   max_turns: 80,  timeout_s: 2400 }
   fable:  { model: claude-fable-5-1, effort: xhigh,  max_turns: 120, timeout_s: 3600 }
-platforms:
+platforms:                         # a git host, its kind, and the token for all people
   github.com:
     kind: github                   # github, gitlab, or git
     token_env: GITHUB_TOKEN        # the name of a variable, never the token
@@ -130,141 +131,73 @@ platforms:
     token_env: GITLAB_TOKEN
 repos:                             # for all people; fnmatch on host/owner/name
   - github.com/example-home/*
-people:
+people:                            # one entry for each person in DEVELOPER_TOKENS
   alex:
     git: { name: Alex Example, email: alex@users.noreply.github.com }
     default_persona: opus
-    notify: telegram:dm:alex
-    platforms:
+    notify: telegram:dm:alex       # the chat for reports and questions
+    platforms:                     # this person's own token for a host
       github.com: { token_env: GITHUB_TOKEN_ALEX }
-    repos:
+    repos:                         # added to the list for all people
       - github.com/alex-example/*
 ```
 
-`personas` merges over the three built-in personas. An entry with the name
-of a built-in persona replaces that persona. The other built-in personas
-stay.
+`personas` merges over the three built-in personas above. An entry with the
+name of a built-in persona replaces it. The other built-in personas stay.
+`effort` is `low`, `medium`, `high`, `xhigh`, or `max`.
+
+Give each person a `notify` chat. Without one, a report and a question go
+nowhere, and a worker that asks waits until its time ends. `notify` is a
+channels destination: a logical name or a reference such as
+`telegram:dm:alex`.
 
 The addon refuses a value that looks like a token (`sk-ant-`, `glpat-`,
-`ghp_`, `github_pat_`, `xoxb-`). Put the token in an environment variable,
-and write the name of the variable in `token_env`.
+`ghp_`, `github_pat_`, `xoxb-`). A person can change the git name, the
+git email, `default_persona`, and `notify` with `set_settings`. The change
+applies before the value in the file.
 
-A person can change `git_name`, `git_email`, `default_persona`, and `notify`
-with `set_settings`. The addon keeps the change in `developer.db`. The change
-applies before the value in `developer.yaml`.
+### Environment
 
-## Git hosts
-
-`platforms` in `developer.yaml` gives each git host a `kind` and a
-`token_env`. The key is the host of the repository, with the port if the
-repository address has one.
-
-| `kind` | API | Pull requests | Credential user name |
-|---|---|---|---|
-| `github` | `https://api.github.com` for `github.com`. `https://<host>/api/v3` for any other host (GitHub Enterprise). | yes | `x-access-token` |
-| `gitlab` | `https://<host>/api/v4`, for GitLab.com and a self-hosted GitLab | yes (merge requests) | `oauth2` |
-| `git` | none | no; the task ends at the pushed branch | `git` |
-
-`token_env` is the name of the environment variable that holds the token,
-never the token. A person can have an entry of their own under
-`people.<id>.platforms`. For a task, the addon uses the person's entry for
-the host first, then the instance entry. If there is neither, the addon
-refuses the task. A person's entry needs a `kind` only when the instance has
-no entry for that host.
-
-The worker gets the token and the credential user name in its brief, over
-the internal network, with its task token. The token must have access to
-the repositories in the lists, and no more.
-
-With a shared token, the commits carry the person's name and email, but the
-host shows the push and the pull request as the owner of the token. Give a
-person their own token to show them as the author on the host.
-
-### Branches
-
-`develop` without `branch` makes the branch `joshua/<slug>-<id6>`. The slug
-is the first line of the brief in kebab case, in ASCII, at most 40
-characters. `id6` is the start of the task id. `develop` with `branch` uses
-that branch. `base_branch` is `main` when the call gives none.
-
-`rework` asks the git host for the pull request. The pull request gives the
-source branch and the base branch. An unknown pull request gets
-`pr_not_found`, and a closed or merged one gets `pr_not_open`. A `git` host
-has no pull requests, so `rework` there needs `branch`.
-
-### The pull request gate
-
-A worker says in its report that it pushed its branch. The manager then:
-
-1. Reads the diff of the branch against the base branch over the API.
-2. Scans the added lines for text that looks like a credential: `sk-ant-`,
-   `glpat-`, `ghp_`, `github_pat_`, `gho_`, `xoxb-`, `xoxp-`, an AWS access
-   key, a private key block, and a long quoted value set to a name such as
-   `api_key`, `secret`, `token`, or `password`.
-3. If the scan finds one, the manager deletes the branch and fails the task.
-   The error names the pattern, the file, and the line, and never the text.
-4. If the scan is clean and the task is a `develop` that ended with
-   `success`, the manager finds the open pull request of the branch, or
-   opens one. The title is the first line of the brief. The body has the
-   summary, the changed files, the tests, the person, and the task id.
-5. For a `rework`, the push changed the pull request. The manager checks
-   that the pull request is still there.
-
-`scan` in `task_status` is `clean`, `partial` (the host sent no text for
-some files, such as a binary file), `hit`, or `unavailable` (a `git` host
-has no diff API). An error from the host fails the task and keeps the
-branch. The error has the HTTP status and the message of the host, without
-the token. The manager tries a call one more time after a 5xx reply.
-
-## Workers
-
-The manager serves three ports:
-
-| Port | What it serves | Who calls it |
+| Variable | Default | What it does |
 |---|---|---|
-| 8000 | MCP at `/mcp`, and `/healthz` | the gateway |
-| 8001 | the worker API, and `/healthz` | the workers, with a task token |
-| 8002 | the git host tunnel, an HTTP `CONNECT` proxy | the workers, with a task token |
+| `DEVELOPER_TOKENS` | empty | One bearer for each person, `alex=<token>,mia=<token>`. Each person must be in `people`. |
+| `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, and `list_personas` only. |
+| `DEVELOPER_CONFIG` | `/etc/joshua-addon/developer.yaml` | The path of `developer.yaml`. No file means the defaults. |
+| `DEVELOPER_DATA_DIR` | `/data` | The folder of `developer.db`. |
+| `CHANNELS_URL` | empty | The address of joshua-ai channels. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
+| `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the manager sends to channels. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token of the forwarder. Without it, the forwarder answers 503. |
+| `WORKER_RUNTIME` | `stub` | `docker`, `kubernetes`, or `stub`. `stub` starts no worker and records a fake `success` report, to test the tools. |
+| `WORKER_IMAGE` | empty | The worker image. `docker` and `kubernetes` need it. Use the worker of the same release. |
+| `MANAGER_HOST` | `developer` | The name a worker uses to reach the manager. |
+| `WORKER_NETWORK` | `developer_workers` | The Docker network of the workers. |
+| `PUBLIC_NETWORK` | `bridge` | The Docker network a worker also joins with `network: on`. |
+| `DOCKER_HOST` | empty | The Docker API address. Empty means the Docker SDK default. |
+| `POD_NAMESPACE` | the namespace of the pod | The namespace of the worker Jobs. |
+| `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. |
+| `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. |
+| each `token_env` in `developer.yaml` | empty | The git tokens. |
+| `LOG_LEVEL` | `INFO` | The log level. |
 
-The manager makes one task token for each task. The token works only for the
-routes of that task, and only while the task runs. A worker gets its task
-id, the manager's address, and its task token, and nothing else.
+A bad value stops the manager at start. The message names the variable or
+the key, and never a token. A missing or wrong bearer gets HTTP 401.
+`GET /healthz` needs no bearer and answers `{"ok": true}`. With no bearer
+set, the addon asks for none, and no caller has a person, so no caller can
+start a task.
 
-On port 8001, a worker reads its brief, sends log lines, asks a question,
-waits for the answer, and sends its report. The Claude forwarder at
-`/worker/claude/` sends the worker's Claude requests on to the Claude API
-with the manager's `CLAUDE_CODE_OAUTH_TOKEN`. The Claude token never goes
-into a worker.
+### The Secret on Kubernetes
 
-On port 8002, a task token opens a tunnel to one destination: the git host
-of the task's repository, on port 443. The tunnel refuses every other host,
-and port 22.
+Put these keys in one Secret, and name it in `existingSecret`:
+`DEVELOPER_TOKENS`, `ADDON_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`JOSHUA_TOKEN_DEVELOPER`, and one key for each `token_env` in
+`developer.yaml`, such as `GITHUB_TOKEN` and `GITHUB_TOKEN_ALEX`.
 
-A question from a worker goes to the person's chat as an event:
-"Developer task <id> has a question. ..." Joshua answers with `answer`.
+## Connect it to joshua-ai
 
-The `docker` runtime gives each worker the `worker` memory and CPU limits,
-no Linux capabilities, and `no-new-privileges`. It stops a worker at the
-persona timeout plus 120 seconds. A worker that stops without a report
-gets a `failed` report, or `timed_out` at the timeout.
-
-### Docker socket proxy
-
-The manager never mounts the Docker socket. On compose it calls
-`tecnativa/docker-socket-proxy`, which passes on the container, image, and
-network calls only. The proxy has the socket, read-only, and shares the
-internal network `developer_control` with the manager only.
-
-### The network setting
-
-With `network: off`, a worker is on `developer_workers`, an internal network
-where the manager is the only other member. It reaches the Claude API and
-its git host through the manager, and nothing else. With `network: off`, a
-worker cannot install dependencies, so it cannot run most test suites.
-`network: on` also connects each worker to `PUBLIC_NETWORK`, which gives it
-the internet. Then a repository can send its content anywhere.
-
-## joshua.yaml
+1. Mint a token for each person and for the fleet identity `developer`. Put
+   the person tokens in `DEVELOPER_TOKENS`.
+2. Add the addon to `joshua.yaml`, with one `identities` entry for each
+   person. A group chat has no person, so it cannot start a task.
 
 ```yaml
 mcp:
@@ -277,85 +210,185 @@ mcp:
     identities:
       alex:
         headers:
-          Authorization: "Bearer ${DEVELOPER_TOKEN_ALEX}"
+          Authorization: "Bearer ${DEVELOPER_TOKEN_ALEX:-}"
       mia:
         headers:
-          Authorization: "Bearer ${DEVELOPER_TOKEN_MIA}"
+          Authorization: "Bearer ${DEVELOPER_TOKEN_MIA:-}"
+channels:
+  webhooks:
+    allowed_callers: [laptop, ci, developer]
 ```
 
-## Run it
+3. Give the gateway `DEVELOPER_TOKEN_ALEX` and `DEVELOPER_TOKEN_MIA`, with
+   the same values as in `DEVELOPER_TOKENS`. On compose, add them to the
+   `gateway` environment in the joshua-ai `docker-compose.yml`. On
+   Kubernetes, add them under `secrets.gateway.keys`.
+4. Give channels `JOSHUA_TOKEN_DEVELOPER`, with the same value as the
+   manager. On compose, add it to the `x-fleet-tokens` block of the joshua-ai
+   `docker-compose.yml`. On Kubernetes, add `JOSHUA_TOKEN_DEVELOPER: {}` under
+   `secrets.channels.keys`.
+5. Apply the change as `docs/install.md` says: reload the gateway, and
+   restart core and channels.
 
-### Kubernetes
+On Kubernetes, the `url` is
+`http://<release>.<namespace>.svc.cluster.local:8000/mcp`.
 
-Install `charts/joshua-addon` with `values.yaml` from this folder:
+## Run it on Docker Compose
 
-```
-helm install developer charts/joshua-addon -f addons/developer/values.yaml
-```
-
-The chart makes a claim for `/data` and mounts `developer.yaml` from
-`configFile`. Put the tokens in a Secret, and set `existingSecret` to its
-name. The comment in `values.yaml` gives the keys.
-
-Set `MANAGER_HOST` to the release name. The release name is also the name
-of the Service, and a worker finds the manager with it. The Service has
-port 8000 for the gateway, and ports 8001 and 8002 for the workers.
-
-`rbac.enabled: true` makes a ServiceAccount, a Role, and a RoleBinding. The
-Role lets the manager create, read, and delete Jobs, and read pods and pod
-logs, in its own namespace only.
-
-The manager starts one Job for each task, with the name
-`dev-worker-<first 8 characters of the task id>`. The worker pod:
-
-- Runs as uid 1000, with no Linux capabilities, no privilege escalation,
-  the `RuntimeDefault` seccomp profile, and a read-only root file system.
-- Has an emptyDir at `/work` and an emptyDir at `/tmp`. The worker writes
-  its checkout and its home folder there.
-- Gets no ServiceAccount token, and no variables other than the four in
-  "Workers".
-- Has the `worker` memory and CPU of `developer.yaml` as its requests and
-  its limits.
-
-The Job never starts a second pod. The manager deletes the Job when the
-task ends, and at the persona timeout plus 120 seconds. The Job also has
-this time as its deadline, and Kubernetes deletes a finished Job after one
-hour.
-
-`networkPolicy.enabled: true` makes two NetworkPolicies. A worker can
-connect to the manager on ports 8001 and 8002, and to DNS. It cannot connect
-to other addresses. The manager accepts port 8000 from the namespaces in
-`networkPolicy.gatewayNamespaces`, or from every namespace when the list is
-empty. It accepts ports 8001 and 8002 from the workers only. The CNI of the
-cluster must enforce NetworkPolicy. If it does not, a worker can connect to
-all addresses.
-
-For `network: on` in `developer.yaml`, set
-`networkPolicy.workersInternetEgress: true`. Also set
-`networkPolicy.clusterCidrs` to the pod and Service CIDRs of your cluster.
-A worker can then connect to public addresses, but not to private addresses
-or to the cluster.
-
-### Docker Compose
-
-The compose file starts the manager and the Docker socket proxy, and makes
-the two internal networks. Write `developer.yaml` next to
-`docker-compose.yml`, copy `.env.example` to `.env`, and then start the
-addon:
+1. Write `developer.yaml` next to `docker-compose.yml`.
+2. Copy `.env.example` to `.env`, and set the tokens. The manager gets every
+   variable in `.env`, so the git tokens need no other step.
+3. Start the addon:
 
 ```
 make up ADDON=developer
 ```
 
+The compose file starts two services, the manager and
+`tecnativa/docker-socket-proxy`. The manager never mounts the Docker socket.
+The proxy has the socket, read-only, and passes on the container, image, and
+network calls only. It refuses `exec`.
+
+The compose file makes two internal networks:
+
+- `developer_workers`: the workers and the manager. A worker reaches the
+  manager on port 8001 (the worker API) and port 8002 (the git host tunnel).
+- `developer_control`: the manager and the proxy.
+
+The manager is also on the joshua-ai network, where the gateway reaches it
+at `http://developer:8000/mcp`. The addon publishes no port. With
+`network: on`, each worker also joins `PUBLIC_NETWORK`.
+
+A worker gets the `worker` memory and CPU limits, no Linux capabilities, and
+`no-new-privileges`.
+
+`.env` also takes two compose settings. `JOSHUA_ADDONS_VERSION` picks the
+release of both images. `JOSHUA_NETWORK` names the joshua-ai network when
+its compose project is not `joshua-ai`. To mount a CA bundle for
+`GIT_CA_BUNDLE`, add a volume to the `developer` service.
+
+## Run it on Kubernetes
+
+```
+helm install developer charts/joshua-addon -f addons/developer/values.yaml
+```
+
+`values.yaml` turns on persistence at `/data`, mounts `developer.yaml` from
+`configFile`, and sets `WORKER_RUNTIME: kubernetes`. Also:
+
+- Set `existingSecret` to the Secret in "The Secret on Kubernetes".
+- Set `MANAGER_HOST` to the release name. The release name is the Service
+  name, and a worker finds the manager by it.
+- Set `CHANNELS_URL` to the address of the joshua-ai channels Service.
+- For a private registry, set `WORKER_IMAGE_PULL_SECRET` to the name of an
+  image pull Secret in the namespace.
+
+The two chart blocks are on:
+
+- `rbac` makes a ServiceAccount, a Role, and a RoleBinding. The Role lets the
+  manager create, read, and delete Jobs, and read pods and pod logs, in its
+  own namespace only.
+- `networkPolicy` lets a worker connect to the manager on ports 8001 and
+  8002, and to DNS, and to no other address. It lets the manager accept
+  ports 8001 and 8002 from the workers only. The CNI of the cluster must
+  enforce NetworkPolicy. If it does not, a worker can connect to all
+  addresses.
+
+For `network: on`, set `networkPolicy.workersInternetEgress: true`, and set
+`networkPolicy.clusterCidrs` to the pod and Service CIDRs of the cluster. A
+worker can then connect to public addresses, but not to private addresses or
+to the cluster.
+
+The manager starts one Job for each task, named
+`dev-worker-<first 8 characters of the task id>`. The worker pod runs as uid
+1000 with no Linux capabilities, the `RuntimeDefault` seccomp profile, and a
+read-only root file system. It writes to two emptyDirs, `/work` and `/tmp`.
+It gets no ServiceAccount token. The `worker` limits are its requests and its
+limits.
+
+## Git hosts
+
+| `kind` | API | Pull requests | Credential user name |
+|---|---|---|---|
+| `github` | `https://api.github.com` for `github.com`. `https://<host>/api/v3` for GitHub Enterprise. | yes | `x-access-token` |
+| `gitlab` | `https://<host>/api/v4`, for GitLab.com and a self-hosted GitLab | yes, merge requests | `oauth2` |
+| `git` | none | no. The task ends at the pushed branch. | `git` |
+
+The key of a platform is the host of the repository, with the port when the
+repository address has one. For a task, the manager uses the person's entry
+for the host, else the entry for all people. With neither, it refuses the
+task. A person's entry needs a `kind` only when the host has no entry for
+all people.
+
+Give each token access to the listed repositories and no more. The worker
+gets the token of its task in the brief. With a shared token, the commits
+carry the person's name and email, but the host shows the push and the pull
+request as the owner of the token. Give a person their own token to show
+them on the host.
+
+For a git host with a private certificate authority, mount the CA bundle and
+set `GIT_CA_BUNDLE` to its path. The manager trusts it for the host API.
+
+### Branches
+
+`develop` without `branch` makes `joshua/<slug>-<id6>`: the first line of the
+brief in kebab case, at most 40 characters, and the start of the task id.
+`base_branch` is `main` when the call gives none. When the branch is already
+on the remote, the worker continues on it. `rework` gets the source branch
+from the pull request.
+
+### The pull request gate
+
+After the worker pushes, the manager:
+
+1. Reads the diff of the branch against the base branch over the API.
+2. Scans the added lines for credentials: `sk-ant-`, `glpat-`, `ghp_`,
+   `github_pat_`, `gho_`, `xoxb-`, `xoxp-`, an AWS access key, a private key
+   block, and a long quoted value set to a name such as `api_key`, `secret`,
+   `token`, or `password`.
+3. On a hit, deletes the branch and fails the task. The error names the
+   pattern, the file, and the line, and never the text.
+4. On a clean `develop` with status `success`, finds or opens the pull
+   request. A `rework` push changes the pull request that is there.
+
+`scan` in `task_status` is `clean`, `partial` (the host sent no text for a
+file), `hit`, or `unavailable` (a `git` host has no diff API). A task that
+ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
+request. To continue, call `develop` again with the same `branch`, and put
+the answer or the next step in the brief.
+
+## The first run
+
+1. Prove the forwarder with your Claude token, from a checkout:
+   `CLAUDE_CODE_OAUTH_TOKEN=<token> addons/developer/scripts/prove_forwarder.sh`.
+   It sends one real request and prints `PASS` or `FAIL`.
+2. Start one small `develop` on a scratch repository.
+3. Read `task_output` while the task runs. It shows the session log.
+4. Expect the report near the end of the persona timeout, at the latest. The
+   worker stops the session 90 seconds before the timeout, then commits,
+   pushes, and reports. The manager stops a worker that is still there 120
+   seconds after the timeout.
+
+## What is not verified
+
+- **The CLI network switches.** The worker sets `DISABLE_TELEMETRY`,
+  `DISABLE_ERROR_REPORTING`, `DISABLE_AUTOUPDATER`, and
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`. The tests did not run the CLI,
+  so it is not known that the CLI makes no other call. With
+  `network: off`, such a call fails.
+- **The forwarder with a subscription token.** The tests prove the forwarder
+  against a mock only. `prove_forwarder.sh` is the proof. If the Claude API
+  refuses the subscription token there, use an API key in its own Console
+  workspace with a spend limit.
+- **The `answer` path.** It is not verified that Joshua's reply to a question
+  event arrives on the person's connection.
+
 ## Development
 
 ```
 uv run --package joshua-developer pytest addons/developer/tests
+make up-dev ADDON=developer
 ```
 
-`scripts/prove_forwarder.sh` sends one real request through the Claude
-forwarder. It needs a real Claude token, so only a person runs it:
-
-```
-CLAUDE_CODE_OAUTH_TOKEN=<token> addons/developer/scripts/prove_forwarder.sh
-```
+`make up-dev` builds the manager and the worker from the checkout, tagged
+`:dev`, and points `WORKER_IMAGE` at the local worker build.

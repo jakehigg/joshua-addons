@@ -6,6 +6,10 @@ not ship with is a broken install. Two things must agree:
 
 * ``charts/joshua-addon/Chart.yaml`` ``version`` and ``appVersion``
 * the ``JOSHUA_ADDONS_VERSION`` default in every ``addons/*/docker-compose.yml``
+* the tag of a pinned ``WORKER_IMAGE``: ``env.WORKER_IMAGE`` in an
+  ``addons/*/values.yaml``, and the ``WORKER_IMAGE`` line in an
+  ``addons/*/docker-compose.yml``. An addon that starts a second image pins
+  its tag in these files, so the pin must move with each release.
 
 The release workflow packages the chart and tags every addon image from the
 Git tag, so a release is right whatever these files say. This check keeps the
@@ -32,6 +36,46 @@ def _compose_default(compose: Path) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _image_tag(image: str) -> str | None:
+    """The tag of ``repo/name:tag``, or None when the image has no tag."""
+    name = image.rsplit("/", 1)[-1]
+    if ":" not in name:
+        return None
+    return name.rsplit(":", 1)[1].strip() or None
+
+
+def _compose_worker_tag(compose: Path) -> tuple[bool, str | None]:
+    """Whether a compose file sets ``WORKER_IMAGE``, and the tag it pins.
+
+    The tag is the ``JOSHUA_ADDONS_VERSION`` default on that line, as in
+    ``WORKER_IMAGE: ${WORKER_IMAGE:-<image>:${JOSHUA_ADDONS_VERSION:-<tag>}}``
+    or ``WORKER_IMAGE=<image>:${JOSHUA_ADDONS_VERSION:-<tag>}``, or else the
+    literal tag of the image.
+    """
+    for line in compose.read_text().splitlines():
+        text = line.split("#", 1)[0].strip().lstrip("- ")
+        match = re.match(r"""["']?WORKER_IMAGE["']?\s*[:=]\s*(.+)""", text)
+        if not match:
+            continue
+        value = match.group(1).strip().strip("\"'")
+        default = re.search(r"\$\{JOSHUA_ADDONS_VERSION:-([^}]+)\}", value)
+        if default:
+            return True, default.group(1).strip()
+        literal = re.sub(r"^\$\{WORKER_IMAGE:-(.*)\}$", r"\1", value)
+        return True, _image_tag(literal)
+    return False, None
+
+
+def _values_worker_tag(values: Path) -> tuple[bool, str | None]:
+    """Whether a values file sets ``env.WORKER_IMAGE``, and the tag it pins."""
+    data = yaml.safe_load(values.read_text()) or {}
+    env = data.get("env") if isinstance(data, dict) else None
+    image = env.get("WORKER_IMAGE") if isinstance(env, dict) else None
+    if not image:
+        return False, None
+    return True, _image_tag(str(image))
+
+
 def main() -> int:
     chart = yaml.safe_load(CHART.read_text())
     found = {
@@ -41,6 +85,13 @@ def main() -> int:
     for compose in sorted(ADDONS_DIR.glob("*/docker-compose.yml")):
         name = compose.relative_to(ROOT).as_posix()
         found[f"{name} JOSHUA_ADDONS_VERSION default"] = _compose_default(compose)
+        pinned, tag = _compose_worker_tag(compose)
+        if pinned:
+            found[f"{name} WORKER_IMAGE tag"] = tag
+    for values in sorted(ADDONS_DIR.glob("*/values.yaml")):
+        pinned, tag = _values_worker_tag(values)
+        if pinned:
+            found[f"{values.relative_to(ROOT).as_posix()} env.WORKER_IMAGE tag"] = tag
 
     missing = [name for name, value in found.items() if not value]
     if missing:

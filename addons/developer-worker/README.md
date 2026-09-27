@@ -41,7 +41,9 @@ The manager sets these four variables. The worker takes no other setting.
 | `TASK_TOKEN` | The task token. It works only on the routes of this task. |
 
 The image sets `HOME=/work/home` and `CLAUDE_CONFIG_DIR=/work/home/.claude`.
-The checkout is `/work/repo`.
+The checkout is `/work/repo`. The worker keeps its files in `/work` and `/tmp`.
+On Kubernetes, the root file system is read-only, and these two folders are
+emptyDirs.
 
 The worker puts `GIT_PROXY_URL` in git's own config (`http.proxy`), and not
 in `HTTPS_PROXY`. Only git uses the tunnel.
@@ -54,17 +56,22 @@ The worker gives the Claude CLI this environment:
 | `CLAUDE_CODE_OAUTH_TOKEN` | `$TASK_TOKEN`. The manager replaces it with the real Claude token. |
 | `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `DISABLE_AUTOUPDATER`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` |
 
-## What was verified
+## Which CLI runs
 
-- The four `DISABLE_*` names occur in the CLI binary that the SDK bundles
-  (claude-agent-sdk 0.2.144, CLI 2.1.239). The tests did not run the CLI,
-  so it is not verified that the CLI makes no other call with them set.
-- With `network: off`, a call of the CLI to a host that is not
-  `ANTHROPIC_BASE_URL` fails. The first live run must show that the session
-  works with this limit.
-- The SDK starts the CLI that it bundles before it looks on `PATH`. The
-  image also installs `@anthropic-ai/claude-code@2.1.201`, the pin of
-  joshua-ai core, and the SDK uses it only when the bundled CLI is missing.
+The SDK (claude-agent-sdk 0.2.144) starts the CLI that it bundles, 2.1.239,
+before it looks on `PATH`. The image also installs
+`@anthropic-ai/claude-code@2.1.201`, the pin of joshua-ai core. The SDK uses
+that CLI only when the bundled CLI is missing.
+
+## What is not verified
+
+- The four `DISABLE_*` names occur in the bundled CLI binary. The tests did
+  not run the CLI, so it is not verified that the CLI makes no other call
+  with them set. With `network: off`, a call of the CLI to a host that is
+  not `ANTHROPIC_BASE_URL` fails. The first live run must show that the
+  session works with this limit.
+- The Claude forwarder with a subscription token. The tests use a fake
+  manager. `addons/developer/scripts/prove_forwarder.sh` is the proof.
 
 ## Tests
 

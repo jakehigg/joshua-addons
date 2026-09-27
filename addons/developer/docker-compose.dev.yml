@@ -1,4 +1,4 @@
-# Build the image from this checkout instead of running a release. Use it
+# Build both images from this checkout instead of running a release. Use it
 # when you change the code:
 #
 #   docker compose -f addons/developer/docker-compose.yml -f addons/developer/docker-compose.dev.yml up -d --build
@@ -7,12 +7,29 @@
 #
 #   make up-dev ADDON=developer
 #
-# The build is tagged `joshua-addons-developer:dev`, so it never replaces a
-# release on your machine. The build context is the repo root, because the
-# addon depends on the workspace lockfile.
+# The manager build is `joshua-addons-developer:dev` and the worker build is
+# `joshua-addons-developer-worker:dev`, so a build never replaces a release on
+# your machine. WORKER_IMAGE points the manager at the worker build. The build
+# context is the repo root, because both images depend on the workspace
+# lockfile.
 services:
   developer:
     image: joshua-addons-developer:dev
     build:
       context: ../..
       dockerfile: addons/developer/Dockerfile
+    environment:
+      WORKER_IMAGE: joshua-addons-developer-worker:dev
+
+  # This service only builds the worker image. Its container prints the CLI
+  # version and stops. The manager starts the real workers. `make down` reads
+  # only docker-compose.yml, so it leaves this stopped container. Give both
+  # files to `docker compose down` to remove it.
+  developer-worker:
+    image: joshua-addons-developer-worker:dev
+    build:
+      context: ../..
+      dockerfile: addons/developer-worker/Dockerfile
+    entrypoint: ["claude", "--version"]
+    restart: "no"
+    network_mode: none

@@ -5,6 +5,9 @@
 #
 # Secrets come only from `.env`. No secret is written in this file.
 #
+# The worker image: WORKER_IMAGE in `.env`, else the worker of
+# JOSHUA_ADDONS_VERSION. `make up-dev ADDON=developer` builds both images.
+#
 # Config: developer.yaml sits next to this file and is mounted read-only.
 # Copy the example in README.md to start.
 #
@@ -25,6 +28,12 @@ services:
   developer:
     image: ghcr.io/jakehigg/joshua-addons-developer:${JOSHUA_ADDONS_VERSION:-0.1.3}
     restart: unless-stopped
+    # `.env` also gives the manager each git token that a token_env in
+    # developer.yaml names, and GIT_CA_BUNDLE. Their names change with the
+    # config, so the list below cannot hold them.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DEVELOPER_TOKENS: ${DEVELOPER_TOKENS:-}
       ADDON_TOKEN: ${ADDON_TOKEN:-}

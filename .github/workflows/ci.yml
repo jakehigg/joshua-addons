@@ -84,10 +84,16 @@ jobs:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ env.PYTHON_VERSION }}
       - run: uv sync --frozen --all-packages
+      # The package name is the directory name with each dash as an
+      # underscore, the same rule as scripts/check_test_policy.py.
+      - id: pkg
+        run: echo "package=joshua_${MEMBER//-/_}" >> "$GITHUB_OUTPUT"
+        env:
+          MEMBER: ${{ matrix.member }}
       - name: unit tests
         run: >
           uv run --package joshua-${{ matrix.member }} pytest addons/${{ matrix.member }}/tests
-          --cov=joshua_${{ matrix.member }} --cov-report= --cov-fail-under=0
+          --cov=${{ steps.pkg.outputs.package }} --cov-report= --cov-fail-under=0
       # An addon with no integration-marked test (hello) collects zero and
       # pytest exits 5 ("no tests ran"), tolerated the same way joshua-ai's
       # core job tolerates it.
@@ -95,7 +101,7 @@ jobs:
         run: |
           rc=0
           uv run --package joshua-${{ matrix.member }} pytest addons/${{ matrix.member }}/tests -m integration \
-            --cov=joshua_${{ matrix.member }} --cov-append --cov-report= --cov-fail-under=0 || rc=$?
+            --cov=${{ steps.pkg.outputs.package }} --cov-append --cov-report= --cov-fail-under=0 || rc=$?
           if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then exit "$rc"; fi
           uv run --package joshua-${{ matrix.member }} coverage report --show-missing --fail-under=80
 

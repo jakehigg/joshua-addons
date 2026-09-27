@@ -8,6 +8,28 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`, an addon that gives a coding task to a worker. Joshua calls
+  `develop` or `rework` with a repository and a brief. The manager, image
+  `joshua-addons-developer`, starts one worker for each task, image
+  `joshua-addons-developer-worker`. The worker clones the repository, runs
+  one Claude Code session, pushes one branch, and reports. The manager scans
+  the diff for credentials and then opens the pull request on GitHub or
+  GitLab. A hit deletes the branch. A plain git host ends at the branch. The
+  worker starts as a container through a Docker socket proxy on compose, or
+  as a Job on Kubernetes. It holds no Joshua secret and no Claude token.
+  With `network: off`, the default, it connects to the manager only, so it
+  cannot install dependencies. A worker asks a question with `ask`. The
+  question arrives in the person's chat as an event, and Joshua answers with
+  `answer`. To run it, mint `JOSHUA_TOKEN_DEVELOPER` and give it to the
+  manager and to channels, add `developer` to
+  `channels.webhooks.allowed_callers`, and add the `developer` entry with one
+  `identities` entry for each person to `joshua.yaml`.
+  `addons/developer/README.md` has the steps.
+- The chart gains `extraEnv` (raw `env` entries, such as a `fieldRef`),
+  `serviceAccount`, `rbac` (a ServiceAccount, a Role, and a RoleBinding in
+  the release namespace), and `networkPolicy` (egress limits for worker pods
+  and ingress limits for the addon). All are off by default.
+
 - A push to any branch, `main` included, builds the image of every addon for
   amd64 and publishes it tagged with the commit SHA and `branch-<name>`, so
   `branch-main` always names the newest commit on `main`. To test a branch
@@ -66,6 +88,12 @@ releases, with the images and the packaged chart, are at
 
 ### Changed
 
+- `scripts/check_test_policy.py` and the CI test job change a dash in an
+  addon directory name to an underscore in the package name, so an addon
+  such as `developer-worker` gets its test policy and its coverage.
+  `scripts/check_chart_version.py` also checks that a pinned `WORKER_IMAGE`
+  tag in an addon's `values.yaml` or `docker-compose.yml` is the chart
+  version.
 - The `vinyl` database gains `master_id`, `sort_artist` and `traits` on the
   albums table, and an `overrides` table. A database from an earlier version
   gains the columns when it is opened. `master_id` is what lets the addon say

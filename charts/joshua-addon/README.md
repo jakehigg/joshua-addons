@@ -40,6 +40,7 @@ helm install hello charts/joshua-addon -f addons/hello/values.yaml
 | `ingress.annotations` | `{}` | Ingress annotations, such as a cert-manager issuer. |
 | `ingress.tls.enabled` | `false` | Terminate TLS at the Ingress. |
 | `ingress.tls.secretName` | `""` | Empty means `<host>-tls`. |
+| `podSecurityContext` | `fsGroup: 1000` | The pod security context. The `fsGroup` lets the uid 1000 addon user write to a mounted volume. `{}` removes the block. |
 | `persistence.enabled` | `false` | Give the addon its own PersistentVolumeClaim. |
 | `persistence.existingClaim` | `""` | Mount this claim instead, and make no claim. A claim that another release owns, such as the joshua-ai data volume. |
 | `persistence.size` | `1Gi` | Requested storage. |
@@ -102,7 +103,8 @@ the image that shipped with it. To test a branch, set `image.tag` to a commit
 SHA or to `branch-<name>`. Each push to a branch publishes those tags, amd64
 only. [docs/install.md](../../docs/install.md) shows the ArgoCD Application
 for a branch build. `scripts/check_chart_version.py` checks that
-the chart and the `docker-compose.yml` for every addon agree.
+the chart, the `docker-compose.yml` for every addon, and each pinned
+`WORKER_IMAGE` tag agree.
 
 ## ArgoCD
 
