@@ -5,8 +5,9 @@ calls `develop` with a repository and a brief. The addon starts one worker for
 the task. The worker changes the code on a branch and sends a report.
 
 This addon is the manager. It serves MCP to the gateway, keeps the tasks in
-SQLite, and applies the rules: the repository list, the personas, the worker
-limit, and one task at a time on one branch.
+SQLite, and applies the rules: the repository list, the git host tokens, the
+personas, the worker limit, and one task at a time on one branch. After a
+worker pushes, the manager scans the diff and opens the pull request.
 
 Two runtimes start a worker:
 
@@ -15,17 +16,17 @@ Two runtimes start a worker:
 - `stub` starts no worker. It marks the task `running` and then records a
   fake `success` report. Use it to test the tools and the rules.
 
-The worker image and the git host adapters come in later releases. Until
-then, a `docker` worker has no image to run.
+The worker image comes in a later release. Until then, a `docker` worker has
+no image to run.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
 | `develop(repo, brief, base_branch?, branch?, persona?, notify?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. |
-| `rework(repo, pr, feedback, persona?, notify?)` | Starts a task on a pull request. `pr` is a number or a URL. |
+| `rework(repo, feedback, pr?, branch?, persona?, notify?)` | Starts a task on a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. |
 | `answer(task_id, text)` | Gives a waiting task the answer to its question. |
-| `task_status(task_id)` | The status, the branch, the pull request, the cost, the summary, and the open question. |
+| `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, and the open question. |
 | `task_output(task_id)` | The full report and the session log. |
 | `list_tasks(limit?)` | The recent tasks of the person. |
 | `get_settings()` | The git name, the git email, the default persona, and the chat for reports. |
@@ -42,9 +43,16 @@ addon changes a URL to `host/owner/name` in lowercase.
 
 - A call that breaks a rule gets `status: rejected`, a `reason`, and a
   `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
-  `unknown_persona`, `concurrency_limit`, `locked`, and `not_waiting`.
+  `repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
+  `platform_error`, `unknown_persona`, `concurrency_limit`, `locked`, and
+  `not_waiting`.
 - A person can use only a repository that matches `repos` in
-  `developer.yaml`, or the person's own `repos`.
+  `developer.yaml`, or the person's own `repos`. The addon checks this
+  before it calls the git host.
+- The host of the repository must have a platform entry, and the variable
+  that the entry names must hold a token. If not, the call gets
+  `repo_not_configured` or `token_missing`. The message names the host or the
+  variable, and never a token.
 - One task at a time works on one branch of a repository, or on one pull
   request. A second call gets `locked` and the id of the first task.
 - `max_workers` sets how many tasks run at the same time.
@@ -90,6 +98,8 @@ answers only `{"ok": true}`.
 | `WORKER_NETWORK` | `developer_workers` | The Docker network of the workers. |
 | `PUBLIC_NETWORK` | `bridge` | The Docker network a worker also joins when `network: on`. |
 | `DOCKER_HOST` | empty | The Docker API address, for the `docker` runtime. Empty means the Docker SDK default. |
+| `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. The manager trusts it for the git host API. |
+| one variable for each `token_env` | empty | The git tokens. See "Git hosts". |
 | `LOG_LEVEL` | `INFO` | The log level. |
 
 A bad value stops the addon at start. The message names the variable or the
@@ -110,6 +120,9 @@ platforms:
   github.com:
     kind: github                   # github, gitlab, or git
     token_env: GITHUB_TOKEN        # the name of a variable, never the token
+  gitlab.example.net:
+    kind: gitlab
+    token_env: GITLAB_TOKEN
 repos:                             # for all people; fnmatch on host/owner/name
   - github.com/example-home/*
 people:
@@ -134,6 +147,69 @@ and write the name of the variable in `token_env`.
 A person can change `git_name`, `git_email`, `default_persona`, and `notify`
 with `set_settings`. The addon keeps the change in `developer.db`. The change
 applies before the value in `developer.yaml`.
+
+## Git hosts
+
+`platforms` in `developer.yaml` gives each git host a `kind` and a
+`token_env`. The key is the host of the repository, with the port if the
+repository address has one.
+
+| `kind` | API | Pull requests | Credential user name |
+|---|---|---|---|
+| `github` | `https://api.github.com` for `github.com`. `https://<host>/api/v3` for any other host (GitHub Enterprise). | yes | `x-access-token` |
+| `gitlab` | `https://<host>/api/v4`, for GitLab.com and a self-hosted GitLab | yes (merge requests) | `oauth2` |
+| `git` | none | no; the task ends at the pushed branch | `git` |
+
+`token_env` is the name of the environment variable that holds the token,
+never the token. A person can have an entry of their own under
+`people.<id>.platforms`. For a task, the addon uses the person's entry for
+the host first, then the instance entry. If there is neither, the addon
+refuses the task. A person's entry needs a `kind` only when the instance has
+no entry for that host.
+
+The worker gets the token and the credential user name in its brief, over
+the internal network, with its task token. The token must have access to
+the repositories in the lists, and no more.
+
+With a shared token, the commits carry the person's name and email, but the
+host shows the push and the pull request as the owner of the token. Give a
+person their own token to show them as the author on the host.
+
+### Branches
+
+`develop` without `branch` makes the branch `joshua/<slug>-<id6>`. The slug
+is the first line of the brief in kebab case, in ASCII, at most 40
+characters. `id6` is the start of the task id. `develop` with `branch` uses
+that branch. `base_branch` is `main` when the call gives none.
+
+`rework` asks the git host for the pull request. The pull request gives the
+source branch and the base branch. An unknown pull request gets
+`pr_not_found`, and a closed or merged one gets `pr_not_open`. A `git` host
+has no pull requests, so `rework` there needs `branch`.
+
+### The pull request gate
+
+A worker says in its report that it pushed its branch. The manager then:
+
+1. Reads the diff of the branch against the base branch over the API.
+2. Scans the added lines for text that looks like a credential: `sk-ant-`,
+   `glpat-`, `ghp_`, `github_pat_`, `gho_`, `xoxb-`, `xoxp-`, an AWS access
+   key, a private key block, and a long quoted value set to a name such as
+   `api_key`, `secret`, `token`, or `password`.
+3. If the scan finds one, the manager deletes the branch and fails the task.
+   The error names the pattern, the file, and the line, and never the text.
+4. If the scan is clean and the task is a `develop` that ended with
+   `success`, the manager finds the open pull request of the branch, or
+   opens one. The title is the first line of the brief. The body has the
+   summary, the changed files, the tests, the person, and the task id.
+5. For a `rework`, the push changed the pull request. The manager checks
+   that the pull request is still there.
+
+`scan` in `task_status` is `clean`, `partial` (the host sent no text for
+some files, such as a binary file), `hit`, or `unavailable` (a `git` host
+has no diff API). An error from the host fails the task and keeps the
+branch. The error has the HTTP status and the message of the host, without
+the token. The manager tries a call one more time after a 5xx reply.
 
 ## Workers
 

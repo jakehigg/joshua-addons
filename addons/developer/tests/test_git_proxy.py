@@ -156,7 +156,14 @@ def test_the_token_comes_from_basic_auth() -> None:
 
 async def test_task_target_is_the_repo_host_on_443(tmp_path) -> None:
     settings = make_settings(
-        tmp_path, config={"repos": ["github.com/example-home/*", "git.example.org:8443/*/*"]}
+        tmp_path,
+        config={
+            "repos": ["github.com/example-home/*", "git.example.org:8443/*/*"],
+            "platforms": {
+                "github.com": {"kind": "github", "token_env": "GITHUB_TOKEN"},
+                "git.example.org:8443": {"kind": "git", "token_env": "GITHUB_TOKEN"},
+            },
+        },
     )
     store = TaskStore(settings.db_path)
     manager = Manager(settings, store, LockManager())

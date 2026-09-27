@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     started_at TEXT,
     completed_at TEXT,
     worker_token TEXT,
-    session_log TEXT
+    session_log TEXT,
+    scan TEXT,
+    findings TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_person_created ON tasks(person, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -89,6 +91,8 @@ STATUS_COLUMNS = (
     "output_tokens",
     "estimated_cost",
     "notify",
+    "scan",
+    "findings",
     "created_at",
     "started_at",
     "completed_at",
@@ -113,13 +117,23 @@ ALLOWED_UPDATE_FIELDS = frozenset(
         "estimated_cost",
         "started_at",
         "completed_at",
+        "scan",
+        "findings",
     }
 )
 
 SETTINGS_FIELDS = ("git_name", "git_email", "default_persona", "notify")
 
 # Columns an older database does not have: name to type.
-ADDED_COLUMNS = {"worker_token": "TEXT", "session_log": "TEXT"}
+ADDED_COLUMNS = {
+    "worker_token": "TEXT",
+    "session_log": "TEXT",
+    "scan": "TEXT",
+    "findings": "TEXT",
+}
+
+# The columns that hold JSON.
+JSON_COLUMNS = ("report", "findings")
 
 # The session log stops at this size. More text is dropped.
 MAX_SESSION_LOG_BYTES = 1024 * 1024
@@ -145,7 +159,7 @@ def build_update_sql(task_id: str, fields: dict[str, Any]) -> tuple[str, list[An
     params: list[Any] = []
     for key, value in fields.items():
         clauses.append(f"{key} = ?")
-        if key == "report" and value is not None and not isinstance(value, str):
+        if key in JSON_COLUMNS and value is not None and not isinstance(value, str):
             value = json.dumps(value)
         params.append(value)
     params.append(task_id)
@@ -158,8 +172,9 @@ def _row(row: sqlite3.Row | None, columns: Iterable[str] | None = None) -> dict[
     data = dict(row)
     if columns is not None:
         data = {key: data[key] for key in columns}
-    if data.get("report"):
-        data["report"] = json.loads(data["report"])
+    for key in JSON_COLUMNS:
+        if data.get(key):
+            data[key] = json.loads(data[key])
     return data
 
 

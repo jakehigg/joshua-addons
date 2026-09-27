@@ -246,3 +246,13 @@ def test_the_worker_settings_come_from_the_environment(tmp_path: Path) -> None:
 def test_parse_tokens() -> None:
     assert parse_tokens("") == {}
     assert parse_tokens(" alex = t1 , mia=t2 ,") == {"alex": "t1", "mia": "t2"}
+
+
+def test_git_ca_bundle_must_be_a_file(tmp_path: Path) -> None:
+    base = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml")}
+    assert settings_from_env(base).git_ca_bundle == ""
+    bundle = tmp_path / "ca.pem"
+    bundle.write_text("fake", encoding="utf-8")
+    assert settings_from_env({**base, "GIT_CA_BUNDLE": str(bundle)}).git_ca_bundle == str(bundle)
+    with pytest.raises(ConfigError, match="GIT_CA_BUNDLE must be the path of a file"):
+        settings_from_env({**base, "GIT_CA_BUNDLE": str(tmp_path / "missing.pem")})

@@ -28,6 +28,11 @@ class Report(BaseModel):
     tests_run: list[str] = Field(default_factory=list)
     open_question: str | None = None
     branch: str | None = None
+    # True when the worker pushed the task's branch. The manager then scans
+    # the diff and opens or finds the pull request.
+    pushed: bool = False
+    # The branch the worker pushed. It must be the task's branch.
+    head: str | None = None
     commit_hash: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None

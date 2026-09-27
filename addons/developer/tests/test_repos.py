@@ -5,12 +5,14 @@ from __future__ import annotations
 import pytest
 from joshua_developer.repos import (
     RepoError,
+    brief_title,
     check_branch,
     default_branch_name,
     normalize_repo,
     parse_pr,
     repo_allowed,
     repo_host,
+    slugify,
 )
 
 
@@ -117,5 +119,29 @@ def test_a_bad_branch_is_refused_without_repeating_it(name: str) -> None:
     assert str(exc.value) == "branch is not a valid branch name"
 
 
-def test_default_branch_name() -> None:
-    assert default_branch_name("1234abcd-0000") == "joshua/dev-1234abcd"
+def test_default_branch_name_is_a_slug_of_the_first_line() -> None:
+    brief = "\n  Add a /healthz route: café & naïve résumé — ✓ fast!!\nMore text."
+    name = default_branch_name("1234abcd-0000", brief)
+    assert name == "joshua/add-a-healthz-route-cafe-naive-resume-fa-1234ab"
+    assert check_branch(name) == name
+    assert name.isascii()
+
+
+def test_default_branch_name_cuts_the_slug_to_40_characters() -> None:
+    name = default_branch_name("abcdef12-3456", "Refactor " + "the parser module " * 10)
+    slug = name.removeprefix("joshua/").removesuffix("-abcdef")
+    assert len(slug) <= 40
+    assert not slug.endswith("-")
+    assert name.startswith("joshua/refactor-the-parser-module-the-")
+
+
+def test_default_branch_name_without_ascii_text() -> None:
+    assert default_branch_name("0a1b2c3d-0000", "日本語のタスク") == "joshua/task-0a1b2c"
+    assert default_branch_name("0a1b2c3d-0000") == "joshua/task-0a1b2c"
+
+
+def test_brief_title_and_slugify() -> None:
+    assert brief_title("\n\n  Fix   the bug  \nbody") == "Fix the bug"
+    assert brief_title("x" * 100) == "x" * 72
+    assert brief_title("   \n ") == ""
+    assert slugify("--Hello, World!--") == "hello-world"

@@ -2,8 +2,13 @@
 
 The MCP tools call this class. A call that breaks a rule gets a dict with
 ``status: "rejected"``, a ``reason``, and a ``message``. The reasons are
-``invalid_arguments``, ``repo_not_allowed``, ``unknown_persona``,
-``concurrency_limit``, ``locked``, and ``not_waiting``.
+``invalid_arguments``, ``repo_not_allowed``, ``repo_not_configured``,
+``token_missing``, ``pr_not_found``, ``pr_not_open``, ``platform_error``,
+``unknown_persona``, ``concurrency_limit``, ``locked``, and ``not_waiting``.
+
+When a worker reports a push, the manager gates the pull request: it reads
+the diff over the platform API and scans it for credentials. A hit deletes
+the branch and fails the task. A clean diff gets a pull request.
 
 The manager also serves the worker side: it mints the task token of each
 task, takes a question from a worker, and wakes the worker that waits for
@@ -15,14 +20,17 @@ from __future__ import annotations
 import asyncio
 import secrets
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from joshua_developer import notify
+from joshua_developer import notify, platforms
 from joshua_developer.config import DeveloperConfig, Settings
 from joshua_developer.locks import LockedError, LockManager, LockStolenError
 from joshua_developer.log import get_logger
+from joshua_developer.platforms import Platform, PlatformConfigError, PlatformError, Resolved
 from joshua_developer.repos import (
     RepoError,
+    brief_title,
     check_branch,
     default_branch_name,
     normalize_repo,
@@ -30,6 +38,7 @@ from joshua_developer.repos import (
     repo_allowed,
 )
 from joshua_developer.runtime import Report, Runtime
+from joshua_developer.scan import Finding, scan_diff
 from joshua_developer.store import ACTIVE_STATUSES, TERMINAL_STATUSES, TaskStore, now_iso
 
 logger = get_logger("joshua_developer.manager")
@@ -39,10 +48,36 @@ RESTART_ERROR = "manager restarted"
 LOCK_MARGIN_S = 600
 MAX_TEXT = 100_000
 MAX_QUESTION = 10_000
+DEFAULT_BASE_BRANCH = "main"
+# The states of a pull request that a rework cannot change.
+CLOSED_PR_STATES = frozenset({"closed", "merged", "locked"})
 
 
 def rejected(reason: str, message: str, **extra: Any) -> dict[str, Any]:
     return {"status": "rejected", "reason": reason, "message": message, **extra}
+
+
+async def retry_5xx[T](call: Callable[[], Awaitable[T]]) -> T:
+    """Run ``call``. On a 5xx from the git host, run it one more time."""
+    try:
+        return await call()
+    except PlatformError as exc:
+        if exc.status < 500:
+            raise
+        logger.warning({"message": "git host 5xx; one more attempt", "status_code": exc.status})
+        return await call()
+
+
+def finding_error(findings: list[Finding]) -> str:
+    """The task error for a scan hit. It names no matched text."""
+    first = findings[0]
+    text = (
+        "the diff holds what looks like a credential "
+        f"({first.pattern_name} in {first.path}:{first.line_no})"
+    )
+    if len(findings) > 1:
+        text += f", and {len(findings) - 1} more finding(s)"
+    return text
 
 
 class Manager:
@@ -58,6 +93,8 @@ class Manager:
         self._answer_events: dict[str, asyncio.Event] = {}
         # The tasks whose session log is full. The drop is logged one time.
         self._log_full: set[str] = set()
+        # The tasks whose report the manager records now.
+        self._finishing: set[str] = set()
 
     @property
     def config(self) -> DeveloperConfig:
@@ -145,15 +182,18 @@ class Manager:
             return rejected("invalid_arguments", f"brief is longer than {MAX_TEXT} characters")
         task_id = str(uuid.uuid4())
         try:
-            branch_name = check_branch(branch) if branch else default_branch_name(task_id)
-            base = check_branch(base_branch) if base_branch else None
+            branch_name = check_branch(branch) if branch else default_branch_name(task_id, brief)
+            base = check_branch(base_branch) if base_branch else DEFAULT_BASE_BRANCH
         except RepoError as exc:
             return rejected("invalid_arguments", str(exc))
+        admitted = self._admit(person, repo)
+        if isinstance(admitted, dict):
+            return admitted
         return await self._dispatch(
             task_id=task_id,
             person=person,
             task_type="develop",
-            raw_repo=repo,
+            repo=admitted[0],
             scope=f"branch:{branch_name}",
             persona=persona,
             notify_to=notify_to,
@@ -166,45 +206,79 @@ class Manager:
         self,
         person: str,
         repo: str,
-        pr: int | str,
+        pr: int | str | None,
         feedback: str,
         persona: str | None = None,
         notify_to: str | None = None,
+        branch: str | None = None,
     ) -> dict[str, Any]:
+        """Start a task on the source branch of a pull request.
+
+        The platform names the source branch and the base branch. A ``git``
+        host has no pull requests, so there ``branch`` names the branch and
+        ``pr`` is not used.
+        """
         if not feedback or not feedback.strip():
             return rejected("invalid_arguments", "feedback is required")
         if len(feedback) > MAX_TEXT:
             return rejected("invalid_arguments", f"feedback is longer than {MAX_TEXT} characters")
+        number: int | None = None
+        url: str | None = None
         try:
-            number, url = parse_pr(pr)
+            if pr is not None and pr != "":
+                number, url = parse_pr(pr)
+            branch_name = check_branch(branch) if branch else None
         except RepoError as exc:
             return rejected("invalid_arguments", str(exc))
+        admitted = self._admit(person, repo)
+        if isinstance(admitted, dict):
+            return admitted
+        normalized, resolved = admitted
+        task_id = str(uuid.uuid4())
+        if resolved.kind == "git":
+            if branch_name is None:
+                return rejected(
+                    "invalid_arguments",
+                    f"the git host {resolved.host} has no pull requests; rework needs branch",
+                )
+            return await self._dispatch(
+                task_id=task_id,
+                person=person,
+                task_type="rework",
+                repo=normalized,
+                scope=f"branch:{branch_name}",
+                persona=persona,
+                notify_to=notify_to,
+                instructions=feedback,
+                branch_name=branch_name,
+            )
+        if number is None:
+            return rejected("invalid_arguments", "pr is required")
+        found = await self._resolve_pr(person, normalized, number)
+        if isinstance(found, dict):
+            return found
         return await self._dispatch(
-            task_id=str(uuid.uuid4()),
+            task_id=task_id,
             person=person,
             task_type="rework",
-            raw_repo=repo,
+            repo=normalized,
             scope=f"pr:{number}",
             persona=persona,
             notify_to=notify_to,
             instructions=feedback,
             pr_number=number,
-            pr_url=url,
+            pr_url=url or found.html_url or None,
+            branch_name=found.source_branch,
+            base_branch=found.base_branch,
         )
 
-    async def _dispatch(
-        self,
-        *,
-        task_id: str,
-        person: str,
-        task_type: str,
-        raw_repo: str,
-        scope: str,
-        persona: str | None,
-        notify_to: str | None,
-        **fields: Any,
-    ) -> dict[str, Any]:
-        """The shared flow: repository, persona, concurrency, lock, row, runtime."""
+    def _admit(self, person: str, raw_repo: str) -> tuple[str, Resolved] | dict[str, Any]:
+        """Check the repository before any network call.
+
+        Returns the normalized repository and its platform entry, or a
+        rejection: not a repository, not in the list, no platform for the
+        host, or no token.
+        """
         try:
             repo = normalize_repo(raw_repo)
         except RepoError as exc:
@@ -215,6 +289,64 @@ class Manager:
                 "repo_not_allowed",
                 f"the repository {repo} is not in the list of repositories for {person}",
             )
+        try:
+            resolved = platforms.resolve(self.config, person, repo)
+        except PlatformConfigError as exc:
+            logger.warning(
+                {"message": "refused a repository with no usable platform", "reason": exc.reason}
+            )
+            return rejected(exc.reason, str(exc))
+        return repo, resolved
+
+    async def _resolve_pr(
+        self, person: str, repo: str, number: int
+    ) -> platforms.PullRequest | dict[str, Any]:
+        """The pull request ``number`` of ``repo``, or a rejection."""
+        try:
+            platform, _ = platforms.for_task(self.settings, self.config, person, repo)
+        except PlatformConfigError as exc:  # pragma: no cover - _admit checked it
+            return rejected(exc.reason, str(exc))
+        try:
+            found = await retry_5xx(lambda: platform.pr(repo, number))
+        except PlatformError as exc:
+            if exc.status == 404:
+                return rejected("pr_not_found", f"the pull request {number} is not in {repo}")
+            return rejected(
+                "platform_error", f"the git host refused the pull request lookup: {exc}"
+            )
+        finally:
+            await platform.aclose()
+        if (found.state or "").lower() in CLOSED_PR_STATES:
+            return rejected(
+                "pr_not_open",
+                f"the pull request {number} is {found.state}; rework needs an open one",
+            )
+        try:
+            check_branch(found.source_branch or "")
+            if found.base_branch:
+                check_branch(found.base_branch)
+        except RepoError:
+            return rejected(
+                "platform_error", f"the pull request {number} has a branch name the addon refuses"
+            )
+        return found
+
+    async def _dispatch(
+        self,
+        *,
+        task_id: str,
+        person: str,
+        task_type: str,
+        repo: str,
+        scope: str,
+        persona: str | None,
+        notify_to: str | None,
+        **fields: Any,
+    ) -> dict[str, Any]:
+        """The shared flow: persona, concurrency, lock, row, runtime.
+
+        ``_admit`` has checked the repository.
+        """
         chosen = self.resolve_persona(person, persona)
         if chosen is None:
             return rejected(
@@ -340,44 +472,182 @@ class Manager:
     async def record_report(self, task_id: str, report: Report) -> dict[str, Any] | None:
         """Record the report of a task, release its lock, and send the report on.
 
-        A report for a task that already ended is ignored. Returns the task
-        row, or None when the task is not known.
+        When the report says the worker pushed, the manager first gates the
+        push (``_after_push``). A report for a task that already ended is
+        ignored. Returns the task row, or None when the task is not known.
         """
-        task = self.store.get_task(task_id)
+        task = self.store.get_task_full(task_id)
         if task is None:
             return None
-        if task["status"] in TERMINAL_STATUSES:
+        if task["status"] in TERMINAL_STATUSES or task_id in self._finishing:
             logger.warning({"message": "report for an ended task ignored", "task_id": task_id})
-            return task
-        fields: dict[str, Any] = {
-            "status": report.status,
-            "summary": report.summary,
-            "report": report.model_dump(),
-            "error": report.error,
-            "open_question": report.open_question,
-            "commit_hash": report.commit_hash,
-            "input_tokens": report.input_tokens,
-            "output_tokens": report.output_tokens,
-            "estimated_cost": report.estimated_cost,
-            "completed_at": now_iso(),
-        }
-        if report.branch:
-            fields["branch_name"] = report.branch
-        if report.pr_url:
-            fields["pr_url"] = report.pr_url
-        if report.pr_number is not None:
-            fields["pr_number"] = report.pr_number
-        self.store.update_task(task_id, **fields)
+            return self.store.get_task(task_id)
+        self._finishing.add(task_id)
+        try:
+            fields: dict[str, Any] = {
+                "status": report.status,
+                "summary": report.summary,
+                "report": report.model_dump(),
+                "error": report.error,
+                "open_question": report.open_question,
+                "commit_hash": report.commit_hash,
+                "input_tokens": report.input_tokens,
+                "output_tokens": report.output_tokens,
+                "estimated_cost": report.estimated_cost,
+            }
+            if report.pr_url:
+                fields["pr_url"] = report.pr_url
+            if report.pr_number is not None:
+                fields["pr_number"] = report.pr_number
+            if report.pushed:
+                fields.update(await self._after_push(task, report))
+            elif report.branch:
+                fields["branch_name"] = report.branch
+            fields["completed_at"] = now_iso()
+            self.store.update_task(task_id, **fields)
+        finally:
+            self._finishing.discard(task_id)
         self._release(task["repo"], task["scope"], task_id)
         event = self._answer_events.pop(task_id, None)
         if event is not None:
             event.set()
         self._log_full.discard(task_id)
-        logger.info({"message": "task ended", "task_id": task_id, "status": report.status})
+        logger.info({"message": "task ended", "task_id": task_id, "status": fields["status"]})
         full = self.store.get_task_full(task_id)
         assert full is not None
         await notify.send_report(self.settings, full, self._default_notify(full))
         return self.store.get_task(task_id)
+
+    async def _after_push(self, task: dict[str, Any], report: Report) -> dict[str, Any]:
+        """Gate a pushed branch. Returns the task fields to change.
+
+        1. Read the diff of the branch against its base, and scan it. A hit
+           deletes the branch and fails the task. A ``git`` host has no diff
+           API, so the scan is ``unavailable``.
+        2. On a successful ``develop``, find the open pull request of the
+           branch, or open one. On a ``rework``, check that the pull request
+           is still there.
+
+        A ``PlatformError`` fails the task and keeps the branch. A 5xx gets
+        one more attempt.
+        """
+        task_id = task["task_id"]
+        repo = task["repo"]
+        head = task["branch_name"]
+        if not head or (report.head and report.head != head):
+            logger.warning({"message": "worker pushed another branch", "task_id": task_id})
+            return {
+                "status": "failed",
+                "error": f"the worker reported a push to a branch that is not {head}",
+            }
+        base = task["base_branch"] or DEFAULT_BASE_BRANCH
+        try:
+            platform, _ = platforms.for_task(self.settings, self.config, task["person"], repo)
+        except PlatformConfigError as exc:
+            return {"status": "failed", "error": str(exc)}
+        out: dict[str, Any] = {}
+        step = "the diff"
+        try:
+            if platform.kind == "git":
+                diff = None
+            else:
+                diff = await retry_5xx(lambda: platform.compare(repo, base, head))
+            if diff is None or diff.unavailable:
+                out["scan"] = "unavailable"
+            else:
+                findings = scan_diff(diff)
+                if findings:
+                    return await self._reject_push(platform, task, findings)
+                out["scan"] = "partial" if diff.unscanned else "clean"
+            if report.status != "success" or platform.kind == "git":
+                return out
+            if task["task_type"] == "develop":
+                step = "the pull request"
+
+                async def find_or_open() -> platforms.PullRequest:
+                    # A second attempt finds the pull request that a first
+                    # attempt opened, so a retry never opens two.
+                    found = await platform.find_pr(repo, head)
+                    if found is None:
+                        found = await platform.open_pr(
+                            repo, head, base, self._pr_title(task), self._pr_body(task, report)
+                        )
+                        logger.info({"message": "pull request opened", "task_id": task_id})
+                    return found
+
+                found = await retry_5xx(find_or_open)
+                out["pr_url"] = found.html_url or found.url
+                out["pr_number"] = found.number
+            else:
+                step = "the pull request"
+                number = int(task["pr_number"])
+                try:
+                    await retry_5xx(lambda: platform.pr(repo, number))
+                except PlatformError as exc:
+                    if exc.status != 404:
+                        raise
+                    return {
+                        **out,
+                        "status": "failed",
+                        "error": f"the pull request {number} is gone; the branch {head} stays",
+                    }
+            return out
+        except PlatformError as exc:
+            logger.warning(
+                {
+                    "message": "git host refused a call",
+                    "task_id": task_id,
+                    "status_code": exc.status,
+                }
+            )
+            return {
+                **out,
+                "status": "failed",
+                "error": (
+                    f"the git host refused the call for {step} ({exc}); the branch {head} stays"
+                ),
+            }
+        finally:
+            await platform.aclose()
+
+    async def _reject_push(
+        self, platform: Platform, task: dict[str, Any], findings: list[Finding]
+    ) -> dict[str, Any]:
+        """Delete the branch of a push that the scan stopped, and fail the task."""
+        logger.warning(
+            {
+                "message": "scan found a credential; the branch is deleted",
+                "task_id": task["task_id"],
+                "findings": len(findings),
+            }
+        )
+        error = finding_error(findings)
+        try:
+            await retry_5xx(lambda: platform.delete_branch(task["repo"], task["branch_name"]))
+        except PlatformError as exc:
+            error += f". The branch was not deleted ({exc}); delete it by hand"
+        return {
+            "status": "failed",
+            "error": error,
+            "scan": "hit",
+            "findings": [finding.to_dict() for finding in findings],
+            "pr_url": None,
+            "pr_number": None,
+        }
+
+    def _pr_title(self, task: dict[str, Any]) -> str:
+        return brief_title(task["brief"]) or f"Developer task {task['task_id']}"
+
+    def _pr_body(self, task: dict[str, Any], report: Report) -> str:
+        person = self.effective_settings(task["person"])
+        name = person["git_name"] or task["person"]
+        parts = [report.summary.strip() or "No summary."]
+        if report.files_changed:
+            parts.append("Files changed:\n" + "\n".join(f"- {f}" for f in report.files_changed))
+        if report.tests_run:
+            parts.append("Tests run:\n" + "\n".join(f"- {t}" for t in report.tests_run))
+        parts.append(f"Written by the Joshua developer for {name}. Task {task['task_id']}.")
+        return "\n\n".join(parts)
 
     # --- answer ------------------------------------------------------------
 

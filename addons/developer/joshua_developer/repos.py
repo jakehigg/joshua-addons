@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+import unicodedata
 from collections.abc import Iterable
 from urllib.parse import urlsplit
 
@@ -100,6 +101,27 @@ def check_branch(name: str) -> str:
     return text
 
 
-def default_branch_name(task_id: str) -> str:
-    """The branch a ``develop`` task gets when the caller names none."""
-    return f"joshua/dev-{task_id[:8]}"
+def brief_title(brief: str, limit: int = 72) -> str:
+    """The first line of ``brief`` that has text, cut to ``limit`` characters."""
+    for line in (brief or "").splitlines():
+        text = " ".join(line.split())
+        if text:
+            return text[:limit].rstrip()
+    return ""
+
+
+def slugify(text: str, limit: int = 40) -> str:
+    """``text`` in kebab case, ASCII only, at most ``limit`` characters."""
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
+    return slug[:limit].rstrip("-")
+
+
+def default_branch_name(task_id: str, brief: str = "") -> str:
+    """The branch a ``develop`` task gets when the caller names none.
+
+    ``joshua/<slug>-<id6>``: the slug is the first line of the brief in kebab
+    case, and ``id6`` is the start of the task id.
+    """
+    slug = slugify(brief_title(brief, limit=200)) or "task"
+    return f"joshua/{slug}-{task_id.replace('-', '')[:6]}"

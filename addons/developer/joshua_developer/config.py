@@ -271,6 +271,8 @@ class Settings:
     public_network: str = DEFAULT_PUBLIC_NETWORK
     # The Docker API address. Empty means the SDK default.
     docker_host: str = ""
+    # A CA bundle to trust for the git host API. Empty means the system CAs.
+    git_ca_bundle: str = ""
 
     @property
     def open(self) -> bool:
@@ -353,6 +355,10 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if not _HOSTNAME_RE.match(manager_host):
         raise ConfigError("MANAGER_HOST must be a host name, such as developer")
 
+    git_ca_bundle = env.get("GIT_CA_BUNDLE", "").strip()
+    if git_ca_bundle and not Path(git_ca_bundle).is_file():
+        raise ConfigError("GIT_CA_BUNDLE must be the path of a file")
+
     return Settings(
         config=config,
         data_dir=Path(env.get("DEVELOPER_DATA_DIR", "").strip() or DEFAULT_DATA_DIR),
@@ -366,4 +372,5 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         worker_network=env.get("WORKER_NETWORK", "").strip() or DEFAULT_WORKER_NETWORK,
         public_network=env.get("PUBLIC_NETWORK", "").strip() or DEFAULT_PUBLIC_NETWORK,
         docker_host=env.get("DOCKER_HOST", "").strip(),
+        git_ca_bundle=git_ca_bundle,
     )

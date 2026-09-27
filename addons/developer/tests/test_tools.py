@@ -45,7 +45,8 @@ async def test_develop_runs_a_task_to_its_report(app) -> None:
     assert status["repo"] == REPO
     assert status["status"] == "success"
     assert status["person"] == "alex"
-    assert status["branch_name"] == f"joshua/dev-{started['task_id'][:8]}"
+    assert status["branch_name"] == f"joshua/add-a-health-check-{started['task_id'][:6]}"
+    assert status["base_branch"] == "main"
     assert status["scope"] == f"branch:{status['branch_name']}"
     assert status["notify"] == "telegram:dm:alex"
     assert status["started_at"] and status["completed_at"]

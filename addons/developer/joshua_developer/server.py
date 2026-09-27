@@ -120,13 +120,14 @@ async def develop(
 
     repo is a URL or host/owner/name, such as github.com/owner/name. brief is
     all the context the worker gets: the goal, the acceptance criteria, the
-    links, and what you read in the issue. branch is the branch to work on;
-    without it the task gets a new branch. base_branch is the branch to start
-    from; without it, the default branch. persona is a name from
+    links, and what you read in the issue. Its first line is the pull request
+    title. branch is the branch to work on; without it the task gets a new
+    branch, joshua/<first line in kebab case>-<id>. base_branch is the branch
+    to start from and the pull request target; without it, main. persona is a name from
     list_personas. notify is the chat that gets the report; without it, the
     person's setting. A call is rejected when the repository is not in the
-    person's list, when too many tasks run, or when another task works on the
-    same branch.
+    person's list, when its git host has no platform or no token, when too
+    many tasks run, or when another task works on the same branch.
     """
     person = _person(ctx)
     return await _get_manager().develop(
@@ -143,21 +144,23 @@ async def develop(
 @mcp.tool()
 async def rework(
     repo: str,
-    pr: int | str,
     feedback: str,
     ctx: Context,
+    pr: int | str | None = None,
+    branch: str | None = None,
     persona: str | None = None,
     notify: str | None = None,
 ) -> dict:
     """Start a task that applies review feedback to a pull request, on its source branch.
 
-    pr is the pull request number or its URL. feedback is the change the
-    review asks for. The other arguments are the same as for develop. One
-    task at a time works on one pull request.
+    pr is the pull request number or its URL. The git host names the source
+    branch. feedback is the change the review asks for. A plain git host has
+    no pull requests: give branch there, and not pr. The other arguments are
+    the same as for develop. One task at a time works on one pull request.
     """
     person = _person(ctx)
     return await _get_manager().rework(
-        person, repo, pr, feedback, persona=persona, notify_to=notify
+        person, repo, pr, feedback, persona=persona, notify_to=notify, branch=branch
     )
 
 
@@ -179,7 +182,8 @@ async def task_status(task_id: str, ctx: Context) -> dict:
 
     status is dispatched, running, success, failed, blocked, or timed_out.
     The result also has the branch, the pull request URL, the cost, the
-    summary, the error, and the open question.
+    summary, the error, the open question, and the scan result: clean,
+    partial, hit, or unavailable.
     """
     return _own_task(_caller(ctx), task_id)
 

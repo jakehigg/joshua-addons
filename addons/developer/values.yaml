@@ -11,6 +11,9 @@ persistence:
   size: 1Gi
 
 # existingSecret: joshua-developer # keys: DEVELOPER_TOKENS, ADDON_TOKEN, JOSHUA_TOKEN_DEVELOPER, CLAUDE_CODE_OAUTH_TOKEN, GITHUB_TOKEN
+# The git token keys are the names that token_env gives in developer.yaml:
+# one for each platform (such as GITHUB_TOKEN or GITLAB_TOKEN), and one for
+# each people.<id>.platforms entry (such as GITHUB_TOKEN_ALEX).
 
 configFile:
   enabled: true
@@ -40,3 +43,6 @@ env:
   # Where a task report goes. Set the channels Service address, and put
   # JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   # CHANNELS_URL: http://joshua-channels.<namespace>.svc.cluster.local:8000
+  # A CA bundle for a git host with a private certificate authority. Mount
+  # the file, and give its path.
+  # GIT_CA_BUNDLE: /etc/ssl/certs/git-host-ca.pem

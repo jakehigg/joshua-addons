@@ -9,7 +9,9 @@ every route, so the token is of no use after the report.
 
 Routes:
 
-- ``GET /worker/brief``: what the worker needs to do the task.
+- ``GET /worker/brief``: what the worker needs to do the task, with the git
+  token, its user name for git, and the platform kind. 503 when the token
+  variable is not set.
 - ``POST /worker/running``: the worker started.
 - ``POST /worker/report``: the report (``runtime.Report``). The task ends.
 - ``POST /worker/ask`` ``{"question"}``: send a question to the person's chat.
@@ -46,8 +48,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from joshua_developer import platforms
 from joshua_developer.log import get_logger
 from joshua_developer.manager import MAX_QUESTION, Manager
+from joshua_developer.platforms import PlatformConfigError
 from joshua_developer.runtime import Report
 from joshua_developer.store import TERMINAL_STATUSES
 
@@ -99,7 +103,13 @@ def repo_url(repo: str) -> str:
 
 
 def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
-    """The brief of a task (the full row) for its worker."""
+    """The brief of a task (the full row) for its worker.
+
+    It holds the git token of the task's host. The brief goes only to the
+    worker that holds the task token, over the internal network. Raises
+    PlatformConfigError when the token is gone.
+    """
+    resolved = platforms.resolve(manager.config, task["person"], task["repo"])
     persona_name = task["persona"]
     persona = manager.config.personas.get(persona_name)
     if persona is None:
@@ -116,8 +126,9 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "base_branch": task["base_branch"],
         "persona": {"name": persona_name, **persona.model_dump()},
         "git": {"name": person["git_name"], "email": person["git_email"]},
-        # TODO(P3.3): the git token. P3.3 decides how the worker gets it.
-        "git_token": None,
+        "git_token": resolved.token,
+        "git_username": resolved.credential_username,
+        "platform_kind": resolved.kind,
         "brief": task["brief"],
         "feedback": task["instructions"],
         "answer": task["answer"],
@@ -182,8 +193,16 @@ def build_worker_app(
         found = authorize(request)
         if isinstance(found, Response):
             return found
-        _, task = found
-        return JSONResponse(build_brief(manager, task))
+        task_id, task = found
+        try:
+            body = build_brief(manager, task)
+        except PlatformConfigError as exc:
+            logger.warning(
+                {"message": "brief refused: no git token", "task_id": task_id, "reason": exc.reason}
+            )
+            return _error(503, exc.reason)
+        logger.debug({"message": "brief served", "task_id": task_id})
+        return JSONResponse(body)
 
     async def running(request: Request) -> Response:
         found = authorize(request)
