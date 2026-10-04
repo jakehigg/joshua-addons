@@ -52,6 +52,7 @@ from joshua_pantry.products import (
 )
 from joshua_pantry.purchases import upsert_purchase
 from joshua_pantry.resolution import (
+    find_possible_matches,
     get_aliases_by_item,
     normalize,
     resolve_item,
@@ -164,6 +165,26 @@ async def record_purchase(
     same item twice on the same date merges into one purchase record; a
     later call can still fill in a SKU or UPC the first call left out.
 
+    The automatic match is careful on purpose, so a new item can be a
+    duplicate of a tracked item under another name. For each new item, the
+    line's possible_matches lists up to three tracked items that share a
+    significant word with it. The top-level possible_matches holds the same
+    lists, for each new item that has one. Resolve each new item that has
+    possible matches before you finish:
+
+    - Merge: the same food under another name. Call
+      merge_items(source=<new item>, target=<tracked item>). The purchase
+      moves to the tracked item, and the receipt name becomes its alias,
+      so the next receipt matches on its own.
+    - Alias: add_alias refuses a name that is already an item, so it
+      cannot fix the new item itself. Use merge_items for that. Use
+      add_alias only for another wording of the same food that is not an
+      item yet.
+    - Keep: a different food ("almond milk" is not "milk"). Keep the new
+      item. Tell the person that you added it, and name the possible match.
+
+    When you are not sure, ask the person.
+
     A line with a upc, or a sku and a store, finds or creates that exact
     product on the item (see resolve_product): a second sighting stamps it
     seen again, and description/size/unit fill in only what is still blank.
@@ -186,6 +207,8 @@ async def record_purchase(
 
     lines: list[dict[str, Any]] = []
     created_items: list[str] = []
+    created_ids: set[int] = set()
+    possible_by_item: dict[str, list[dict[str, Any]]] = {}
     touched: set[int] = set()
 
     async with _session_factory()() as session:
@@ -196,7 +219,11 @@ async def record_purchase(
 
             match = await resolve_item(session, name)
             item_created = False
+            possible: list[dict[str, Any]] = []
             if match is None:
+                # Compare with the items that were tracked before this
+                # receipt, not with other new lines of the same receipt.
+                possible = await find_possible_matches(session, name, exclude_ids=created_ids)
                 display = name.lower()
                 match = Item(
                     name=display,
@@ -208,6 +235,9 @@ async def record_purchase(
                 session.add(match)
                 await session.flush()
                 created_items.append(match.name.title())
+                created_ids.add(match.id)
+                if possible:
+                    possible_by_item[match.name.title()] = possible
                 item_created = True
             else:
                 match.is_tracked = True
@@ -255,6 +285,7 @@ async def record_purchase(
                     "store": rec.store,
                     "purchased_at": rec.purchased_at.isoformat(),
                     "product": product_dict(product),
+                    "possible_matches": possible,
                 }
             )
             touched.add(match.id)
@@ -268,6 +299,7 @@ async def record_purchase(
         "purchased_at": when.date().isoformat(),
         "items": lines,
         "created_items": created_items,
+        "possible_matches": possible_by_item,
     }
 
 
