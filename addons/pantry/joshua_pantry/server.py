@@ -32,6 +32,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from joshua_pantry import inventory as inv_service
+from joshua_pantry import merge as merge_service
 from joshua_pantry.database import build_engine, build_sessionmaker
 from joshua_pantry.log import get_logger
 from joshua_pantry.migrations import run_migrations
@@ -943,7 +944,8 @@ async def add_alias(item_name: str, alias: str) -> dict[str, Any]:
     Use this when a receipt says one thing but the pantry tracks it under
     another name — e.g. a receipt says "Trail Mix Bars" but the pantry
     tracks "Granola Bars". Do not alias genuinely different products:
-    almond milk is not milk. When unsure, ask instead of aliasing.
+    almond milk is not milk. When unsure, ask instead of aliasing. When the
+    alias is already the name of a tracked item, use merge_items instead.
 
     Args:
         item_name: The existing pantry item the alias refers to (alias and
@@ -973,7 +975,9 @@ async def add_alias(item_name: str, alias: str) -> dict[str, Any]:
         if existing_item is not None:
             raise ToolError(
                 f"'{alias}' is already a tracked item "
-                f"('{existing_item.name.title()}'), not an alias."
+                f"('{existing_item.name.title()}'), not an alias. If the two items are the "
+                f"same food, use merge_items(source='{existing_item.name}', "
+                f"target='{target.name}') to combine them."
             )
 
         existing_alias = (
@@ -997,6 +1001,58 @@ async def add_alias(item_name: str, alias: str) -> dict[str, Any]:
         await session.commit()
 
     return {"item": target.name.title(), "alias": display, "already_aliased": False}
+
+
+@mcp.tool()
+async def merge_items(source: str, target: str) -> dict[str, Any]:
+    """Combine two tracked items that are the same food into one item.
+
+    Use this when the pantry tracks one food under two names, for example
+    after a receipt created a duplicate item. Do not use it for different
+    products: almond milk is not milk. When unsure, ask the person first.
+
+    The source item goes away. Its purchases, consumption events, products,
+    and aliases move to the target, and its name becomes an alias of the
+    target. When both items have a purchase on one date, the target's
+    purchase stays and takes each blank field (cost, store, sku, upc,
+    quantity) from the source's purchase. purchase_conflicts lists each
+    field that both purchases held with different values. The target keeps
+    its own value there. Tell the person about each conflict.
+
+    Do not copy purchases by hand with record_purchase and delete_item.
+    That loses data.
+
+    Args:
+        source: The item to merge away (alias and fuzzy matched).
+        target: The item to keep (alias and fuzzy matched).
+    """
+    async with _session_factory()() as session:
+        source_item = await resolve_item(session, source)
+        if source_item is None:
+            raise ToolError(f"Item '{source}' not found.")
+        target_item = await resolve_item(session, target)
+        if target_item is None:
+            raise ToolError(f"Item '{target}' not found.")
+        if source_item.id == target_item.id:
+            raise ToolError(
+                f"'{source}' and '{target}' are the same item "
+                f"('{target_item.name.title()}'). Nothing to merge."
+            )
+
+        source_name = source_item.name.title()
+        result = await merge_service.merge_items(session, source_item, target_item)
+
+    aliases_added = [a.title() for a in result["aliases_moved"]]
+    if result["alias_added"]:
+        aliases_added.insert(0, result["alias_added"].title())
+    return {
+        "source": source_name,
+        "target": result["target_name"].title(),
+        "moved_purchases": result["moved_purchases"],
+        "combined_purchases": result["combined_purchases"],
+        "purchase_conflicts": result["purchase_conflicts"],
+        "aliases_added": aliases_added,
+    }
 
 
 @mcp.tool()

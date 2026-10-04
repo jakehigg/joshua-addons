@@ -15,7 +15,7 @@ first call left out.
 
 Everything else reads that state back (`get_inventory`, `get_item_history`,
 `get_price_stats`, `resolve_product`) or makes a small manual correction to
-it (`add_alias`, `set_preferred_product`, `delete_purchase`). Use
+it (`add_alias`, `merge_items`, `set_preferred_product`, `delete_purchase`). Use
 `consume_items` when something runs out between shopping trips, so
 depletion estimates stay honest. For a first-time load from another system,
 use `import_data` (see "Bulk import" below) instead of replaying old
@@ -39,6 +39,7 @@ receipts through `record_purchase`.
 | `delete_purchase` | Delete a single purchase record without removing the item. |
 | `delete_item` | Permanently delete a tracked item and all its history. Needs `confirm=true`. |
 | `add_alias` | Teach the pantry that one name refers to an existing item. |
+| `merge_items` | Combine two tracked items that are the same food. The source becomes an alias of the target. |
 | `list_aliases` | List alternate names on file for one item, or for every item. |
 | `import_data` | Load pantry history in bulk: items, purchases, and consumption events. |
 

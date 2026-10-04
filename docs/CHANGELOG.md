@@ -64,6 +64,13 @@ releases, with the images and the packaged chart, are at
   shelf is right with no sync.
 - A record added, removed, lent or corrected is on the browse page at once.
 
+- `pantry` gains `merge_items(source, target)`. It combines two tracked
+  items that are the same food, for example a duplicate from a receipt. The
+  purchases, consumption events, products, and aliases of the source move to
+  the target. The source name becomes an alias of the target.
+- `add_alias` now tells the agent to use `merge_items` when the alias is
+  already a tracked item.
+
 ### Changed
 
 - The `vinyl` database gains `master_id`, `sort_artist` and `traits` on the
@@ -81,6 +88,13 @@ releases, with the images and the packaged chart, are at
   or later, wins. A consumption on a later date still makes the item out of
   stock. `get_item_history` also reads the latest consumption, so its status
   agrees with `get_inventory` and the web page.
+- `pantry`: a merge keeps the data of two purchases on the same date. The
+  purchase of the target takes each blank field (cost, store, SKU, UPC,
+  quantity) from the purchase of the source. When the two purchases hold
+  different values for one field, the target keeps its value. `merge_items`
+  reports the other value in `purchase_conflicts`.
+- `pantry`: a merge moves the products of the source to the target. Before,
+  the merge deleted them. These two fixes apply to the web page too.
 
 ## 0.1.3 - 2026-09-11
 
