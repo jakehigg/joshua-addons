@@ -28,18 +28,23 @@ directory has no compose file and no `values.yaml`.
    answer. When the manager says nobody gets the question, `ask` returns at
    once and tells the model to set `blocked`. The session never gets WebSearch or WebFetch.
 5. The session has the persona timeout minus 90 seconds of work. The clock
-   pauses while `ask` waits for an answer. `ask_wait_s`, a value from the
-   brief, is the total waiting time for the task: each wait stops when the
-   waits of the task reach it. The worker then tells the manager that it
-   stopped the wait, and `ask` tells the model that no answer came. When no
-   wait time is left, `ask` sends no question and returns that reply at
-   once. When
-   the clock runs out, the worker interrupts the session. Then the worker
+   pauses while `ask` waits for an answer. The model can ask more than one
+   question. `ask_wait_s`, a value from the brief, is the total waiting time
+   for the task: each wait stops when the waits of the task reach it. The
+   worker then tells the manager that it stopped the wait, and `ask` tells
+   the model that no answer came. When no wait time is left, `ask` sends no
+   question and returns a reply that says so at once. When the clock runs
+   out, the worker interrupts the session. Then the worker
    pushes the branch when the model made new commits, and sends the
    report. The worker never makes a commit of its own: a file the model left
    uncommitted is named in the report and is not pushed, because a commit the
    worker made could carry a file the model never meant to publish. The push
    runs no git hook of the checkout.
+
+The report status is `success` when the session ends with no `blocked` in
+its result, and `blocked` when the model sets `blocked`. When the clock runs
+out, the status is `blocked` if a question is still open, else
+`timed_out`. A session error or a failed push makes it `failed`.
 
 The worker exits 0 when the manager accepted the report, or when the task
 had already ended. It exits 1 only when it could not send the report.
@@ -90,17 +95,23 @@ The worker gives the Claude CLI this environment:
 The SDK (claude-agent-sdk 0.2.144) starts the CLI that it bundles, 2.1.239,
 before it looks on `PATH`. The image also installs
 `@anthropic-ai/claude-code@2.1.201`, the pin of joshua-ai core. The SDK uses
-that CLI only when the bundled CLI is missing.
+that CLI only when the bundled CLI is missing. Node stays in the image for
+that CLI, and because the model runs the formatter and the tests of a
+JavaScript project with Bash.
 
-## What is not verified
+## What is verified, and what is not
 
-- The four `DISABLE_*` names occur in the bundled CLI binary. The tests did
-  not run the CLI, so it is not verified that the CLI makes no other call
-  with them set. With `network: off`, a call of the CLI to a host that is
-  not `ANTHROPIC_BASE_URL` fails. The first live run must show that the
-  session works with this limit.
-- The Claude forwarder with a subscription token. The tests use a fake
-  manager. `addons/developer/scripts/prove_forwarder.sh` is the proof.
+A live run on Kubernetes (2026-10-04) verified the Claude forwarder with a
+subscription token, and an `ask` that Joshua answered.
+
+These are not verified:
+
+- The arm64 image. The release workflow builds it, but no task ran on it.
+- A worker that the Docker runtime starts on a real Docker daemon.
+- `network: on`. The four `DISABLE_*` names occur in the bundled CLI
+  binary. With `network: off`, a call of the CLI to a host that is not
+  `ANTHROPIC_BASE_URL` fails. With `network: on`, these switches are the
+  only guard, and it is not verified that the CLI makes no other call.
 
 ## Tests
 

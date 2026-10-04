@@ -15,7 +15,8 @@ pushes one branch, sends one report, and stops.
   plain git host, on a new branch or on the branch of an open pull request.
 - Open the pull request (GitHub) or the merge request (GitLab) after a clean
   credential scan.
-- Ask Joshua one question in the middle of a task, and wait for the answer.
+- Ask Joshua questions in the middle of a task, and wait for the answers,
+  for up to `ask_wait_s` in total (see "The task clock").
 - Run the tests of the project, when the tests need no download (see "The
   network setting").
 
@@ -46,9 +47,9 @@ A worker that needs a fact calls `ask`. The manager sends the question to the
 person's chat as an event, and Joshua answers with `answer`, from what it
 knows or after it asks the person. When the task and the person have no
 `notify` chat, or the event does not go through, the manager keeps the
-question in `open_question` but nobody gets it. The worker then does not
-wait: it does the work that does not need the answer, and stops `blocked`
-with the question.
+question in `open_question` but nobody gets it. `ask` then returns at once
+and tells the model to do the work that does not need the answer, and to
+set `blocked` with the question.
 
 The status of a task is `dispatched`, `running`, `success`, `failed`,
 `blocked`, or `timed_out`. A task is `dispatched` until its worker reads its
@@ -59,7 +60,7 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
 `repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
 `platform_error`, `unknown_persona`, `concurrency_limit`, `locked`,
-`not_waiting`, and `not_resumable`. The rules:
+`not_waiting`, `not_resumable`, and `branch_is_base`. The rules:
 
 - One task at a time works on one branch of a repository. A `rework` works
   on the source branch of its pull request, so a `develop` and a `rework` on
@@ -72,8 +73,8 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - A person sees only their own tasks.
 - `answer` on a `running` task works only when the worker waits for the
   answer to its open question. When the worker stopped the wait, or the
-  question was not sent, `answer` gets `not_waiting`. The task then ends
-  `blocked` or `success`, and an `answer` after that resumes it.
+  question was not sent, `answer` gets `not_waiting`. When the task then
+  ends `blocked` or `timed_out` after a push, an `answer` resumes it.
 - `answer` on a `blocked` or `timed_out` task resumes it, when a worker of
   the task pushed the branch. The task keeps its id, and a new worker gets
   the answer and the summary of the last worker. `max_workers` and the lock
@@ -96,15 +97,17 @@ is the total time that a task can wait for answers, over all its questions.
 - When the task has used its `ask_wait_s` with no answer, the worker stops
   the wait, and the clock starts again. The model gets a reply that says no
   answer came, and the question stays open. A later question in the same
-  task gets that reply at once and is not sent. The task then ends
-  `blocked` with the question, and a later `answer` resumes it when the
-  worker pushed.
+  task gets that reply at once and is not sent.
+- The task ends `blocked` only when the model sets `blocked` in its result,
+  or when the clock runs out while a question is open. A later `answer`
+  resumes a `blocked` task when a worker of the task pushed the branch.
 - `task_status` shows `started_at`, `waiting_since` (the start of the open
   wait), and `paused_s` (the seconds of the waits that ended).
 
-The manager stops a worker 120 seconds after the persona timeout plus the
-paused time, and at most `timeout_s + ask_wait_s + 120` seconds after
-`started_at`. A worker that has not read its brief `WORKER_START_GRACE_S`
+On Docker and on Kubernetes, the manager stops a worker 120 seconds after
+the persona timeout plus the paused time. The hard cap is
+`timeout_s + ask_wait_s + 120` seconds after `started_at`, and no wait
+moves it. A worker that has not read its brief `WORKER_START_GRACE_S`
 seconds (600 by default) after its start is stopped, and its task fails
 with an error that names the image pull. On Kubernetes, the Job's
 `activeDeadlineSeconds` is `timeout_s + ask_wait_s + 120 +
@@ -135,7 +138,8 @@ hostile, and these rules limit what it can read and where its data can go:
    Claude requests to a forwarder on the manager, with the task token as a
    fake Claude token. The manager puts the real token on each request. The
    forwarder sends on only the API paths that the Claude CLI uses
-   (`v1/messages`, `v1/messages/count_tokens`, `v1/models`), and refuses
+   (`v1/messages`, `v1/messages/count_tokens`, `v1/models`, and
+   `v1/models/<model id>`), and refuses
    other paths with 403. It answers the CLI probe `api/hello` itself.
 3. **By default, a worker reaches the manager and nothing else.** The
    manager forwards two destinations for it: the Claude API, and the git host
@@ -170,6 +174,10 @@ can also send that content to any address.
 `network: off`, a worker cannot install dependencies, so it cannot run most
 test suites. With `network: on`, a worker can connect to the internet, so
 dependency installs work, and a bad repository can send its content anywhere.
+On Docker Compose, `network: on` also puts each worker on the default
+bridge, so it can reach the host LAN and every port that the host
+publishes. On Kubernetes, the chart blocks private addresses (see "Run it on
+Kubernetes").
 
 ## Settings
 
@@ -221,7 +229,7 @@ writable layer of the container only, so with this setting `/work` and
 `/tmp` stay in that layer, and the root file system is not read-only.
 
 Give each person a `notify` chat. Without one, a report and a question go
-nowhere, and a worker that asks stops `blocked`. `notify` is a
+nowhere, and a worker that asks is told to set `blocked`. `notify` is a
 channels destination: a logical name or a reference such as
 `telegram:dm:alex`.
 
@@ -253,7 +261,7 @@ applies before the value in the file.
 | `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. The manager trusts it for the host API, and sends its text to each worker, which trusts it for git. |
 | `WORKER_START_GRACE_S` | `600` | The seconds a worker has from its start to its first brief call: the image pull and the container start. A worker that takes longer is stopped, and its task fails. |
 | each `token_env` in `developer.yaml` | empty | The git tokens. |
-| `LOG_LEVEL` | `INFO` | The log level. |
+| `LOG_LEVEL` | `INFO` | The log level. The access line of a `GET /healthz` shows at `DEBUG` only. |
 
 A bad value stops the manager at start. The message names the variable or
 the key, and never a token. A missing or wrong bearer gets HTTP 401.
@@ -267,6 +275,12 @@ Put these keys in one Secret, and name it in `existingSecret`:
 `DEVELOPER_TOKENS`, `ADDON_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
 `JOSHUA_TOKEN_DEVELOPER`, and one key for each `token_env` in
 `developer.yaml`, such as `GITHUB_TOKEN` and `GITHUB_TOKEN_ALEX`.
+
+The manager reads the Secret when its pod starts. After you change the
+Secret, restart the pod, or run a Reloader: put its annotation, such as
+`reloader.stakater.com/auto: "true"`, in the chart value
+`deploymentAnnotations`. A change to `configFile` (`developer.yaml`)
+restarts the pod on its own, through the `checksum/config` annotation.
 
 ## Connect it to joshua-ai
 
@@ -300,8 +314,8 @@ channels:
    `gateway` environment in the joshua-ai `docker-compose.yml`. On
    Kubernetes, add them under `secrets.gateway.keys`.
 4. Give channels `JOSHUA_TOKEN_DEVELOPER`, with the same value as the
-   manager. On compose, add it to the `x-fleet-tokens` block of the joshua-ai
-   `docker-compose.yml`. On Kubernetes, add `JOSHUA_TOKEN_DEVELOPER: {}` under
+   manager. On compose, see step 3 of "Run it on Docker Compose". On
+   Kubernetes, add `JOSHUA_TOKEN_DEVELOPER: {}` under
    `secrets.channels.keys`.
 5. Apply the change as `docs/install.md` says: reload the gateway, and
    restart core and channels.
@@ -314,16 +328,27 @@ On Kubernetes, the `url` is
 1. Write `developer.yaml` next to `docker-compose.yml`.
 2. Copy `.env.example` to `.env`, and set the tokens. The manager gets every
    variable in `.env`, so the git tokens need no other step.
-3. Start the addon:
+3. Add `JOSHUA_TOKEN_DEVELOPER` to the `x-fleet-tokens` block of the
+   joshua-ai `docker-compose.yml`, with the same value as in `.env`. The
+   joshua-ai compose file gives channels a fixed list of fleet tokens, so
+   channels refuses the events of the manager until you add it. Apply the
+   change as step 5 of "Connect it to joshua-ai" says.
+4. Start the addon:
 
 ```
 make up ADDON=developer
 ```
 
+After a change to `.env`, run `make up ADDON=developer` again: compose
+recreates the manager with the new values.
+
 The compose file starts two services, the manager and
 `tecnativa/docker-socket-proxy`. The manager never mounts the Docker socket.
 The proxy has the socket, read-only, and passes on the container, image, and
-network calls only. It refuses `exec`.
+network calls only. It refuses `exec`. Because the proxy has the socket, the
+compose file pins its image to the tag `0.3.0`, the version whose
+`haproxy.cfg` the comments in the compose file describe. A release also pins
+its digest, so a moved tag cannot change the code that has the socket.
 
 The compose file makes two internal networks:
 
@@ -333,7 +358,8 @@ The compose file makes two internal networks:
 
 The manager is also on the joshua-ai network, where the gateway reaches it
 at `http://developer:8000/mcp`. The addon publishes no port. With
-`network: on`, each worker also joins `PUBLIC_NETWORK`.
+`network: on`, each worker also joins `PUBLIC_NETWORK`, by default the
+default bridge (see "The network setting").
 
 A worker gets the `worker` memory and CPU limits, at most 512 processes, no
 Linux capabilities, `no-new-privileges`, and a read-only root file system.
@@ -469,29 +495,43 @@ request. One `answer` call resumes it. A new `develop` with the same
 
 ## The first run
 
-1. Prove the forwarder with your Claude token, from a checkout:
+1. Prove your Claude token through the forwarder, from a checkout:
    `CLAUDE_CODE_OAUTH_TOKEN=<token> addons/developer/scripts/prove_forwarder.sh`.
-   It sends one real request and prints `PASS` or `FAIL`.
+   It starts a worker API on your machine, sends one real request with a
+   task token, as a worker does, and prints `PASS` or `FAIL`. It proves
+   that the Claude API takes your token through the forwarder. It does not
+   start a worker or touch a git host.
 2. Start one small `develop` on a scratch repository.
-3. Read `task_output` while the task runs. It shows the session log.
-4. Expect the report near the end of the persona timeout, at the latest.
+3. Check `task_status`. The task is `dispatched` until its worker reads its
+   brief. The first task can wait for the pull of the worker image. A worker
+   that has not read its brief after `WORKER_START_GRACE_S` seconds (600 by
+   default) is stopped, and the error names the image pull.
+4. Read `task_output` while the task runs. It shows the session log.
+5. Expect the report near the end of the persona timeout, at the latest.
    Time that a question waits for an answer is added. The worker stops the
    session 90 seconds before the timeout, then pushes and reports. The
-   manager stops a worker that is still there 120 seconds after the timeout.
+   manager stops a worker that is still there 120 seconds after the
+   timeout.
 
-## What is not verified
+## What is verified, and what is not
 
-- **The CLI network switches.** The worker sets `DISABLE_TELEMETRY`,
+A live run on Kubernetes (2026-10-04) verified these:
+
+- The Claude forwarder with a subscription token.
+- The `answer` path: Joshua's answer to a question event arrives on the
+  person's connection, and the worker gets it.
+
+These are not verified:
+
+- **The Docker runtime against a real Docker daemon.** The tests use a fake
+  Docker client.
+- **The arm64 worker image.** The release workflow builds it, but no task
+  ran on it.
+- **`network: on`.** The worker sets `DISABLE_TELEMETRY`,
   `DISABLE_ERROR_REPORTING`, `DISABLE_AUTOUPDATER`, and
-  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`. The tests did not run the CLI,
-  so it is not known that the CLI makes no other call. With
-  `network: off`, such a call fails.
-- **The forwarder with a subscription token.** The tests prove the forwarder
-  against a mock only. `prove_forwarder.sh` is the proof. If the Claude API
-  refuses the subscription token there, use an API key in its own Console
-  workspace with a spend limit.
-- **The `answer` path.** It is not verified that Joshua's reply to a question
-  event arrives on the person's connection.
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`. With `network: off`, a call of
+  the CLI to another host fails. With `network: on`, these switches are the
+  only guard, and it is not verified that the CLI makes no other call.
 
 ## Development
 

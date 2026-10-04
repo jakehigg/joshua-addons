@@ -1,9 +1,10 @@
 """The git host tunnel: an HTTP ``CONNECT`` proxy on port 8002.
 
 A worker with ``network: off`` reaches the manager only. It reaches the git
-host of its task through this tunnel. The worker sets:
+host of its task through this tunnel. The worker sets git's own config, not
+``HTTPS_PROXY``, so only git uses the tunnel:
 
-    HTTPS_PROXY=http://task:<TASK_TOKEN>@<MANAGER_HOST>:8002
+    http.proxy=http://task:<TASK_TOKEN>@<MANAGER_HOST>:8002
 
 git then sends ``CONNECT <host>:443`` with
 ``Proxy-Authorization: Basic base64("task:<TASK_TOKEN>")``. The proxy allows

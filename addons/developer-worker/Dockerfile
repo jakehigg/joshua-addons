@@ -12,14 +12,21 @@ WORKDIR /app
 COPY . /app
 RUN uv sync --frozen --no-dev --package joshua-developer-worker
 
-# Runtime stage: git, Node, the Claude Code CLI, the venv, and the package.
+# Runtime stage: git, Node, the npm Claude Code CLI, the venv, and the package.
 FROM python:3.13-slim AS runtime
 
-# The same Node, npm, and CLI pins as joshua-ai core. The CLI needs Node 22
-# or newer, and Debian's nodejs is 20.x, so Node comes from NodeSource. npm 11
-# blocks install scripts by default; the CLI's postinstall links the platform
-# binary, so --allow-scripts permits that one package. "claude --version"
-# proves the binary works. git clones, commits, and pushes the task branch.
+# git clones, commits, and pushes the task branch.
+#
+# The session normally does not run the npm CLI. claude-agent-sdk starts the
+# CLI that its wheel bundles (2.1.239 at SDK 0.2.144), and looks on PATH only
+# when that file is missing. The npm CLI, at the pin of joshua-ai core, is
+# that fallback. Node stays for two reasons: the npm CLI needs it, and the model
+# runs the formatter and the tests of a JavaScript project with Bash.
+#
+# The CLI needs Node 22 or newer, and Debian's nodejs is 20.x, so Node comes
+# from NodeSource. npm 11 blocks install scripts by default; the CLI's
+# postinstall links the platform binary, so --allow-scripts permits that one
+# package. "claude --version" proves the fallback works.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \

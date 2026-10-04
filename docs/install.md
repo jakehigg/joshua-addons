@@ -121,6 +121,10 @@ it. Know two facts first:
   the default in `developer.yaml`. With `network: off`, a worker cannot
   install dependencies.
 
+The install also changes the joshua-ai compose file: channels needs the
+fleet token of the addon. Step 3 of "Run it on Docker Compose" in the README
+has the change.
+
 ## Kubernetes
 
 ### Install
