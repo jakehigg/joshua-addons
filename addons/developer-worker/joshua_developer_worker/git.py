@@ -112,6 +112,9 @@ def configure(
     _run(["config", "--global", "init.defaultBranch", "main"])
     if proxy_url:
         _run(["config", "--global", "http.proxy", proxy_url])
+        # curl sends a Basic proxy credential at once with this; with the
+        # default it waits for a 407 first.
+        _run(["config", "--global", "http.proxyAuthMethod", "basic"])
 
 
 def clone(repo_url: str, dest: Path) -> None:

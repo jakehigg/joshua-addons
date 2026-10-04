@@ -44,6 +44,7 @@ def test_configure_writes_the_credentials_at_0600(home: Path) -> None:
 def test_the_proxy_is_in_git_config_and_not_in_the_environment(home: Path) -> None:
     _configure(home)
     assert _global("http.proxy") == PROXY_URL
+    assert _global("http.proxyAuthMethod") == "basic"
     for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY"):
         assert name not in os.environ
 
@@ -51,6 +52,7 @@ def test_the_proxy_is_in_git_config_and_not_in_the_environment(home: Path) -> No
 def test_configure_without_a_proxy_sets_none(home: Path) -> None:
     git.configure(home, "A", "a@example.test", "git", "t0k", "git.test")
     assert _global("http.proxy") == ""
+    assert _global("http.proxyAuthMethod") == ""
 
 
 def test_scrub_removes_the_token_the_url_and_the_credentials_path(home: Path) -> None:

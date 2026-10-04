@@ -182,3 +182,35 @@ async def test_task_target_is_the_repo_host_on_443(tmp_path) -> None:
         assert task_target(manager, tokens[first]) is None
     finally:
         store.close()
+
+
+async def test_a_407_is_flushed_and_the_retry_on_the_same_connection_is_served() -> None:
+    """curl sends no credential first, reads the 407, then retries with it on
+    the same connection. The proxy must flush the 407 and keep reading."""
+    async with echo_server() as upstream, proxy_for(("127.0.0.1", upstream)) as port:
+        reply, reader, writer = await send_head(
+            port, f"CONNECT 127.0.0.1:{upstream} HTTP/1.1\r\nHost: x\r\n\r\n"
+        )
+        assert reply.startswith(b"HTTP/1.1 407")
+        assert b"Proxy-Authenticate: Basic" in reply
+        writer.write(f"CONNECT 127.0.0.1:{upstream} HTTP/1.1\r\nHost: x\r\n{auth()}\r\n".encode())
+        await writer.drain()
+        second = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 2)
+        assert second.startswith(b"HTTP/1.1 200")
+        writer.write(b"ping")
+        await writer.drain()
+        assert await asyncio.wait_for(reader.readexactly(4), 2) == b"ping"
+        writer.close()
+
+
+async def test_three_bad_credentials_close_the_connection() -> None:
+    async with proxy_for(("127.0.0.1", 1)) as port:
+        reply, reader, writer = await send_head(port, "CONNECT 127.0.0.1:1 HTTP/1.1\r\n\r\n")
+        assert reply.startswith(b"HTTP/1.1 407")
+        for _ in range(2):
+            writer.write(b"CONNECT 127.0.0.1:1 HTTP/1.1\r\n\r\n")
+            await writer.drain()
+            reply = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 2)
+            assert reply.startswith(b"HTTP/1.1 407")
+        assert await asyncio.wait_for(reader.read(), 2) == b""
+        writer.close()

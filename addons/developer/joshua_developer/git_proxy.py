@@ -15,6 +15,12 @@ sees the git token.
 Replies: a missing or wrong credential, or a task that ended, gets 407. Any
 other destination, or a method that is not ``CONNECT``, gets 403. A host
 that does not answer gets 502.
+
+libcurl, which git uses, sends no credential on its first ``CONNECT``: it
+waits for a 407 and then sends the credential again, on the same connection
+when the proxy keeps it open. So a 407 is flushed and the connection stays
+open for the next request, up to ``MAX_ATTEMPTS`` heads. The worker also sets
+``http.proxyAuthMethod basic``, which makes curl send the credential at once.
 """
 
 from __future__ import annotations
@@ -36,6 +42,7 @@ MAX_HEAD = 8192
 CONNECT_TIMEOUT_S = 10.0
 HEAD_TIMEOUT_S = 10.0
 _CHUNK = 65536
+MAX_ATTEMPTS = 3
 
 # A token to the one host and port the token may reach, or None.
 Resolver = Callable[[str], tuple[str, int] | None]
@@ -101,57 +108,66 @@ class GitProxy:
                 await writer.wait_closed()
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
-        if len(head) > MAX_HEAD:
-            writer.write(_reply(400, "Bad Request"))
-            return
-        lines = head.decode("latin-1").split("\r\n")
-        parts = lines[0].split(" ")
-        headers: dict[str, str] = {}
-        for line in lines[1:]:
-            name, sep, value = line.partition(":")
-            if sep:
-                headers[name.strip().lower()] = value.strip()
+        for _ in range(MAX_ATTEMPTS):
+            head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
+            if len(head) > MAX_HEAD:
+                await self._send(writer, _reply(400, "Bad Request"))
+                return
+            lines = head.decode("latin-1").split("\r\n")
+            parts = lines[0].split(" ")
+            headers: dict[str, str] = {}
+            for line in lines[1:]:
+                name, sep, value = line.partition(":")
+                if sep:
+                    headers[name.strip().lower()] = value.strip()
 
-        token = _token_from(headers.get("proxy-authorization", ""))
-        allowed = self.resolver(token) if token else None
-        if allowed is None:
-            logger.warning({"message": "tunnel refused: missing or wrong credential"})
-            writer.write(_reply(407, "Proxy Authentication Required", _PROXY_AUTH))
-            return
+            token = _token_from(headers.get("proxy-authorization", ""))
+            allowed = self.resolver(token) if token else None
+            if allowed is None:
+                # curl sends the credential only after this challenge, on this
+                # same connection. Flush, keep the connection, read the next head.
+                logger.info({"message": "tunnel: credential challenge sent"})
+                await self._send(writer, _reply(407, "Proxy Authentication Required", _PROXY_AUTH))
+                continue
 
-        if len(parts) != 3 or parts[0] != "CONNECT":
-            writer.write(_reply(403, "Forbidden"))
-            return
-        host, _, port_text = parts[1].rpartition(":")
-        if not port_text.isdigit():
-            writer.write(_reply(403, "Forbidden"))
-            return
-        port = int(port_text)
-        host = host.strip("[]").lower()
-        if port == 22 or (host, port) != allowed:
-            logger.warning({"message": "tunnel refused: destination not allowed", "port": port})
-            writer.write(_reply(403, "Forbidden"))
-            return
+            if len(parts) != 3 or parts[0] != "CONNECT":
+                await self._send(writer, _reply(403, "Forbidden"))
+                return
+            host, _, port_text = parts[1].rpartition(":")
+            if not port_text.isdigit():
+                await self._send(writer, _reply(403, "Forbidden"))
+                return
+            port = int(port_text)
+            host = host.strip("[]").lower()
+            if port == 22 or (host, port) != allowed:
+                logger.warning({"message": "tunnel refused: destination not allowed", "port": port})
+                await self._send(writer, _reply(403, "Forbidden"))
+                return
 
-        try:
-            up_reader, up_writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), CONNECT_TIMEOUT_S
-            )
-        except (OSError, TimeoutError):
-            logger.warning({"message": "tunnel: the git host did not answer", "host": host})
-            writer.write(_reply(502, "Bad Gateway"))
-            return
+            try:
+                up_reader, up_writer = await asyncio.wait_for(
+                    asyncio.open_connection(host, port), CONNECT_TIMEOUT_S
+                )
+            except (OSError, TimeoutError):
+                logger.warning({"message": "tunnel: the git host did not answer", "host": host})
+                await self._send(writer, _reply(502, "Bad Gateway"))
+                return
 
-        writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            await self._send(writer, b"HTTP/1.1 200 Connection established\r\n\r\n")
+            logger.info({"message": "tunnel open", "host": host, "port": port})
+            try:
+                await asyncio.gather(_pipe(reader, up_writer), _pipe(up_reader, writer))
+            finally:
+                up_writer.close()
+                with contextlib.suppress(Exception):
+                    await up_writer.wait_closed()
+            return
+        logger.warning({"message": "tunnel refused: missing or wrong credential"})
+
+    @staticmethod
+    async def _send(writer: asyncio.StreamWriter, data: bytes) -> None:
+        writer.write(data)
         await writer.drain()
-        logger.info({"message": "tunnel open", "host": host, "port": port})
-        try:
-            await asyncio.gather(_pipe(reader, up_writer), _pipe(up_reader, writer))
-        finally:
-            up_writer.close()
-            with contextlib.suppress(Exception):
-                await up_writer.wait_closed()
 
 
 async def _pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
