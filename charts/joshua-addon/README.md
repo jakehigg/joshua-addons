@@ -41,6 +41,9 @@ helm install hello charts/joshua-addon -f addons/hello/values.yaml
 | `ingress.tls.enabled` | `false` | Terminate TLS at the Ingress. |
 | `ingress.tls.secretName` | `""` | Empty means `<host>-tls`. |
 | `podSecurityContext` | `fsGroup: 1000` | The pod security context. The `fsGroup` lets the uid 1000 addon user write to a mounted volume. `{}` removes the block. |
+| `strategy` | `""` | The Deployment update strategy. Empty means `Recreate` when the chart makes the claim, because that claim is ReadWriteOnce and a rolling update cannot attach it twice. With `existingClaim` the Kubernetes default stays. Set `Recreate` or `RollingUpdate` to choose. |
+| `deploymentAnnotations` | `{}` | Annotations on the Deployment, such as `reloader.stakater.com/auto: "true"`, so a Reloader restarts the pod when its Secret changes. |
+| `podAnnotations` | `{}` | Annotations on the pod template. With `configFile.enabled`, the chart adds `checksum/config` on its own, so a changed file restarts the pod. |
 | `persistence.enabled` | `false` | Give the addon its own PersistentVolumeClaim. |
 | `persistence.existingClaim` | `""` | Mount this claim instead, and make no claim. A claim that another release owns, such as the joshua-ai data volume. |
 | `persistence.size` | `1Gi` | Requested storage. |

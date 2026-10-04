@@ -4,6 +4,15 @@
 
 replicaCount: 1 # pods for the addon's Deployment
 
+# The Deployment update strategy. Empty means Recreate when the chart makes the
+# claim (it is ReadWriteOnce, and a rolling update cannot attach it twice) and
+# the Kubernetes default otherwise. Set Recreate or RollingUpdate to choose.
+strategy: ""
+
+deploymentAnnotations: {} # annotations on the Deployment, such as reloader.stakater.com/auto: "true"
+
+podAnnotations: {} # annotations on the pod template; configFile adds checksum/config on its own
+
 image:
   repository: "" # required: the addon's image, such as ghcr.io/jakehigg/joshua-addons-hello
   tag: "" # empty means this chart's appVersion, the version the addon shipped with

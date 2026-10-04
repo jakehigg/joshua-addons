@@ -8,6 +8,12 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- The chart sets `strategy: Recreate` for a Deployment that mounts the claim
+  the chart makes. That claim is ReadWriteOnce, and a rolling update waited
+  forever on a Multi-Attach error. The chart also takes
+  `deploymentAnnotations` and `podAnnotations`, and adds a `checksum/config`
+  annotation when `configFile` is on, so a changed config file restarts the
+  pod.
 - `developer`, an addon that gives a coding task to a worker. Joshua calls
   `develop` or `rework` with a repository and a brief. The manager, image
   `joshua-addons-developer`, starts one worker for each task, image
