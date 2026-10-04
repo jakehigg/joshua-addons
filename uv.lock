@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "joshua-addons",
+    "joshua-chores",
     "joshua-hello",
     "joshua-mcp",
     "joshua-pantry",
@@ -518,6 +519,31 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "pytest-cov", specifier = ">=5" },
     { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
+name = "joshua-chores"
+version = "0.0.0"
+source = { editable = "addons/chores" }
+dependencies = [
+    { name = "aiosqlite" },
+    { name = "asyncpg" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "asyncpg", specifier = ">=0.30" },
+    { name = "mcp", specifier = ">=1.2" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.51" },
+    { name = "starlette", specifier = ">=0.37" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
 
 [[package]]

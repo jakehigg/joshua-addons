@@ -1,0 +1,12 @@
+# The chores addon, installed with charts/joshua-addon. SQLite needs
+# somewhere to keep its file, so persistence is on by default, at the
+# chart's default mountPath (/data, the default CHORES_DB path of this addon).
+# Point DATABASE_URL at Postgres instead (env, or an existingSecret) to drop
+# this volume.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-chores
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi

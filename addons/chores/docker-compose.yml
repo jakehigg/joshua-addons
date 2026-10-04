@@ -1,0 +1,53 @@
+# Run the `chores` addon alone. `make up ADDON=chores` starts it. The image
+# comes from the GitHub container registry, so nothing is built here: set
+# JOSHUA_ADDONS_VERSION in `.env` to take another release.
+#
+# To run your own build instead, add the developer override:
+#   docker compose -f addons/chores/docker-compose.yml -f addons/chores/docker-compose.dev.yml up -d --build
+#
+# Secrets come only from `.env` (see `.env.example`). No secret is written in
+# this file; every value is a literal or a `${VAR}` from `.env`.
+#
+# Storage: SQLite by default, on the `chores-data` named volume at /data. Set
+# DATABASE_URL in `.env` to use Postgres instead. The volume then goes unused.
+#
+# Network: the addon joins `joshua`, the external network joshua-ai's own
+# compose file creates. The gateway reaches this addon at
+# `http://chores:8000/mcp`. When joshua-ai is not up, the external network is
+# missing and compose refuses to start; start joshua-ai first, or set
+# JOSHUA_NETWORK to the network joshua-ai actually created.
+services:
+  chores:
+    image: ghcr.io/jakehigg/joshua-addons-chores:${JOSHUA_ADDONS_VERSION:-0.1.3}
+    restart: unless-stopped
+    environment:
+      ADDON_TOKEN: ${ADDON_TOKEN:-}
+      MANAGER_PIN: ${MANAGER_PIN:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+      CHORES_DB: ${CHORES_DB:-/data/chores.db}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - chores-data:/data
+    # Not published on the host. Only the gateway, over the shared network,
+    # reaches this addon. Uncomment for local debugging only:
+    # ports:
+    #   - "8000:8000"
+    healthcheck:
+      # The slim image has no curl, so the check uses python. `urlopen` exits
+      # non-zero on a non-200 response.
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - joshua
+
+volumes:
+  chores-data:
+
+networks:
+  joshua:
+    external: true
+    name: ${JOSHUA_NETWORK:-joshua-ai_default}
