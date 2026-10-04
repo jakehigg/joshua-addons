@@ -16,3 +16,4 @@ persistence:
 #   XP_PER_DOLLAR: "100"
 #   COOLDOWN_SECONDS: "60"
 #   MANAGER_LABEL: "Parent"
+#   CHORES_TZ: "UTC"

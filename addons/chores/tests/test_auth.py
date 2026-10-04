@@ -43,16 +43,16 @@ async def test_mcp_subpath_needs_the_token(app_factory) -> None:
 async def test_mcp_accepts_the_right_token(app_factory) -> None:
     app = app_factory("right-token")
     async with mcp_session(app, headers={"Authorization": "Bearer right-token"}) as session:
-        result = await session.call_tool("ping", {})
+        result = await session.call_tool("list_members", {})
     assert result.is_error is not True
-    assert result.structured_content == {"ok": True}
+    assert result.structured_content == {"members": []}
 
 
 async def test_mcp_is_open_when_no_token_is_set(app_factory) -> None:
     app = app_factory(None)
     async with mcp_session(app) as session:
-        result = await session.call_tool("ping", {})
-    assert result.structured_content == {"ok": True}
+        result = await session.call_tool("list_members", {})
+    assert result.structured_content == {"members": []}
 
 
 async def test_healthz_stays_open_when_a_token_is_set(app_factory) -> None:

@@ -355,6 +355,7 @@ async def complete_chore(
     chore_id: int,
     *,
     now: datetime | None = None,
+    today: date | None = None,
     note: str | None = None,
     cooldown_seconds: int | None = None,
     actor: str | None = None,
@@ -364,18 +365,22 @@ async def complete_chore(
     The function writes one ``Completion`` row and one ledger row (source
     ``chore``, ``reference_id`` the completion id), and sets
     ``last_completed_at``. A one-off chore is then retired. A recurring
-    chore gets the next due date after the date of ``now``.
+    chore gets the next due date after ``today``.
 
     A retired chore raises ``NotFound``. A second completion within
     ``cooldown_seconds`` of the last one raises ``Cooldown``.
     ``cooldown_seconds`` defaults to ``settings.cooldown_seconds()``, and 0
     turns the check off. ``now`` defaults to the current UTC time, and a
-    naive ``now`` is UTC.
+    naive ``now`` is UTC. The rows store ``now``. ``today`` is the date of
+    the household (see ``settings.chores_tz``) and defaults to the UTC date
+    of ``now``.
     """
     if now is None:
         now = _utc_now()
     elif now.tzinfo is None:
         now = now.replace(tzinfo=UTC)
+    if today is None:
+        today = now.astimezone(UTC).date()
     if cooldown_seconds is None:
         cooldown_seconds = settings.cooldown_seconds()
 
@@ -425,7 +430,7 @@ async def complete_chore(
         chore.is_active = False
         due: date | None = None
     else:
-        due = next_due(chore.frequency, now.date())
+        due = next_due(chore.frequency, today)
         chore.next_due_date = due
     await session.commit()
 
