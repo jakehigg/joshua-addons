@@ -22,10 +22,10 @@ Use `<old>` for the current version and `<new>` for the new version, with no
 No other doc names the current release. The `v0.0.1` in `docs/install.md`
 and in `charts/joshua-addon/README.md` is an example. Do not change it.
 
-Before the first release that has the `developer` addon, also fill the
-digest of the Docker socket proxy in `addons/developer/docker-compose.yml`.
-The `TODO` comment above the `docker-socket-proxy` image line has the
-command.
+The Docker socket proxy in `addons/developer/docker-compose.yml` is pinned
+by digest. When you move it to a new tag, get the new digest with the
+command in the comment above its image line, and change the tag and the
+digest together.
 
 ## 2. Check the change
 
