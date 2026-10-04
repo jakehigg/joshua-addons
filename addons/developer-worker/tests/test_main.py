@@ -116,14 +116,17 @@ async def test_success_pushes_the_branch_and_reports(
     assert report["status"] == "success"
     assert report["pushed"] is True
     assert report["head"] == BRANCH
-    assert report["branch"] == BRANCH
+    # The worker made the branch from main. The manager scans from clone_head.
+    assert report["created_branch"] is True
+    assert report["clone_head"] == remote_head(bare_repo, "main")
+    # The manager takes the branch and the pull request from its own data.
+    assert not {"branch", "pr_url", "pr_number"} & report.keys()
     assert report["commit_hash"] == remote_head(bare_repo, BRANCH)
     assert report["summary"] == "Added hello.txt."
     assert report["files_changed"] == ["hello.txt"]
     assert report["tests_run"] == ["none: the project has no tests"]
     assert (report["input_tokens"], report["output_tokens"]) == (1200, 300)
     assert report["estimated_cost"] == 0.5
-    assert report["pr_url"] is None
     assert "tool Write" in report["log"]
     author = run_git("log", "-1", "--format=%an <%ae>", BRANCH, cwd=bare_repo).strip()
     assert author == "Alex Example <alex@example.test>"
@@ -345,6 +348,7 @@ async def test_a_push_failure_fails_the_task(
 async def test_rework_uses_the_existing_branch(
     tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
 ) -> None:
+    before = remote_head(bare_repo, "feature")
     manager.brief = make_brief(bare_repo, task_type="rework", branch="feature", feedback="More.")
     code, _ = await run(
         tmp_path, home, manager, [write_file("more.txt", commit=True), result({"summary": "More."})]
@@ -353,6 +357,8 @@ async def test_rework_uses_the_existing_branch(
     [report] = manager.reports
     assert report["status"] == "success"
     assert report["pushed"] is True and report["head"] == "feature"
+    assert report["created_branch"] is False
+    assert report["clone_head"] == before
     assert run_git("log", "-1", "--format=%s", "feature", cwd=bare_repo).strip() == (
         "feat: add more.txt"
     )

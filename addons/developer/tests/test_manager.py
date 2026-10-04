@@ -80,7 +80,7 @@ async def test_a_report_for_an_ended_or_unknown_task_is_ignored(settings) -> Non
     assert await manager.record_report("no-such-task", late) is None
 
 
-async def test_a_report_with_a_pull_request_and_a_question(settings) -> None:
+async def test_a_report_with_a_question(settings) -> None:
     manager = make_manager(settings, delay_s=None)
     task_id = (await manager.develop("alex", REPO, "brief", branch="feature"))["task_id"]
     manager.mark_running(task_id)  # a second mark changes nothing
@@ -88,9 +88,6 @@ async def test_a_report_with_a_pull_request_and_a_question(settings) -> None:
         status="blocked",
         summary="needs a decision",
         open_question="Which port?",
-        branch="feature-2",
-        pr_url="https://github.com/example-home/app/pull/9",
-        pr_number=9,
         input_tokens=10,
         output_tokens=20,
         estimated_cost=0.5,
@@ -99,8 +96,9 @@ async def test_a_report_with_a_pull_request_and_a_question(settings) -> None:
     assert task is not None
     assert task["status"] == "blocked"
     assert task["open_question"] == "Which port?"
-    assert task["branch_name"] == "feature-2"
-    assert task["pr_number"] == 9
+    # The branch is the task row's own.
+    assert task["branch_name"] == "feature"
+    assert task["pr_number"] is None
     assert task["estimated_cost"] == 0.5
     assert manager.locks.get(REPO, "branch:feature") is None
     manager.mark_running("no-such-task")

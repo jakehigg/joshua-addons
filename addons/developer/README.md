@@ -112,18 +112,30 @@ hostile, and these rules limit what it can read and where its data can go:
    for its host, and a task token that works only on its own task's routes on
    the manager. It has no wiki, no journal, no gateway, and no MCP server but
    `ask`. The git token can do on the host what its scope allows, so give it
-   the smallest scope.
+   the smallest scope. The model can push to every branch that the token can
+   write, so protect the default branch on the host. The addon refuses a task
+   on the base branch, `main`, or `master` (`branch_is_base`). That is a
+   guard, not a boundary.
 2. **The Claude token never goes into the worker.** The worker sends its
    Claude requests to a forwarder on the manager, with the task token as a
-   fake Claude token. The manager puts the real token on each request.
+   fake Claude token. The manager puts the real token on each request. The
+   forwarder sends on only the API paths that the Claude CLI uses
+   (`v1/messages`, `v1/messages/count_tokens`, `v1/models`), and refuses
+   other paths with 403. It answers the CLI probe `api/hello` itself.
 3. **By default, a worker reaches the manager and nothing else.** The
    manager forwards two destinations for it: the Claude API, and the git host
-   of the task's repository.
-4. **The manager gates the pull request.** It scans the diff for credentials
-   before it opens the pull request. A hit deletes the branch and fails the
-   task. A person reads every pull request.
+   of the task's repository. On Kubernetes, a worker can also use the cluster
+   DNS resolver, so a DNS tunnel through the resolver stays possible.
+4. **The manager gates the pull request.** It scans the diff of the worker's
+   commits for credentials before it opens the pull request. A hit fails the
+   task, and deletes the branch only when the task made it. A person reads
+   every pull request.
 5. **The worker's words are data, not instructions.** Its report and its
-   questions go to Joshua as events that say so.
+   questions go to Joshua as events that say so. Each text from the worker
+   is in a fenced block that the worker cannot close. The branch and the
+   pull request in the event come from the manager's own data, never from
+   the report. The worker API refuses a body over 2 MiB, and the manager
+   cuts each stored report field to its limit.
 6. **The repository configures nothing.** The session loads no settings, no
    hooks, and no MCP servers from the checkout. It reads `CLAUDE.md` as
    plain text.
@@ -328,15 +340,19 @@ The two chart blocks are on:
   manager create, read, and delete Jobs, and read pods and pod logs, in its
   own namespace only.
 - `networkPolicy` lets a worker connect to the manager on ports 8001 and
-  8002, and to DNS, and to no other address. It lets the manager accept
-  ports 8001 and 8002 from the workers only. The CNI of the cluster must
+  8002, and to DNS on the cluster resolver, and to no other address. Set
+  `networkPolicy.dns` in the chart values when your cluster DNS pods are not
+  `k8s-app: kube-dns` in `kube-system`. The resolver sends queries for other
+  names on, so a DNS tunnel through it stays possible. The policy lets the
+  manager accept ports 8001 and 8002 from the workers only. The CNI of the cluster must
   enforce NetworkPolicy. If it does not, a worker can connect to all
   addresses.
 
 For `network: on`, set `networkPolicy.workersInternetEgress: true`, and set
 `networkPolicy.clusterCidrs` to the pod and Service CIDRs of the cluster. A
-worker can then connect to public addresses, but not to private addresses or
-to the cluster.
+worker can then connect to public addresses, but not to private addresses,
+link-local addresses (cloud metadata), carrier-grade NAT addresses, or the
+cluster.
 
 The manager starts one Job for each task, named
 `dev-worker-<first 8 characters of the task id>`, with `-r<n>` added for
@@ -377,17 +393,29 @@ brief in kebab case, at most 40 characters, and the start of the task id.
 on the remote, the worker continues on it. `rework` gets the source branch
 from the pull request.
 
+A task never works on its base branch, `main`, or `master`. `develop` and
+`rework` refuse such a branch with `branch_is_base`, and a `rework` on a
+`git` host refuses `main` and `master`.
+
 ### The pull request gate
 
 After the worker pushes, the manager:
 
-1. Reads the diff of the branch against the base branch over the API.
+1. Reads the diff from `clone_head` to the pushed branch over the API.
+   `clone_head` is the commit of the branch before the session, so the
+   diff holds only the worker's commits. Without a `clone_head`, the diff
+   starts at the base branch. The worker sends `clone_head`, so the scan is
+   a guard against a mistake, not against a hostile worker.
 2. Scans the added lines for credentials: `sk-ant-`, `glpat-`, `ghp_`,
    `github_pat_`, `gho_`, `xoxb-`, `xoxp-`, an AWS access key, a private key
-   block, and a long quoted value set to a name such as `api_key`, `secret`,
-   `token`, or `password`.
-3. On a hit, deletes the branch and fails the task. The error names the
-   pattern, the file, and the line, and never the text.
+   block, and a quoted value of 16 or more characters set to a name such as
+   `api_key`, `secret`, `token`, or `password`. That value must mix at least
+   three of lowercase, uppercase, digits, and symbols.
+3. On a hit, fails the task. The error names the pattern, the file, and the
+   line, and never the text. The manager deletes the branch only when this
+   task made it: a `develop` whose worker found no branch on the remote. A
+   branch that was there before the task stays, and the error says so. A
+   `rework` never deletes the branch.
 4. On a clean `develop` with status `success`, finds or opens the pull
    request. A `rework` push changes the pull request that is there.
 

@@ -190,13 +190,17 @@ async def test_running_then_report_ends_the_task(manager) -> None:
         running = await client.post("/worker/running")
         bad = await client.post("/worker/report", json={"status": "done"})
         not_json = await client.post("/worker/report", content=b"{")
-        report = await client.post(
-            "/worker/report", json={"status": "success", "summary": "ok", "branch": "b"}
-        )
+        owned = [
+            await client.post("/worker/report", json={"status": "success", field: value})
+            for field, value in (("branch", "b"), ("pr_url", "https://evil"), ("pr_number", 1))
+        ]
+        report = await client.post("/worker/report", json={"status": "success", "summary": "ok"})
         again = await client.post("/worker/report", json={"status": "success"})
     assert running.json() == {"status": "running"}
     assert bad.status_code == 400
     assert not_json.status_code == 400
+    # The report cannot set the branch or the pull request: 400, and the task runs on.
+    assert [r.status_code for r in owned] == [400, 400, 400]
     assert report.status_code == 200
     assert report.json() == {"recorded": True}
     assert again.status_code == 409
@@ -362,6 +366,119 @@ async def test_the_forwarder_without_a_claude_token_or_an_upstream(manager, capl
     assert missing.json() == {"error": "claude_token_not_configured"}
 
 
+@pytest.mark.parametrize(
+    "path", ["/worker/report", "/worker/ask", "/worker/log", "/worker/running", "/worker/ask/stop"]
+)
+async def test_a_body_over_2_mib_gets_413(manager, path) -> None:
+    task_id, token = await dispatch(manager)
+    big = b'{"text": "' + b"x" * (3 * 1024 * 1024) + b'"}'
+    async with worker_client(manager, token) as client:
+        response = await client.post(path, content=big)
+    assert response.status_code == 413
+    assert response.json() == {"error": "body_too_large"}
+    row = manager.store.get_task_full(task_id)
+    assert row is not None and row["status"] in ("dispatched", "running")
+
+
+async def test_a_large_body_without_a_length_gets_413(manager) -> None:
+    task_id, token = await dispatch(manager)
+
+    async def chunks():
+        for _ in range(3):
+            yield b"x" * (1024 * 1024)
+
+    async with worker_client(manager, token) as client:
+        response = await client.post("/worker/report", content=chunks())
+        wrong = await client.post(
+            "/worker/report", content=b"{}", headers={"content-length": "nope"}
+        )
+    assert response.status_code == 413
+    assert wrong.status_code in (400, 413)
+    row = manager.store.get_task_full(task_id)
+    assert row is not None and row["status"] in ("dispatched", "running")
+
+
+async def test_the_stored_report_fields_are_cut_with_a_marker(manager) -> None:
+    from joshua_developer.manager import TRUNCATED
+
+    task_id, token = await dispatch(manager)
+    report = {
+        "status": "success",
+        "summary": "s" * 30_000,
+        "files_changed": ["f" * 600] + [f"file{n}.py" for n in range(600)],
+        "tests_run": ["t" * 3000] * 60,
+        "open_question": "q" * 12_000,
+        "log": "l" * 1_500_000,
+    }
+    async with worker_client(manager, token) as client:
+        response = await client.post("/worker/report", json=report)
+    assert response.json() == {"recorded": True}
+    row = manager.store.get_task_full(task_id)
+    assert row is not None and row["status"] == "success"
+    stored = row["report"]
+    assert len(row["summary"]) == 20_000 and row["summary"].endswith(TRUNCATED)
+    assert len(stored["files_changed"]) == 501
+    assert len(stored["files_changed"][0]) == 512 and stored["files_changed"][0].endswith(TRUNCATED)
+    assert stored["files_changed"][-1] == TRUNCATED.strip()
+    assert len(stored["tests_run"]) == 51
+    assert all(len(test) <= 2000 for test in stored["tests_run"])
+    assert len(row["open_question"]) == 10_000 and row["open_question"].endswith(TRUNCATED)
+    assert len(stored["log"]) == 1024 * 1024 and stored["log"].endswith(TRUNCATED)
+
+
+async def test_the_forwarder_refuses_a_path_the_cli_does_not_use(manager, caplog) -> None:
+    upstream = Upstream()
+    claude = httpx.AsyncClient(transport=httpx.MockTransport(upstream.handler))
+    task_id, token = await dispatch(manager)
+    paths = [
+        "v1/oauth/x",
+        "v1/organizations/1/usage",
+        "v1/models/../oauth/token",
+        "v1/models/a/b",
+        "api/oauth/profile",
+        "v1/messages/batches",
+    ]
+    with caplog.at_level(logging.INFO):
+        async with worker_client(manager, token, claude_client=claude) as client:
+            refused = [
+                await client.post(f"/worker/claude/{path}", content=b'{"secret": "body"}')
+                for path in paths
+            ]
+            hello_post = await client.post("/worker/claude/api/hello", json={})
+            model = await client.get("/worker/claude/v1/models/claude-opus-5")
+            count = await client.post("/worker/claude/v1/messages/count_tokens", json={})
+    await claude.aclose()
+    assert [r.status_code for r in refused] == [403] * len(paths)
+    assert refused[0].json() == {"error": "path_not_allowed"}
+    assert hello_post.status_code == 403
+    assert (model.status_code, count.status_code) == (200, 200)
+    assert [str(r.url) for r in upstream.requests] == [
+        "https://api.anthropic.com/v1/models/claude-opus-5",
+        "https://api.anthropic.com/v1/messages/count_tokens",
+    ]
+    assert "forwarder refused a path" in caplog.text and "v1/oauth/x" in caplog.text
+    assert "secret" not in caplog.text
+
+
+async def test_the_forwarder_answers_the_cli_probe_without_a_token(manager, caplog) -> None:
+    upstream = Upstream()
+    claude = httpx.AsyncClient(transport=httpx.MockTransport(upstream.handler))
+    with caplog.at_level(logging.INFO):
+        async with worker_client(manager, None, claude_client=claude) as client:
+            head = await client.head("/worker/claude/api/hello")
+            get = await client.get("/worker/claude/api/hello")
+            other = await client.get("/worker/claude/v1/models")
+    await claude.aclose()
+    assert (head.status_code, get.status_code) == (200, 200)
+    assert get.json() == {}
+    assert other.status_code == 401
+    assert upstream.requests == []
+    # The probe is not a refused request: no warning names it.
+    assert not [
+        r for r in caplog.records if r.levelno >= logging.WARNING and "api/hello" in str(r.msg)
+    ]
+
+
 async def test_the_app_makes_and_closes_its_own_client(manager) -> None:
     app = build_worker_app(manager)
     _, token = await dispatch(manager)
@@ -443,7 +560,7 @@ async def test_a_fake_worker_drives_one_task_through_the_api(manager, sent) -> N
         await worker.post("/worker/log", json={"text": f"answer {answer}\n"})
         done = await worker.post(
             "/worker/report",
-            json={"status": "success", "summary": "Port 8080.", "branch": "feature"},
+            json={"status": "success", "summary": "Port 8080."},
         )
         after = await worker.get("/worker/brief")
     assert done.json() == {"recorded": True}

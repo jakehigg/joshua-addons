@@ -173,3 +173,9 @@ async def test_a_reply_that_is_not_json_has_an_unknown_reason() -> None:
 def test_the_report_refuses_an_unknown_field() -> None:
     with pytest.raises(ValueError):
         Report(status="success", note="x")  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("field", ["branch", "pr_url", "pr_number"])
+def test_the_report_has_no_field_the_manager_owns(field: str) -> None:
+    with pytest.raises(ValueError):
+        Report.model_validate({"status": "success", field: "x"})

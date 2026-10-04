@@ -151,6 +151,7 @@ def finish(
     result: session.SessionResult,
     asker: session.Asker,
     log_: session.SessionLog,
+    created_branch: bool = False,
 ) -> Report:
     """Push the model's commits and build the report after the session.
 
@@ -229,9 +230,10 @@ def finish(
         files_changed=files,
         tests_run=[tests] if tests else [],
         open_question=open_question,
-        branch=branch,
         pushed=pushed,
         head=branch if pushed else None,
+        clone_head=clone_head,
+        created_branch=created_branch,
         commit_hash=new_head if moved else None,
         error=error,
         input_tokens=usage.get("input_tokens"),
@@ -262,7 +264,6 @@ async def _work(
     if not person.get("name") or not person.get("email"):
         return Report(
             status="failed",
-            branch=branch,
             error="the person has no git name or email; set them with set_settings",
         )
     try:
@@ -279,7 +280,7 @@ async def _work(
         with step("clone", task_id):
             git.clone(str(brief["repo_url"]), dest)
         with step("checkout", task_id):
-            clone_head = git.checkout(
+            clone_head, created_branch = git.checkout(
                 dest,
                 branch,
                 brief.get("base_branch"),
@@ -287,7 +288,7 @@ async def _work(
                 create_if_missing=brief.get("task_type") != "rework" and not brief.get("resumed"),
             )
     except git.GitError as exc:
-        return Report(status="failed", branch=branch, error=str(exc), log=log_.text())
+        return Report(status="failed", error=str(exc), log=log_.text())
 
     claude_md = read_claude_md(dest)
     with step("running", task_id):
@@ -311,7 +312,7 @@ async def _work(
     with step("session", task_id):
         result = await session.run(options, START_PROMPT, clock, **kwargs)
     with step("finish", task_id):
-        return finish(dest, brief, clone_head, result, asker, log_)
+        return finish(dest, brief, clone_head, result, asker, log_, created_branch)
 
 
 async def run_task(
@@ -371,7 +372,6 @@ async def run_task(
             )
             report = Report(
                 status="failed",
-                branch=brief.get("branch"),
                 error=git.scrub(f"the worker failed: {type(exc).__name__}: {exc}")[:500],
             )
         return await _send(client, report)

@@ -19,8 +19,14 @@ releases, with the images and the packaged chart, are at
   `joshua-addons-developer`, starts one worker for each task, image
   `joshua-addons-developer-worker`. The worker clones the repository, runs
   one Claude Code session, pushes one branch, and reports. The manager scans
-  the diff for credentials and then opens the pull request on GitHub or
-  GitLab. A hit deletes the branch. A plain git host ends at the branch. The
+  the diff of the worker's commits for credentials and then opens the pull
+  request on GitHub or GitLab. A hit fails the task, and deletes the branch
+  only when the task made it. A plain git host ends at the branch. A task
+  never works on its base branch, `main`, or `master`. The branch and the
+  pull request come from the manager's data, never from the worker's report.
+  The worker's text in a chat event is in a fenced block. The worker API
+  refuses a body over 2 MiB. The Claude forwarder sends on only the API
+  paths that the Claude CLI uses. The
   worker starts as a container through a Docker socket proxy on compose, or
   as a Job on Kubernetes. It holds no Joshua secret and no Claude token.
   With `network: off`, the default, it connects to the manager only, so it
@@ -38,7 +44,10 @@ releases, with the images and the packaged chart, are at
 - The chart gains `extraEnv` (raw `env` entries, such as a `fieldRef`),
   `serviceAccount`, `rbac` (a ServiceAccount, a Role, and a RoleBinding in
   the release namespace), and `networkPolicy` (egress limits for worker pods
-  and ingress limits for the addon). All are off by default.
+  and ingress limits for the addon). All are off by default. A worker pod
+  can use DNS only on the cluster resolver (`networkPolicy.dns`). With
+  `workersInternetEgress`, it cannot connect to link-local (cloud metadata)
+  or carrier-grade NAT addresses.
 
 - A push to any branch, `main` included, builds the image of every addon for
   amd64 and publishes it tagged with the commit SHA and `branch-<name>`, so

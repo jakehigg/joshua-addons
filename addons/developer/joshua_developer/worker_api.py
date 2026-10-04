@@ -27,8 +27,15 @@ Routes:
 - ``POST /worker/log`` ``{"text"}``: add text to the session log.
 - ``/worker/claude/{path}``, any method: the Claude forwarder.
 
-The Claude forwarder sends the request on to ``https://api.anthropic.com/{path}``.
-It streams the body in both directions, so a server-sent event stream arrives
+A body over 2 MiB on a ``/worker/`` POST route other than the forwarder gets
+413, before the manager reads it all.
+
+The Claude forwarder sends a request on to ``https://api.anthropic.com/{path}``
+only when ``path`` is in ``CLAUDE_PATHS``. Another path gets 403. The manager
+answers ``api/hello`` itself, with no task token: it is the connectivity
+probe of the Claude CLI.
+
+The forwarder streams the body in both directions, so a server-sent event stream arrives
 at the worker as the API sends it. It replaces ``Authorization`` with the
 manager's ``CLAUDE_CODE_OAUTH_TOKEN``, drops ``x-api-key``, sets ``Host`` for
 the API, and passes the other headers on. The worker sets:
@@ -44,6 +51,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -67,7 +76,22 @@ logger = get_logger("joshua_developer.worker_api")
 CLAUDE_API = "https://api.anthropic.com"
 ANSWER_POLL_S = 25.0
 MAX_LOG_CALL = 256 * 1024
+MAX_BODY = 2 * 1024 * 1024
 _BEARER = "Bearer "
+
+# The API paths that the Claude CLI calls. The forwarder refuses every other
+# path. Confirm this list against the gateway log on the next live run.
+CLAUDE_PATHS = frozenset({"v1/messages", "v1/messages/count_tokens", "v1/models"})
+# v1/models/<model id>: one more path segment, with no dot segment.
+_MODEL_PATH = re.compile(r"v1/models/[A-Za-z0-9_-][A-Za-z0-9._-]*")
+# The connectivity probe of the Claude CLI. The manager answers it.
+CLAUDE_PROBE = "api/hello"
+
+
+def claude_path_allowed(path: str) -> bool:
+    """True when the forwarder sends ``path`` on to the Claude API."""
+    return path in CLAUDE_PATHS or (_MODEL_PATH.fullmatch(path) is not None and ".." not in path)
+
 
 # Headers that never go on to the Claude API. Authorization comes back with
 # the manager's token. Host comes from the upstream URL.
@@ -194,9 +218,29 @@ def build_worker_app(
             return _error(409, "task_ended")
         return task_id, task
 
-    async def json_body(request: Request) -> dict[str, Any] | None:
+    async def read_body(request: Request) -> bytes | Response:
+        """The body, or 413 when it is over ``MAX_BODY``. The size is checked as it arrives."""
+        length = request.headers.get("content-length")
+        if length is not None and (not length.isdigit() or int(length) > MAX_BODY):
+            logger.warning({"message": "worker body too large", "path": request.url.path})
+            return _error(413, "body_too_large")
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_BODY:
+                logger.warning({"message": "worker body too large", "path": request.url.path})
+                return _error(413, "body_too_large")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    async def json_body(request: Request) -> dict[str, Any] | Response | None:
+        """The JSON object of the body, 413 when it is too large, or None."""
+        raw = await read_body(request)
+        if isinstance(raw, Response):
+            return raw
         try:
-            data = await request.json()
+            data = json.loads(raw)
         except ValueError:
             return None
         return data if isinstance(data, dict) else None
@@ -221,6 +265,8 @@ def build_worker_app(
         if isinstance(found, Response):
             return found
         task_id, _ = found
+        if isinstance(body := await read_body(request), Response):
+            return body
         manager.mark_running(task_id)
         return JSONResponse({"status": "running"})
 
@@ -230,6 +276,8 @@ def build_worker_app(
             return found
         task_id, _ = found
         data = await json_body(request)
+        if isinstance(data, Response):
+            return data
         if data is None:
             return _error(400, "bad_request")
         try:
@@ -248,6 +296,8 @@ def build_worker_app(
             return found
         task_id, _ = found
         data = await json_body(request)
+        if isinstance(data, Response):
+            return data
         question = data.get("question") if data else None
         if not isinstance(question, str) or not question.strip():
             return _error(400, "bad_request")
@@ -280,6 +330,8 @@ def build_worker_app(
         if isinstance(found, Response):
             return found
         task_id, _ = found
+        if isinstance(body := await read_body(request), Response):
+            return body
         return JSONResponse({"paused_s": manager.stop_wait(task_id)})
 
     async def log(request: Request) -> Response:
@@ -288,6 +340,8 @@ def build_worker_app(
             return found
         task_id, _ = found
         data = await json_body(request)
+        if isinstance(data, Response):
+            return data
         text = data.get("text") if data else None
         if not isinstance(text, str):
             return _error(400, "bad_request")
@@ -296,14 +350,26 @@ def build_worker_app(
         return JSONResponse({"appended": manager.append_log(task_id, text)})
 
     async def claude(request: Request) -> Response:
+        path = request.path_params["path"]
+        if path == CLAUDE_PROBE and request.method in ("GET", "HEAD"):
+            return JSONResponse({})
         found = authorize(request)
         if isinstance(found, Response):
             return found
         task_id, _ = found
+        if not claude_path_allowed(path):
+            logger.warning(
+                {
+                    "message": "forwarder refused a path",
+                    "task_id": task_id,
+                    "method": request.method,
+                    "api_path": path[:200],
+                }
+            )
+            return _error(403, "path_not_allowed")
         token = manager.settings.claude_token
         if not token:
             return _error(503, "claude_token_not_configured")
-        path = request.path_params["path"]
         url = httpx.URL(f"{claude_base.rstrip('/')}/{path}")
         if request.url.query:
             url = url.copy_with(query=request.url.query.encode())

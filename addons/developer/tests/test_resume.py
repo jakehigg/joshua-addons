@@ -30,7 +30,6 @@ def blocked(pushed: bool = True, status: str = "blocked") -> Report:
         status=status,  # type: ignore[arg-type]
         summary="Stopped: blocked on a question. The work so far is on branch feature.",
         open_question="Which port?" if status == "blocked" else None,
-        branch="feature",
         pushed=pushed,
         head="feature" if pushed else None,
         commit_hash="a" * 40 if pushed else None,
@@ -103,7 +102,7 @@ async def test_an_answer_resumes_a_blocked_task_end_to_end(manager, git_host) ->
     assert old.status_code == 401
     assert new.json()["resumed"] is True
 
-    done = Report(status="success", summary="Done.", branch="feature", pushed=True, head="feature")
+    done = Report(status="success", summary="Done.", pushed=True, head="feature")
     task = await manager.record_report(task_id, done)
     assert task is not None and task["status"] == "success"
     assert task["pr_number"] == 42

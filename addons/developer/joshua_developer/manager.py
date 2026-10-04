@@ -4,12 +4,18 @@ The MCP tools call this class. A call that breaks a rule gets a dict with
 ``status: "rejected"``, a ``reason``, and a ``message``. The reasons are
 ``invalid_arguments``, ``repo_not_allowed``, ``repo_not_configured``,
 ``token_missing``, ``pr_not_found``, ``pr_not_open``, ``platform_error``,
-``unknown_persona``, ``concurrency_limit``, ``locked``, ``not_waiting``, and
-``not_resumable``.
+``unknown_persona``, ``concurrency_limit``, ``locked``, ``not_waiting``,
+``not_resumable``, and ``branch_is_base``.
+
+A task never works on its base branch, ``main``, or ``master``
+(``branch_is_base``). This is a guard, not a boundary: the git token can
+push to every branch that the host lets it write.
 
 When a worker reports a push, the manager gates the pull request: it reads
-the diff over the platform API and scans it for credentials. A hit deletes
-the branch and fails the task. A clean diff gets a pull request.
+the diff of the worker's commits over the platform API and scans it for
+credentials. A hit fails the task, and deletes the branch only when the task
+made it. A clean diff gets a pull request. The branch and the pull request
+come from the task row and the platform, never from the report.
 
 The manager also serves the worker side: it mints the task token of each
 task, takes a question from a worker, and wakes the worker that waits for
@@ -61,6 +67,21 @@ RESTART_ERROR = "manager restarted"
 MAX_TEXT = 100_000
 MAX_QUESTION = 10_000
 DEFAULT_BASE_BRANCH = "main"
+# A task never works on one of these, or on its own base branch.
+PROTECTED_BRANCHES = frozenset({"main", "master"})
+# The caps on the stored report fields. A longer value is cut, with
+# TRUNCATED at the end. A report is never refused for its size alone.
+TRUNCATED = "\n[truncated by the developer manager]"
+MAX_REPORT_LOG = 1024 * 1024
+MAX_REPORT_SUMMARY = 20_000
+MAX_REPORT_FILES = 500
+MAX_REPORT_FILE = 512
+MAX_REPORT_TESTS = 50
+MAX_REPORT_TEST = 2000
+MAX_REPORT_QUESTION = 10_000
+MAX_REPORT_ERROR = 20_000
+# A git commit name: 40 (SHA-1) or 64 (SHA-256) hex characters.
+_COMMIT_CHARS = frozenset("0123456789abcdef")
 # The states of a pull request that a rework cannot change.
 CLOSED_PR_STATES = frozenset({"closed", "merged", "locked"})
 # The states from which an answer resumes a task.
@@ -69,6 +90,50 @@ RESUMABLE_STATUSES = ("blocked", "timed_out")
 
 def rejected(reason: str, message: str, **extra: Any) -> dict[str, Any]:
     return {"status": "rejected", "reason": reason, "message": message, **extra}
+
+
+def branch_is_base(branch: str, base: str | None) -> dict[str, Any] | None:
+    """A ``branch_is_base`` rejection when ``branch`` is ``base``, ``main``, or ``master``."""
+    if branch == base or branch in PROTECTED_BRANCHES:
+        return rejected(
+            "branch_is_base",
+            f"the branch {branch} is a base or default branch; a task works on its own branch",
+        )
+    return None
+
+
+def cut(text: str | None, limit: int) -> str | None:
+    """``text``, cut to ``limit`` characters with the ``TRUNCATED`` marker."""
+    if text is None or len(text) <= limit:
+        return text
+    return text[: max(0, limit - len(TRUNCATED))] + TRUNCATED
+
+
+def cut_list(items: list[str], count: int, limit: int) -> list[str]:
+    """At most ``count`` items, each cut to ``limit``. A cut list ends with ``TRUNCATED``."""
+    out = [cut(item, limit) or "" for item in items[:count]]
+    if len(items) > count:
+        out.append(TRUNCATED.strip())
+    return out
+
+
+def capped(report: Report) -> Report:
+    """``report`` with each stored text field cut to its cap."""
+    return report.model_copy(
+        update={
+            "summary": cut(report.summary, MAX_REPORT_SUMMARY),
+            "log": cut(report.log, MAX_REPORT_LOG),
+            "files_changed": cut_list(report.files_changed, MAX_REPORT_FILES, MAX_REPORT_FILE),
+            "tests_run": cut_list(report.tests_run, MAX_REPORT_TESTS, MAX_REPORT_TEST),
+            "open_question": cut(report.open_question, MAX_REPORT_QUESTION),
+            "error": cut(report.error, MAX_REPORT_ERROR),
+        }
+    )
+
+
+def is_commit(value: str | None) -> bool:
+    """True when ``value`` is a full commit name in lowercase hex."""
+    return bool(value) and len(value or "") in (40, 64) and set(value or "") <= _COMMIT_CHARS
 
 
 async def retry_5xx[T](call: Callable[[], Awaitable[T]]) -> T:
@@ -207,6 +272,9 @@ class Manager:
             base = check_branch(base_branch) if base_branch else DEFAULT_BASE_BRANCH
         except RepoError as exc:
             return rejected("invalid_arguments", str(exc))
+        refused = branch_is_base(branch_name, base)
+        if refused is not None:
+            return refused
         admitted = self._admit(person, repo)
         if isinstance(admitted, dict):
             return admitted
@@ -262,6 +330,9 @@ class Manager:
                     "invalid_arguments",
                     f"the git host {resolved.host} has no pull requests; rework needs branch",
                 )
+            refused = branch_is_base(branch_name, None)
+            if refused is not None:
+                return refused
             return await self._dispatch(
                 task_id=task_id,
                 person=person,
@@ -278,6 +349,9 @@ class Manager:
         found = await self._resolve_pr(person, normalized, number)
         if isinstance(found, dict):
             return found
+        refused = branch_is_base(found.source_branch or "", found.base_branch)
+        if refused is not None:
+            return refused
         return await self._dispatch(
             task_id=task_id,
             person=person,
@@ -538,6 +612,7 @@ class Manager:
             logger.warning({"message": "report for an ended task ignored", "task_id": task_id})
             return self.store.get_task(task_id)
         self._finishing.add(task_id)
+        report = capped(report)
         try:
             self.store.end_wait(task_id, self.clock())
             fields: dict[str, Any] = {
@@ -551,14 +626,8 @@ class Manager:
                 "output_tokens": report.output_tokens,
                 "estimated_cost": report.estimated_cost,
             }
-            if report.pr_url:
-                fields["pr_url"] = report.pr_url
-            if report.pr_number is not None:
-                fields["pr_number"] = report.pr_number
             if report.pushed:
                 fields.update(await self._after_push(task, report))
-            elif report.branch:
-                fields["branch_name"] = report.branch
             fields["completed_at"] = now_iso()
             self.store.update_task(task_id, **fields)
         finally:
@@ -577,9 +646,11 @@ class Manager:
     async def _after_push(self, task: dict[str, Any], report: Report) -> dict[str, Any]:
         """Gate a pushed branch. Returns the task fields to change.
 
-        1. Read the diff of the branch against its base, and scan it. A hit
-           deletes the branch and fails the task. A ``git`` host has no diff
-           API, so the scan is ``unavailable``.
+        1. Read the diff from ``clone_head`` (the branch before the session)
+           to the pushed branch, so the scan reads only the worker's commits,
+           and scan it. Without a ``clone_head``, the diff starts at the base
+           branch. A hit fails the task (``_reject_push``). A ``git`` host has
+           no diff API, so the scan is ``unavailable``.
         2. On a successful ``develop``, find the open pull request of the
            branch, or open one. On a ``rework``, check that the pull request
            is still there.
@@ -597,6 +668,10 @@ class Manager:
                 "error": f"the worker reported a push to a branch that is not {head}",
             }
         base = task["base_branch"] or DEFAULT_BASE_BRANCH
+        # The worker names clone_head. A wrong one narrows the scan, but a
+        # worker can push to the branch with its git token in any case: the
+        # scan is a guard against a mistake, not against a hostile worker.
+        since = report.clone_head if is_commit(report.clone_head) else base
         try:
             platform, _ = platforms.for_task(self.settings, self.config, task["person"], repo)
         except PlatformConfigError as exc:
@@ -607,13 +682,13 @@ class Manager:
             if platform.kind == "git":
                 diff = None
             else:
-                diff = await retry_5xx(lambda: platform.compare(repo, base, head))
+                diff = await retry_5xx(lambda: platform.compare(repo, since, head))
             if diff is None or diff.unavailable:
                 out["scan"] = "unavailable"
             else:
                 findings = scan_diff(diff)
                 if findings:
-                    return await self._reject_push(platform, task, findings)
+                    return await self._reject_push(platform, task, report, findings)
                 out["scan"] = "partial" if diff.unscanned else "clean"
             if report.status != "success" or platform.kind == "git":
                 return out
@@ -667,21 +742,38 @@ class Manager:
             await platform.aclose()
 
     async def _reject_push(
-        self, platform: Platform, task: dict[str, Any], findings: list[Finding]
+        self, platform: Platform, task: dict[str, Any], report: Report, findings: list[Finding]
     ) -> dict[str, Any]:
-        """Delete the branch of a push that the scan stopped, and fail the task."""
+        """Fail the task of a push that the scan stopped.
+
+        The manager deletes the branch only when this task made it: a
+        ``develop`` whose worker, or an earlier worker of the same task,
+        reports ``created_branch``. A branch that was there before the task
+        stays, and the error says so. A ``rework`` never deletes.
+        """
+        history = task.get("history") or []
+        created = task["task_type"] == "develop" and (
+            report.created_branch or any(entry.get("created_branch") for entry in history)
+        )
         logger.warning(
             {
-                "message": "scan found a credential; the branch is deleted",
+                "message": "scan found a credential",
                 "task_id": task["task_id"],
                 "findings": len(findings),
+                "branch_deleted": created,
             }
         )
         error = finding_error(findings)
-        try:
-            await retry_5xx(lambda: platform.delete_branch(task["repo"], task["branch_name"]))
-        except PlatformError as exc:
-            error += f". The branch was not deleted ({exc}); delete it by hand"
+        if created:
+            try:
+                await retry_5xx(lambda: platform.delete_branch(task["repo"], task["branch_name"]))
+            except PlatformError as exc:
+                error += f". The branch was not deleted ({exc}); delete it by hand"
+        else:
+            error += (
+                f". The branch {task['branch_name']} was kept, because it existed before "
+                "the task; remove the commit by hand"
+            )
         return {
             "status": "failed",
             "error": error,

@@ -37,12 +37,13 @@ class Report(BaseModel):
     files_changed: list[str] = Field(default_factory=list)
     tests_run: list[str] = Field(default_factory=list)
     open_question: str | None = None
-    branch: str | None = None
     pushed: bool = False
     head: str | None = None
+    # The commit of the branch after the checkout, before the session.
+    clone_head: str | None = None
+    # True when this worker made the branch: the remote did not have it.
+    created_branch: bool = False
     commit_hash: str | None = None
-    pr_url: str | None = None
-    pr_number: int | None = None
     error: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None

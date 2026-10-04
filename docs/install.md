@@ -150,7 +150,7 @@ facts first:
   release namespace only.
 - Its `values.yaml` also turns on the `networkPolicy` block, and
   `network: off` is the default in `developer.yaml`. A worker then connects
-  to the manager and DNS only, and cannot install dependencies. The CNI of
+  to the manager and the cluster DNS pods only, and cannot install dependencies. The CNI of
   the cluster must enforce NetworkPolicy.
 
 ### ArgoCD

@@ -79,7 +79,8 @@ service:
 rbac:
   enabled: true
 
-# A worker can connect to the manager on 8001 and 8002, and to DNS. For
+# A worker can connect to the manager on 8001 and 8002, and to the cluster
+# DNS pods (networkPolicy.dns in the chart values). For
 # `network: on` in developer.yaml, set workersInternetEgress to true, and set
 # clusterCidrs to the pod and Service CIDRs of your cluster. The CNI must
 # enforce NetworkPolicy.

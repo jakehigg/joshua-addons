@@ -34,7 +34,7 @@ async def test_no_delay_reports_before_start_returns() -> None:
     [(task_id, report)] = recorder.reports
     assert task_id == "t1"
     assert report.status == "success"
-    assert report.branch == "feature"
+    assert report.pushed is False
     assert runtime.count_active() == 0
 
 

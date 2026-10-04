@@ -30,9 +30,31 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "assigned_secret",
-        re.compile(r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{16,}"),
+        re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]\s*['\"]([^'\"]{16,})"),
     ),
 )
+# The assigned_secret value must mix at least this many of four character
+# classes (lowercase, uppercase, digit, other), so a test fixture of dots or
+# x's does not match.
+MIN_SECRET_CLASSES = 3
+
+
+def mixed(value: str) -> bool:
+    """True when ``value`` has at least ``MIN_SECRET_CLASSES`` character classes."""
+    classes = (
+        any(c.islower() for c in value),
+        any(c.isupper() for c in value),
+        any(c.isdigit() for c in value),
+        any(not c.isalnum() for c in value),
+    )
+    return sum(classes) >= MIN_SECRET_CLASSES
+
+
+def _matches(name: str, pattern: re.Pattern[str], text: str) -> bool:
+    if name != "assigned_secret":
+        return pattern.search(text) is not None
+    return any(mixed(match.group(1)) for match in pattern.finditer(text))
+
 
 _HUNK_RE = re.compile(r"^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,[0-9]+)? @@")
 
@@ -77,7 +99,7 @@ def scan_text(path: str, patch: str) -> list[Finding]:
     findings: list[Finding] = []
     for line_no, text in added_lines(patch):
         for name, pattern in PATTERNS:
-            if pattern.search(text):
+            if _matches(name, pattern, text):
                 findings.append(Finding(path=path, line_no=line_no, pattern_name=name))
     return findings
 

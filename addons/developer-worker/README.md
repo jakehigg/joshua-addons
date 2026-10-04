@@ -37,6 +37,18 @@ directory has no compose file and no `values.yaml`.
 The worker exits 0 when the manager accepted the report, or when the task
 had already ended. It exits 1 only when it could not send the report.
 
+## The report
+
+The report has these fields: `status`, `summary`, `files_changed`,
+`tests_run`, `open_question`, `pushed`, `head` (the branch it pushed),
+`clone_head` (the commit of the branch after the checkout), `created_branch`
+(true when the remote did not have the branch), `commit_hash`, `error`, the
+token counts, the cost, and `log`. The manager scans the diff from
+`clone_head` to the branch, and deletes the branch after a scan hit only
+when `created_branch` is true on a `develop`. The report has no field for
+the branch name or the pull request. The manager takes them from its own
+data, and it refuses a report with an unknown field.
+
 ## Environment
 
 The manager sets these four variables. The worker takes no other setting.

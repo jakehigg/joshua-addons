@@ -30,11 +30,13 @@ from joshua_developer.scan import Finding
 from joshua_developer.server import build_app
 from joshua_developer.store import TaskStore
 from joshua_developer.worker_api import build_worker_app
+from pydantic import ValidationError
 
 REPO = "github.com/example-home/app"
 GL_REPO = "gitlab.example.net/group/sub/project"
 GIT_REPO = "git.example.org/team/app"
 SECRET = "gh" + "p_" + "Z" * 36
+CLONE_HEAD = "c0ffee" + "0" * 34
 
 CONFIG = {
     "repos": ["github.com/example-home/*", "gitlab.example.net/*", "git.example.org/*/*"],
@@ -225,6 +227,34 @@ async def test_rework_on_a_git_host_takes_a_branch(manager, git_host: FakeGitHos
     assert git_host.requests == []
 
 
+@pytest.mark.parametrize(
+    ("branch", "base"),
+    [("main", None), ("master", None), ("develop", "develop"), ("main", "develop")],
+)
+async def test_develop_never_targets_a_base_branch(manager, git_host, branch, base) -> None:
+    result = await manager.develop("alex", REPO, "brief", branch=branch, base_branch=base)
+    assert (result["status"], result["reason"]) == ("rejected", "branch_is_base")
+    assert manager.store.list_tasks(None) == []
+    assert git_host.requests == []
+
+
+@pytest.mark.parametrize(("source", "base"), [("develop", "develop"), ("main", "develop")])
+async def test_rework_of_a_pr_from_a_base_branch_is_refused(manager, git_host, source, base):
+    git_host.override("GET", r"/pulls/4$", httpx.Response(200, json=github_pr(4, source, base)))
+    result = await manager.rework("alex", REPO, 4, "x")
+    assert (result["status"], result["reason"]) == ("rejected", "branch_is_base")
+    assert manager.store.list_tasks(None) == []
+
+
+@pytest.mark.parametrize("branch", ["main", "master"])
+async def test_rework_on_a_git_host_never_targets_the_default_branch(
+    manager, git_host, branch
+) -> None:
+    result = await manager.rework("alex", GIT_REPO, None, "x", branch=branch)
+    assert (result["status"], result["reason"]) == ("rejected", "branch_is_base")
+    assert manager.store.list_tasks(None) == []
+
+
 async def test_rework_over_mcp_with_a_branch(tmp_path) -> None:
     app = build_app(make_settings(tmp_path, config=CONFIG), stub_delay_s=None)
     async with mcp_session(app, ALEX) as session:
@@ -325,7 +355,9 @@ async def test_a_scan_hit_deletes_the_branch_and_fails(manager, git_host, report
         {"filename": "config.py", "patch": f"@@ -3 +3,2 @@\n a\n+KEY = '{SECRET}'"},
     ]
     task = await develop(manager, branch="feature/leak")
-    row = await manager.record_report(task["task_id"], pushed(head="feature/leak"))
+    row = await manager.record_report(
+        task["task_id"], pushed(head="feature/leak", created_branch=True)
+    )
     assert row is not None
     assert row["status"] == "failed"
     assert row["scan"] == "hit"
@@ -348,9 +380,71 @@ async def test_a_scan_hit_whose_branch_will_not_delete(manager, git_host, report
     git_host.compare_files = [{"filename": "k", "patch": f"@@ -0,0 +1 @@\n+{SECRET}"}]
     git_host.override("DELETE", r"/refs/heads/", httpx.Response(403, json={"message": "no"}))
     task = await develop(manager, branch="leak")
-    row = await manager.record_report(task["task_id"], pushed())
+    row = await manager.record_report(task["task_id"], pushed(created_branch=True))
     assert row is not None and row["status"] == "failed"
     assert "not deleted (HTTP 403: no); delete it by hand" in row["error"]
+
+
+async def test_the_scan_reads_only_the_commits_of_the_worker(manager, git_host) -> None:
+    task = await develop(manager, branch="feature/x")
+    row = await manager.record_report(
+        task["task_id"], pushed(head="feature/x", clone_head=CLONE_HEAD)
+    )
+    assert row is not None and row["status"] == "success"
+    assert git_host.calls()[0] == (f"GET /repos/example-home/app/compare/{CLONE_HEAD}...feature/x")
+
+
+@pytest.mark.parametrize("clone_head", [None, "main", "HEAD~3", "ABC" * 14, "a" * 39])
+async def test_a_clone_head_that_is_not_a_commit_scans_from_the_base(
+    manager, git_host, clone_head
+) -> None:
+    task = await develop(manager, branch="feature/x")
+    await manager.record_report(task["task_id"], pushed(head="feature/x", clone_head=clone_head))
+    assert git_host.calls()[0] == "GET /repos/example-home/app/compare/main...feature/x"
+
+
+async def test_a_scan_hit_on_a_branch_that_was_there_keeps_it(manager, git_host) -> None:
+    git_host.compare_files = [{"filename": "k", "patch": f"@@ -0,0 +1 @@\n+{SECRET}"}]
+    task = await develop(manager, branch="feature/old")
+    row = await manager.record_report(
+        task["task_id"], pushed(head="feature/old", clone_head=CLONE_HEAD, created_branch=False)
+    )
+    assert row is not None and (row["status"], row["scan"]) == ("failed", "hit")
+    assert "github_token in k:1" in row["error"]
+    assert "kept, because it existed before the task" in row["error"]
+    assert not [call for call in git_host.calls() if call.startswith("DELETE")]
+
+
+async def test_a_scan_hit_on_a_rework_never_deletes(manager, git_host) -> None:
+    git_host.compare_files = [{"filename": "k", "patch": f"@@ -0,0 +1 @@\n+{SECRET}"}]
+    result = await manager.rework("alex", REPO, 42, "Fix it.")
+    assert result["status"] == "dispatched", result
+    # A worker that says it made the branch does not change the rule.
+    row = await manager.record_report(result["task_id"], pushed(head="pr-42", created_branch=True))
+    assert row is not None and (row["status"], row["scan"]) == ("failed", "hit")
+    assert "kept, because it existed before the task" in row["error"]
+    assert not [call for call in git_host.calls() if call.startswith("DELETE")]
+
+
+async def test_a_resumed_develop_deletes_the_branch_an_earlier_worker_made(
+    manager, git_host
+) -> None:
+    task = await develop(manager, branch="feature/new")
+    task_id = task["task_id"]
+    stop = pushed(status="blocked", head="feature/new", created_branch=True)
+    await manager.record_report(task_id, stop)
+    resumed = await manager.answer("alex", task, "Go on.")
+    assert resumed["status"] == "dispatched", resumed
+    git_host.compare_files = [{"filename": "k", "patch": f"@@ -0,0 +1 @@\n+{SECRET}"}]
+    row = await manager.record_report(task_id, pushed(head="feature/new", created_branch=False))
+    assert row is not None and row["status"] == "failed"
+    assert "DELETE /repos/example-home/app/git/refs/heads/feature/new" in git_host.calls()
+
+
+@pytest.mark.parametrize("field", ["pr_url", "pr_number", "branch"])
+def test_the_report_has_no_field_for_the_branch_or_the_pr(field: str) -> None:
+    with pytest.raises(ValidationError):
+        Report.model_validate({"status": "success", field: "x"})
 
 
 async def test_an_existing_pr_is_reused(manager, git_host) -> None:

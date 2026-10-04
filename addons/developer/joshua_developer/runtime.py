@@ -27,7 +27,12 @@ from joshua_developer.store import utcnow
 
 
 class Report(BaseModel):
-    """The report a worker sends when its task ends."""
+    """The report a worker sends when its task ends.
+
+    The report has no field for the branch or the pull request. The manager
+    takes them from the task row and from the platform only. An unknown field
+    is a validation error.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -36,15 +41,17 @@ class Report(BaseModel):
     files_changed: list[str] = Field(default_factory=list)
     tests_run: list[str] = Field(default_factory=list)
     open_question: str | None = None
-    branch: str | None = None
     # True when the worker pushed the task's branch. The manager then scans
     # the diff and opens or finds the pull request.
     pushed: bool = False
     # The branch the worker pushed. It must be the task's branch.
     head: str | None = None
+    # The commit of the branch after the checkout, before the session. The
+    # scan reads the diff from this commit to the pushed branch.
+    clone_head: str | None = None
+    # True when the worker made the branch, because the remote did not have it.
+    created_branch: bool = False
     commit_hash: str | None = None
-    pr_url: str | None = None
-    pr_number: int | None = None
     error: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -197,7 +204,6 @@ class StubRuntime:
         report = Report(
             status="success",
             summary="The stub runtime ran no worker. This report is fake.",
-            branch=task.get("branch_name"),
             commit_hash="0" * 40,
             input_tokens=0,
             output_tokens=0,

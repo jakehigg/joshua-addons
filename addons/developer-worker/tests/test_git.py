@@ -102,8 +102,9 @@ def test_develop_creates_the_branch_from_the_base(
     _configure(home)
     dest = tmp_path / "work"
     git.clone(str(bare_repo), dest)
-    commit = git.checkout(dest, "developer/new", "main", create_if_missing=True)
+    commit, created = git.checkout(dest, "developer/new", "main", create_if_missing=True)
     assert commit == remote_head(bare_repo, "main")
+    assert created is True
     assert run_git("branch", "--show-current", cwd=dest).strip() == "developer/new"
 
 
@@ -113,7 +114,7 @@ def test_develop_without_a_base_starts_at_the_default_branch(
     _configure(home)
     dest = tmp_path / "work"
     git.clone(str(bare_repo), dest)
-    assert git.checkout(dest, "developer/new", None, True) == remote_head(bare_repo, "main")
+    assert git.checkout(dest, "developer/new", None, True) == (remote_head(bare_repo, "main"), True)
 
 
 def test_a_missing_base_branch_is_an_error(home: Path, bare_repo: Path, tmp_path: Path) -> None:
@@ -128,7 +129,10 @@ def test_rework_checks_out_the_existing_branch(home: Path, bare_repo: Path, tmp_
     _configure(home)
     dest = tmp_path / "work"
     git.clone(str(bare_repo), dest)
-    assert git.checkout(dest, "feature", "main", False) == remote_head(bare_repo, "feature")
+    assert git.checkout(dest, "feature", "main", False) == (
+        remote_head(bare_repo, "feature"),
+        False,
+    )
     assert (dest / "feature.txt").is_file()
 
 
@@ -144,7 +148,7 @@ def test_dirty_uncommitted_and_push(home: Path, bare_repo: Path, tmp_path: Path)
     _configure(home)
     dest = tmp_path / "work"
     git.clone(str(bare_repo), dest)
-    start = git.checkout(dest, "developer/new", "main", True)
+    start, _ = git.checkout(dest, "developer/new", "main", True)
     assert git.dirty(dest) is False
     assert git.uncommitted(dest) == []
     (dest / "hello.txt").write_text("hi\n")

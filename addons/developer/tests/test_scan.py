@@ -22,7 +22,7 @@ FAKES = {
     "slack_user_token": "xo" + "xp-" + "1234-5678-abcdef",
     "aws_access_key": "AK" + "IA" + "ABCDEFGHIJKLMNOP",
     "private_key": "-----BEGIN " + "RSA PRIVATE KEY-----",
-    "assigned_secret": "api_key = '" + "q" * 20 + "'",
+    "assigned_secret": "api_key = '" + "qR7" * 7 + "'",
 }
 
 
@@ -51,10 +51,10 @@ def test_the_private_key_forms(header: str) -> None:
 @pytest.mark.parametrize(
     "line",
     [
-        'password: "' + "p" * 16 + '"',
-        'CLIENT_SECRET="' + "s" * 30 + '"',
-        "auth_token = '" + "t" * 16 + "'",
-        'API-KEY: "' + "k" * 16 + '"',
+        'password: "' + "pW9" * 6 + '"',
+        'CLIENT_SECRET="' + "s-3" * 10 + '"',
+        "auth_token = '" + "T_t" * 6 + "'",
+        'API-KEY: "' + "K9k" * 6 + '"',
     ],
 )
 def test_the_assigned_secret_forms(line: str) -> None:
@@ -71,6 +71,11 @@ def test_the_assigned_secret_forms(line: str) -> None:
         'TOKEN_PREFIXES = ("sk-' + 'ant-", "gl' + 'pat-", "gh' + 'p_")',
         "Keys start with AK" + "IA and are 20 characters.",
         "-----BEGIN PUBLIC KEY-----",
+        # Test fixtures: long, but with fewer than three character classes.
+        'password = "' + "." * 16 + '"',
+        'token = "' + "x" * 20 + '"',
+        "api_key = '" + "q" * 20 + "'",
+        'secret = "' + "a1" * 10 + '"',
     ],
 )
 def test_ordinary_text_does_not_match(line: str) -> None:

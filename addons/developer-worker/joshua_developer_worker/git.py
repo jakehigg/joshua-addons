@@ -124,14 +124,17 @@ def _remote_has_branch(dest: Path, branch: str) -> bool:
     return any(line.endswith(f"refs/heads/{branch}") for line in out.splitlines())
 
 
-def checkout(dest: Path, branch: str, base_branch: str | None, create_if_missing: bool) -> str:
-    """Check out ``branch``. Returns the head commit.
+def checkout(
+    dest: Path, branch: str, base_branch: str | None, create_if_missing: bool
+) -> tuple[str, bool]:
+    """Check out ``branch``. Returns the head commit, and True when the branch is new.
 
     When the remote has the branch, the checkout tracks it. When it has not
     and ``create_if_missing`` is set, the branch starts at ``base_branch`` of
     the remote, or at the default branch when ``base_branch`` is None.
     """
-    if _remote_has_branch(dest, branch):
+    created = not _remote_has_branch(dest, branch)
+    if not created:
         _run(["fetch", "--quiet", "origin", branch], cwd=dest)
         _run(["checkout", "--quiet", "-B", branch, f"origin/{branch}"], cwd=dest)
     elif not create_if_missing:
@@ -145,7 +148,7 @@ def checkout(dest: Path, branch: str, base_branch: str | None, create_if_missing
     commit = head(dest)
     if commit is None:
         raise GitError("the checkout has no commit")
-    return commit
+    return commit, created
 
 
 def head(dest: Path) -> str | None:
