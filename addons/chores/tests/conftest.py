@@ -15,11 +15,12 @@ from collections.abc import AsyncIterator
 import httpx2
 import pytest
 import pytest_asyncio
-from joshua_chores.database import build_engine
+from joshua_chores.database import build_engine, build_sessionmaker
+from joshua_chores.migrations import run_migrations
 from joshua_chores.models import Base
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.types import ASGIApp
 
 TEST_DATABASE_URL_ENV = "TEST_DATABASE_URL"
@@ -30,6 +31,54 @@ def _engine_params() -> list:
     if os.environ.get(TEST_DATABASE_URL_ENV):
         params.append(pytest.param("postgres", id="postgres", marks=pytest.mark.integration))
     return params
+
+
+@pytest_asyncio.fixture(params=_engine_params())
+async def engine(request: pytest.FixtureRequest, tmp_path) -> AsyncIterator[AsyncEngine]:
+    """A migrated engine: a new SQLite file, or a clean Postgres schema."""
+    if request.param == "postgres":
+        eng = build_engine(os.environ[TEST_DATABASE_URL_ENV])
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        try:
+            await run_migrations(eng)
+            yield eng
+        finally:
+            async with eng.begin() as conn:
+                await conn.run_sync(Base.metadata.drop_all)
+            await eng.dispose()
+    else:
+        db_path = tmp_path / "chores.db"
+        eng = build_engine(f"sqlite+aiosqlite:///{db_path}")
+        try:
+            await run_migrations(eng)
+            yield eng
+        finally:
+            await eng.dispose()
+
+
+@pytest_asyncio.fixture
+async def sessionmaker_(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return build_sessionmaker(engine)
+
+
+@pytest_asyncio.fixture
+async def session(
+    sessionmaker_: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
+    async with sessionmaker_() as s:
+        yield s
+
+
+@pytest.fixture
+def add_test_member(session: AsyncSession):
+    """Return a function that adds a member with ``slug`` through the service."""
+    from joshua_chores import service
+
+    async def _add(slug: str = "alpha", name: str = "Alpha") -> service.Member:
+        return await service.add_member(session, slug, name)
+
+    return _add
 
 
 @pytest_asyncio.fixture(params=_engine_params())

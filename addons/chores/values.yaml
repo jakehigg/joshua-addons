@@ -10,3 +10,9 @@ persistence:
   enabled: true
   mountPath: /data
   size: 1Gi
+
+# Optional settings. The README of the addon tells what each one does.
+# env:
+#   XP_PER_DOLLAR: "100"
+#   COOLDOWN_SECONDS: "60"
+#   MANAGER_LABEL: "Parent"

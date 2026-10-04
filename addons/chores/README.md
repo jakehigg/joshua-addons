@@ -31,6 +31,9 @@ from the same port.
 | `ADDON_TOKEN` | not set | When set, each request to `/mcp` needs the header `Authorization: Bearer <ADDON_TOKEN>`. A missing or wrong token gets 401. `/healthz` stays open. When not set, the addon checks no token, and the docker network is the boundary. |
 | `MANAGER_PIN` | not set | The PIN that the manager UI sends as `Authorization: Bearer <MANAGER_PIN>` on each write route under `/api`. When it is empty, the addon refuses each write route. The REST API comes in a later change. |
 | `CHORES_STATIC_DIR` | `/app/addons/chores/static` | The directory of the built web UI. The image puts the UI here. When the directory does not exist, the addon serves no UI at `/`. |
+| `XP_PER_DOLLAR` | `100` | The XP that equals one dollar, for the dollar value of a balance. `0` shows no dollar value. |
+| `COOLDOWN_SECONDS` | `60` | The minimum number of seconds between two completions of one chore. `0` turns the check off. |
+| `MANAGER_LABEL` | `Parent` | The word that the UI shows for a manager. |
 | `LOG_LEVEL` | `INFO` | The log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |
 
 ## Add it to joshua.yaml
