@@ -109,8 +109,12 @@ networkPolicy:
   managerPorts: # the addon ports the workers call
     - 8001
     - 8002
-  allowDns: true # let a worker use DNS on port 53, to find the addon Service by name
+  allowDns: true # let a worker use DNS on port 53 of the cluster resolver, to find the addon Service by name
+  dns:
+    namespace: kube-system # the namespace of the cluster DNS pods
+    podLabels: # the labels of the cluster DNS pods
+      k8s-app: kube-dns
   workersInternetEgress: false # let a worker connect to public addresses; set it for `network: on`
-  clusterCidrs: [] # the pod and Service CIDRs of the cluster, blocked with RFC1918 when workersInternetEgress is true; set them
+  clusterCidrs: [] # the pod and Service CIDRs of the cluster, blocked with RFC1918, link-local, and carrier-grade NAT when workersInternetEgress is true; set them
   ingressFrom: [] # raw `from` peers for `port`; empty means every pod in gatewayNamespaces
   gatewayNamespaces: [] # the namespaces that can call `port`; empty means every namespace

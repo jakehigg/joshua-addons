@@ -59,7 +59,9 @@ helm install hello charts/joshua-addon -f addons/hello/values.yaml
 | `networkPolicy.enabled` | `false` | Make the two NetworkPolicies. See "NetworkPolicy". |
 | `networkPolicy.workerSelector` | `joshua-addon: developer`, `app.kubernetes.io/name: joshua-addon-developer-worker` | The labels of the worker pods. |
 | `networkPolicy.managerPorts` | `[8001, 8002]` | The addon ports that the workers call. |
-| `networkPolicy.allowDns` | `true` | Let a worker use DNS on port 53, to find the addon Service by name. |
+| `networkPolicy.allowDns` | `true` | Let a worker use DNS on port 53 of the cluster DNS pods, to find the addon Service by name. |
+| `networkPolicy.dns.namespace` | `kube-system` | The namespace of the cluster DNS pods. |
+| `networkPolicy.dns.podLabels` | `k8s-app: kube-dns` | The labels of the cluster DNS pods. |
 | `networkPolicy.workersInternetEgress` | `false` | Let a worker connect to public addresses. |
 | `networkPolicy.clusterCidrs` | `[]` | The pod and Service CIDRs of the cluster. Workers cannot connect to them when `workersInternetEgress` is true. |
 | `networkPolicy.ingressFrom` | `[]` | Raw `from` peers for `port`. Empty means every pod in `gatewayNamespaces`. |
@@ -84,10 +86,12 @@ An addon that starts worker pods, such as `developer`, sets
 `networkPolicy.enabled: true`. The chart then makes two policies:
 
 - `<release>-workers` applies to the pods that match `workerSelector`. A
-  worker can connect to the addon pod on `managerPorts`, and to port 53 when
-  `allowDns` is true. It cannot connect to other addresses. With
+  worker can connect to the addon pod on `managerPorts`, and to port 53 of
+  the pods that match `dns.podLabels` in `dns.namespace` when `allowDns` is
+  true. It cannot connect to other addresses. With
   `workersInternetEgress: true`, a worker can also connect to all addresses
-  except `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and
+  except `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`
+  (cloud metadata), `100.64.0.0/10` (carrier-grade NAT), and
   `clusterCidrs`. Set `clusterCidrs` to the pod and Service CIDRs of your
   cluster when they are not in these ranges.
 - `<release>-manager` applies to the addon pod. The addon accepts `port`

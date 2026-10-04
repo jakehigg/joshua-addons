@@ -1,8 +1,9 @@
 {{- if .Values.networkPolicy.enabled }}
 {{- $np := .Values.networkPolicy }}
-{{/* The worker pods can connect to the addon on managerPorts, and to DNS.
-     With workersInternetEgress, they can also connect to every address that
-     is not private and not in clusterCidrs. They can connect to nothing
+{{/* The worker pods can connect to the addon on managerPorts, and to the
+     cluster DNS pods in dns.namespace. With workersInternetEgress, they can
+     also connect to every address that is not private, not link-local, not
+     carrier-grade NAT, and not in clusterCidrs. They can connect to nothing
      else. The CNI must enforce NetworkPolicy. */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -27,7 +28,14 @@ spec:
           port: {{ . }}
         {{- end }}
     {{- if $np.allowDns }}
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.dns.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.dns.podLabels | nindent 14 }}
+      ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
@@ -41,6 +49,8 @@ spec:
               - 10.0.0.0/8
               - 172.16.0.0/12
               - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
               {{- range $np.clusterCidrs }}
               - {{ . }}
               {{- end }}
