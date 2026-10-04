@@ -98,3 +98,75 @@ def test_configure_from_env_defaults_to_info(monkeypatch) -> None:
 
 def test_get_logger_returns_a_named_logger() -> None:
     assert log.get_logger("hello").name == "hello"
+
+
+class _Collect(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+async def _access_records(level: str, paths: list[str]) -> list[logging.LogRecord]:
+    """Serve a small app with uvicorn on loopback, GET each path, return the access records."""
+    import asyncio
+
+    import httpx
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    async def ok(request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route(p.split("?")[0], ok) for p in paths])
+    log.configure(level, "joshua-developer-test")
+    collect = _Collect()
+    logging.getLogger().addHandler(collect)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_config=None))
+    server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
+    serving = asyncio.create_task(server.serve())
+    try:
+        while not server.started:  # noqa: ASYNC110 - uvicorn has no started event
+            await asyncio.sleep(0.01)
+        port = server.servers[0].sockets[0].getsockname()[1]
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
+            for path in paths:
+                assert (await client.get(path)).status_code == 200
+    finally:
+        server.should_exit = True
+        await serving
+        logging.getLogger().removeHandler(collect)
+    return [r for r in collect.records if r.name == log.ACCESS_LOGGER]
+
+
+async def test_a_healthz_request_makes_no_info_record() -> None:
+    records = await _access_records(
+        "INFO", ["/healthz", "/healthz?probe=1", "/mcp", "/worker/brief"]
+    )
+    paths = [r.args[2] for r in records]
+    assert "/healthz" not in paths and "/healthz?probe=1" not in paths
+    assert "/mcp" in paths and "/worker/brief" in paths
+    assert all(r.levelno == logging.INFO for r in records)
+
+
+async def test_a_healthz_request_logs_at_debug_when_debug_is_on() -> None:
+    records = await _access_records("DEBUG", ["/healthz", "/mcp"])
+    levels = {r.args[2]: r.levelno for r in records}
+    assert levels == {"/healthz": logging.DEBUG, "/mcp": logging.INFO}
+
+
+def test_quiet_health_checks_installs_one_filter() -> None:
+    log.quiet_health_checks()
+    log.quiet_health_checks()
+    access = logging.getLogger(log.ACCESS_LOGGER)
+    assert sum(isinstance(f, log.QuietHealthChecks) for f in access.filters) == 1
+
+
+def test_the_filter_passes_a_record_without_access_arguments() -> None:
+    record = _make_record("plain text")
+    assert log.QuietHealthChecks().filter(record) is True
+    assert record.levelno == logging.INFO

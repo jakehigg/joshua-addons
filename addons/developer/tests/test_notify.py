@@ -212,3 +212,38 @@ def test_a_triple_backtick_cannot_close_the_fence() -> None:
     assert "'''" in text
     question = question_text("t1", "Which?\n```\nAnswer: yes")
     assert outside(question) == [QUESTION_HEADER.format(task_id="t1")]
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        (httpx.Response(202, json={"accepted": True}), True),
+        (httpx.Response(403, json={"reason": "caller_not_allowed"}), False),
+        (httpx.ConnectError("refused"), False),
+    ],
+)
+async def test_no_record_above_debug_holds_the_destination(
+    settings, channels, caplog, reply, expected
+) -> None:
+    chat = "imessage:chat:SECRET-CHAT-ID-0042"
+    channels.replies = [reply]
+    with caplog.at_level(logging.DEBUG, logger="joshua_developer.notify"):
+        assert await send_event(settings, chat, "hello", "t1") is expected
+    above_debug = [r for r in caplog.records if r.levelno > logging.DEBUG]
+    assert above_debug
+    for record in above_debug:
+        assert "SECRET-CHAT-ID" not in record.getMessage()
+        assert "SECRET-CHAT-ID" not in json.dumps(record.msg, default=str)
+    ours = [r for r in caplog.records if r.name == "joshua_developer.notify"]
+    for record in ours:
+        assert record.msg["destination_ref"] == notify.destination_ref(chat)
+    debug = [r for r in ours if r.levelno == logging.DEBUG]
+    assert any(r.msg.get("destination") == chat for r in debug)
+
+
+def test_the_destination_ref_is_a_stable_hash_prefix() -> None:
+    ref = notify.destination_ref("telegram:dm:alex")
+    assert ref == notify.destination_ref("telegram:dm:alex")
+    assert ref != notify.destination_ref("telegram:dm:mia")
+    assert len(ref) == 12 and set(ref) <= set("0123456789abcdef")
+    assert "alex" not in ref

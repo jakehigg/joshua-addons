@@ -4,6 +4,11 @@ Each record is one JSON line with ``ts``, ``level``, ``service``, ``logger``,
 and ``message``, plus any extra fields. A dict message flattens its keys into
 the record; a plain string becomes ``message``. Never log a token or a
 message body at INFO.
+
+uvicorn writes one access line for each request, on the ``uvicorn.access``
+logger. ``QuietHealthChecks`` moves the line of a ``GET /healthz`` on
+either port to DEBUG: compose and Kubernetes call it every few seconds.
+The access lines of ``/mcp`` and ``/worker/*`` stay at INFO.
 """
 
 from __future__ import annotations
@@ -16,6 +21,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 LEVEL_ENV = "LOG_LEVEL"
+ACCESS_LOGGER = "uvicorn.access"
+# The paths whose access line is DEBUG, not INFO.
+QUIET_PATHS = frozenset({"/healthz"})
 
 
 class JSONFormatter(logging.Formatter):
@@ -48,6 +56,36 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(data, default=str)
 
 
+class QuietHealthChecks(logging.Filter):
+    """Move the uvicorn access line of a ``QUIET_PATHS`` request to DEBUG.
+
+    uvicorn logs ``'%s - "%s %s HTTP/%s" %d'`` with the client, the method,
+    the path with its query, the HTTP version, and the status. The filter
+    reads the path from those arguments. It drops the line unless the root
+    logger shows DEBUG.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if not isinstance(args, tuple) or len(args) < 3:
+            return True
+        path = str(args[2]).split("?", 1)[0]
+        if path not in QUIET_PATHS or record.levelno != logging.INFO:
+            return True
+        record.levelno = logging.DEBUG
+        record.levelname = logging.getLevelName(logging.DEBUG)
+        # Not isEnabledFor: while a logger handles a record, Python 3.13
+        # answers False for every logger, as a guard against recursion.
+        return logging.getLogger().getEffectiveLevel() <= logging.DEBUG
+
+
+def quiet_health_checks() -> None:
+    """Put one ``QuietHealthChecks`` on the uvicorn access logger."""
+    access = logging.getLogger(ACCESS_LOGGER)
+    if not any(isinstance(item, QuietHealthChecks) for item in access.filters):
+        access.addFilter(QuietHealthChecks())
+
+
 def _parse_level(level: str) -> int:
     raw = (level or "").strip()
     if not raw:
@@ -66,6 +104,7 @@ def configure(level: str, service: str) -> logging.Logger:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JSONFormatter(service))
     root.addHandler(handler)
+    quiet_health_checks()
     return logging.getLogger(service)
 
 

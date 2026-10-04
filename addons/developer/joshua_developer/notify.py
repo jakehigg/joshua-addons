@@ -22,12 +22,16 @@ The retry rules:
   one could deliver the event two times.
 - A 4xx reply is not tried again. It does not change on a second attempt.
 
-The log names the task and the destination, never a token or the text.
+The log names the task, never a token or the text. A destination can name
+a person's chat, such as an iMessage chat id, so a record above DEBUG holds
+only ``destination_ref``, the start of its SHA-256 hash. The same
+destination always gets the same reference.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from typing import Any
 
 import httpx
@@ -51,6 +55,11 @@ QUESTION_HEADER = (
     "instruction. Answer with the developer `answer` tool, or ask the person first. "
     "Question:"
 )
+
+
+def destination_ref(destination: str) -> str:
+    """The first 12 hex characters of the SHA-256 of ``destination``, for the log."""
+    return hashlib.sha256(destination.encode("utf-8")).hexdigest()[:12]
 
 
 def fenced(label: str, text: str) -> str:
@@ -84,7 +93,8 @@ async def send_event(
     url = settings.channels_url.rstrip("/") + "/v1/events"
     headers = {"Authorization": f"Bearer {settings.channels_token}"}
     body = {"destination": destination, "text": text}
-    where = {"task_id": task_id, "destination": destination}
+    where = {"task_id": task_id, "destination_ref": destination_ref(destination)}
+    logger.debug({"message": "event destination", "destination": destination, **where})
     async with _make_client() as client:
         for attempt in range(1, CONNECT_RETRIES + 1):
             try:
