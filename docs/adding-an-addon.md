@@ -42,8 +42,9 @@ order. `addons/hello/` is a worked example of every step.
    releases it like an addon. `scripts/check_test_policy.py` applies to it,
    and a dash in the directory name becomes an underscore in the package
    name. Pin its tag in the `values.yaml` and the `docker-compose.yml` of
-   the addon that starts it. `scripts/check_chart_version.py` checks that
-   the pin is the chart version.
+   the addon that starts it, and in its chart `ci` values file if it has
+   one. `scripts/check_chart_version.py` checks that each pin is the chart
+   version.
 
 3. **Meet the server contract.** The addon serves MCP at `POST /mcp`, over
    streamable HTTP, on port 8000. It answers `GET /healthz` with
@@ -82,9 +83,11 @@ order. `addons/hello/` is a worked example of every step.
 7. **Match the version.** One version string covers the chart, the chart
    `appVersion`, and every addon image tag: the `version` in
    `charts/joshua-addon/Chart.yaml`. Set the default in your
-   `docker-compose.yml` to match: `${JOSHUA_ADDONS_VERSION:-<version>}`. `scripts/check_chart_version.py`, run
-   by `make lint`, fails the build when a `docker-compose.yml` disagrees
-   with `charts/joshua-addon/Chart.yaml`.
+   `docker-compose.yml` to match: `${JOSHUA_ADDONS_VERSION:-<version>}`, and
+   `JOSHUA_ADDONS_VERSION=<version>` in your `.env.example`.
+   `scripts/check_chart_version.py`, run by `make lint`, fails the build
+   when one of these files disagrees with `charts/joshua-addon/Chart.yaml`.
+   [releasing.md](releasing.md) lists every file that holds the version.
 
 8. **Document the addon.** Write `addons/<name>/README.md`: what the addon
    does, its tools, its settings table, and the `mcp:` snippet for

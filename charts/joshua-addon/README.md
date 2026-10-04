@@ -110,8 +110,9 @@ the image that shipped with it. To test a branch, set `image.tag` to a commit
 SHA or to `branch-<name>`. Each push to a branch publishes those tags, amd64
 only. [docs/install.md](../../docs/install.md) shows the ArgoCD Application
 for a branch build. `scripts/check_chart_version.py` checks that
-the chart, the `docker-compose.yml` for every addon, and each pinned
-`WORKER_IMAGE` tag agree.
+the chart, the `docker-compose.yml` and the `.env.example` of every addon,
+and each pinned `WORKER_IMAGE` tag, in `ci/` too, agree.
+[docs/releasing.md](../../docs/releasing.md) has the release steps.
 
 ## ArgoCD
 
