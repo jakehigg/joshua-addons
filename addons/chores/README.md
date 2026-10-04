@@ -7,9 +7,6 @@ to its next due date. A manager adds members and chores, and awards or
 deducts XP. Joshua uses the addon over MCP. The members use a web UI on a
 kiosk screen or a phone.
 
-This version has the server, the storage, the MCP tools, and the HTTP API.
-The web UI comes in a later change.
-
 ## Run it
 
 The addon serves MCP at `POST /mcp` (streamable HTTP) on port 8000. It
@@ -17,6 +14,29 @@ answers `GET /healthz` with `{"ok": true}`, serves the HTTP API at `/api`,
 and serves the web UI at `/` from the same port. `GET /version` gives
 `{"version": "<JOSHUA_ADDONS_VERSION>"}`, so that a kiosk can reload after a
 deploy.
+
+## Web UI
+
+The addon serves the web UI at `/`. The UI has two views.
+
+- **Manager view** at `/`. Type the `MANAGER_PIN` to sign in. The sign-in
+  screen shows the `MANAGER_LABEL` word. The browser keeps the PIN for the
+  tab only (session storage). Two tabs are below the header:
+  - **Chores**: select a member to see the balance, the chores, and the
+    ledger. You can add, edit, and delete chores, and award or deduct XP.
+    When there are no members, add a member first.
+  - **Members**: the list of all members, also the inactive ones. You can
+    add a member (a slug and a name), rename a member, activate or deactivate
+    a member, and move a member up or down in the lists.
+- **Member screen** at `/<slug>`, for a kiosk or a phone. It shows the name
+  and the XP balance of one member, the open chores, and the ledger. The
+  member taps **Done** to complete a chore. This screen needs no PIN. It
+  asks for `/version` each minute, and it loads the page again after a
+  deploy.
+
+When `XP_PER_DOLLAR` is `0`, the UI shows no dollar values. When
+`MANAGER_PIN` is not set, the manager view cannot sign in and each change
+gets the message "The server has no manager PIN set".
 
 ## Tools
 

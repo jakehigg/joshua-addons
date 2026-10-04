@@ -1,0 +1,405 @@
+.manager-pin-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 24px;
+}
+
+.manager-pin-screen h1 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.pin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+}
+
+.pin-form input {
+  text-align: center;
+  font-size: 1.5rem;
+  letter-spacing: 0.3em;
+  padding: 14px;
+}
+
+.pin-error {
+  color: var(--red);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* ── Main layout ── */
+
+.manager-root {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 16px 16px 80px;
+}
+
+.manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0 8px;
+}
+
+.manager-header h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.member-select {
+  width: auto;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 6px 12px;
+}
+
+.balance-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0 16px;
+}
+
+.balance-dollars {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--green);
+}
+
+.balance-pts {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+/* ── Buttons ── */
+
+.btn-primary {
+  background: var(--green);
+  color: #000;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  transition: opacity 0.15s;
+}
+
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  transition: border-color 0.15s;
+}
+
+.btn-secondary:hover { border-color: var(--text-muted); }
+
+.btn-danger {
+  background: color-mix(in srgb, var(--red) 15%, var(--surface));
+  color: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 30%, var(--border));
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+/* ── Chore list ── */
+
+.manager-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty-msg {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 40px 0;
+}
+
+.manager-chore {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.manager-chore.overdue {
+  border-color: var(--amber);
+}
+
+.chore-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chore-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.chore-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.chore-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 1rem;
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.icon-btn.danger:hover {
+  background: color-mix(in srgb, var(--red) 15%, var(--surface));
+  color: var(--red);
+}
+
+/* ── Error ── */
+
+.manager-error {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--red) 25%, var(--border));
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+}
+
+/* ── Ledger ── */
+
+.manager-ledger {
+  margin-top: 28px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.ledger-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.ledger-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ledger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ledger-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ledger-desc {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ledger-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.ledger-amount {
+  font-size: 0.9rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ledger-amount.positive { color: var(--green); }
+.ledger-amount.negative { color: var(--red); }
+
+/* ── Modal ── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 480px) {
+  .modal-overlay {
+    align-items: center;
+  }
+}
+
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-form h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.modal-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.modal-form label input,
+.modal-form label select {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 0.85rem;
+}
+
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* ── Sign-in sub-line ── */
+
+.pin-sub {
+  color: var(--text-muted);
+  margin-top: -16px;
+}
+
+/* ── Chores | Members switch ── */
+
+.view-switch {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  margin-bottom: 16px;
+}
+
+.view-switch button {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.view-switch button.active {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* ── Members panel ── */
+
+.manager-chore.inactive .chore-meta {
+  opacity: 0.5;
+}
+
+.icon-btn:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.field-hint.invalid {
+  color: var(--red);
+}

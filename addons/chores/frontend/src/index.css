@@ -1,0 +1,75 @@
+/* ── Manager view theme ── */
+:root {
+  --bg: #0d0d0d;
+  --surface: #161616;
+  --border: #262626;
+  --text: #e8e8e8;
+  --text-muted: #777;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --blue: #60a5fa;
+  --gray: #6b7280;
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Kiosk / member screen theme ── */
+.kiosk {
+  --bg: #090d16;
+  --surface: #111827;
+  --border: #1f2937;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --green: #34c759;
+  --amber: #ff9500;
+  --red: #ff3b30;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  outline: none;
+  width: 100%;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--blue);
+}
+
+a {
+  color: var(--blue);
+  text-decoration: none;
+}

@@ -1,0 +1,86 @@
+.datepicker {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  user-select: none;
+}
+
+.dp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.dp-month {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dp-nav {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.dp-nav:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.dp-dow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+
+.dp-dow span {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  padding: 3px 0;
+}
+
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dp-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: var(--text);
+  transition: background 0.12s;
+  min-width: 0;
+}
+
+.dp-day:hover {
+  background: var(--border);
+}
+
+.dp-day.today {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.dp-day.selected {
+  background: var(--green);
+  color: #000;
+  font-weight: 700;
+}
