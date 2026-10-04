@@ -26,6 +26,10 @@ services:
       JOSHUA_ADDONS_VERSION: ${JOSHUA_ADDONS_VERSION:-0.1.3}
       DATABASE_URL: ${DATABASE_URL:-}
       CHORES_DB: ${CHORES_DB:-/data/chores.db}
+      CHORES_TZ: ${CHORES_TZ:-UTC}
+      XP_PER_DOLLAR: ${XP_PER_DOLLAR:-100}
+      COOLDOWN_SECONDS: ${COOLDOWN_SECONDS:-60}
+      MANAGER_LABEL: ${MANAGER_LABEL:-Parent}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - chores-data:/data
