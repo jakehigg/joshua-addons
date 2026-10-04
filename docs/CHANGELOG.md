@@ -26,8 +26,11 @@ releases, with the images and the packaged chart, are at
   With `network: off`, the default, it connects to the manager only, so it
   cannot install dependencies. A worker asks a question with `ask`. The
   question arrives in the person's chat as an event, and Joshua answers with
-  `answer`. An `answer` to a task that stopped `blocked` or `timed_out`
-  after a push starts a new worker on the same branch. To run it, mint `JOSHUA_TOKEN_DEVELOPER` and give it to the
+  `answer`. The task clock pauses while a question waits, for up to
+  `ask_wait_s` seconds (2 hours by default, and a persona can set its own).
+  A waiting worker still holds a `max_workers` slot. An `answer` to a task
+  that stopped `blocked` or `timed_out` after a push starts a new worker on
+  the same branch. To run it, mint `JOSHUA_TOKEN_DEVELOPER` and give it to the
   manager and to channels, add `developer` to
   `channels.webhooks.allowed_callers`, and add the `developer` entry with one
   `identities` entry for each person to `joshua.yaml`.

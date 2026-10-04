@@ -53,6 +53,8 @@ async def finish(manager: Manager, task_id: str, report: Report) -> None:
 
 async def test_an_answer_resumes_a_blocked_task_end_to_end(manager, git_host) -> None:
     task_id = await stopped_task(manager)
+    # The first worker waited for answers; the new worker starts a fresh clock.
+    manager.store.update_task(task_id, paused_s=900, asked_at="2026-10-04T12:00:00+00:00")
     first = manager.store.get_task_full(task_id)
     assert first is not None and first["status"] == "blocked"
     old_token = first["worker_token"]
@@ -71,6 +73,7 @@ async def test_an_answer_resumes_a_blocked_task_end_to_end(manager, git_host) ->
     assert full["worker_token"] and full["worker_token"] != old_token
     assert full["open_question"] is None and full["report"] is None
     assert full["answer"] == "Port 8080."
+    assert full["paused_s"] == 0 and full["asked_at"] is None
     assert [entry["status"] for entry in full["history"]] == ["blocked"]
     assert full["history"][0]["pushed"] is True
     assert full["history"][0]["completed_at"] == first["completed_at"]

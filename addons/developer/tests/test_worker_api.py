@@ -95,6 +95,7 @@ ROUTES = [
     ("POST", "/worker/running", None),
     ("POST", "/worker/report", {"status": "success"}),
     ("POST", "/worker/ask", {"question": "q?"}),
+    ("POST", "/worker/ask/stop", None),
     ("GET", "/worker/answer", None),
     ("POST", "/worker/log", {"text": "line"}),
     ("POST", "/worker/claude/v1/messages", {"model": "m"}),
@@ -156,6 +157,7 @@ async def test_the_brief_has_what_the_worker_needs(manager) -> None:
             "max_turns": 80,
             "timeout_s": 2400,
         },
+        "ask_wait_s": 7200,
         "git": {"name": "Alex Example", "email": "alex@users.noreply.github.com"},
         "git_token": "fake-github-alex-token",
         "git_username": "x-access-token",
@@ -224,8 +226,8 @@ async def test_ask_then_answer_wakes_the_long_poll(manager, sent) -> None:
     assert too_long.status_code == 400
     assert result["status"] == "answered"
     assert answer.status_code == 200
-    assert answer.json() == {"answer": "SQLite"}
-    assert at_once.json() == {"answer": "SQLite"}
+    assert answer.json() == {"answer": "SQLite", "waited_s": 0}
+    assert at_once.json() == {"answer": "SQLite", "waited_s": 0}
 
 
 async def test_the_long_poll_gives_204_without_an_answer(manager, sent) -> None:
@@ -247,7 +249,7 @@ async def test_a_second_ask_clears_the_old_answer(manager, sent) -> None:
         second = await client.get("/worker/answer")
     assert after.status_code == 204
     assert accepted["status"] == "answered"
-    assert second.json() == {"answer": "two"}
+    assert second.json() == {"answer": "two", "waited_s": 0}
     assert [q for _, q in sent] == ["first?", "second?"]
 
 
@@ -451,3 +453,130 @@ async def test_a_fake_worker_drives_one_task_through_the_api(manager, sent) -> N
     assert task["status"] == "success"
     assert task["session_log"] == "cloned\nanswer 8080\n"
     assert manager.locks.get(REPO, "branch:feature") is None
+
+
+# --- the task clock pauses while a question waits ----------------------------
+
+
+class Now:
+    """A clock that a test moves by hand."""
+
+    def __init__(self) -> None:
+        from datetime import UTC, datetime
+
+        self.now = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        from datetime import timedelta
+
+        self.now += timedelta(seconds=seconds)
+
+
+async def test_ask_pauses_the_clock_and_the_answer_starts_it_again(manager, sent) -> None:
+    now = Now()
+    manager.clock = now
+    task_id, token = await dispatch(manager)
+    async with worker_client(manager, token, poll_s=0.01) as client:
+        await client.post("/worker/ask", json={"question": "Which database?"})
+        task = manager.store.get_task(task_id)
+        assert task is not None
+        assert task["asked_at"] == now.now.isoformat()
+        assert task["waiting_since"] == now.now.isoformat()
+        assert task["paused_s"] == 0
+        now.advance(600)
+        await manager.answer("alex", {"task_id": task_id}, "SQLite")
+        answer = await client.get("/worker/answer")
+    assert answer.json() == {"answer": "SQLite", "waited_s": 600}
+    task = manager.store.get_task(task_id)
+    assert task is not None
+    assert task["asked_at"] is None and task["waiting_since"] is None
+    assert task["paused_s"] == 600
+
+
+async def test_ask_stop_starts_the_clock_and_keeps_the_question(manager, sent) -> None:
+    now = Now()
+    manager.clock = now
+    task_id, token = await dispatch(manager)
+    async with worker_client(manager, token, poll_s=0.01) as client:
+        await client.post("/worker/ask", json={"question": "first?"})
+        now.advance(100)
+        await manager.answer("alex", {"task_id": task_id}, "one")
+        await client.post("/worker/ask", json={"question": "second?"})
+        now.advance(7200)
+        stopped = await client.post("/worker/ask/stop")
+        now.advance(50)
+        again = await client.post("/worker/ask/stop")
+    assert stopped.status_code == 200
+    assert stopped.json() == {"paused_s": 7300}
+    # No wait is open, so a second stop adds nothing.
+    assert again.json() == {"paused_s": 7300}
+    task = manager.store.get_task(task_id)
+    assert task is not None
+    assert task["asked_at"] is None
+    assert task["open_question"] == "second?"
+
+
+async def test_a_question_that_was_not_sent_does_not_pause_the_clock(manager, monkeypatch) -> None:
+    async def failed_question(*args, **kwargs) -> bool:
+        return False
+
+    monkeypatch.setattr(notify, "send_question", failed_question)
+    task_id, _ = await dispatch(manager)
+    sent, reason = await manager.ask(task_id, "Which port?")
+    assert (sent, reason) == (False, "send_failed")
+    task = manager.store.get_task(task_id)
+    assert task is not None and task["asked_at"] is None and task["paused_s"] == 0
+
+
+async def test_a_report_closes_the_open_wait(manager, sent) -> None:
+    from joshua_developer.runtime import Report
+
+    now = Now()
+    manager.clock = now
+    task_id, _ = await dispatch(manager)
+    await manager.ask(task_id, "Which port?")
+    now.advance(30)
+    await manager.record_report(task_id, Report(status="blocked", open_question="Which port?"))
+    task = manager.store.get_task(task_id)
+    assert task is not None and task["asked_at"] is None and task["paused_s"] == 30
+
+
+async def test_the_task_clock_for_the_supervisor(manager, sent) -> None:
+    now = Now()
+    manager.clock = now
+    task_id, _ = await dispatch(manager)
+    assert manager.task_clock("no-such-task") is None
+    await manager.ask(task_id, "Which port?")
+    clock = manager.task_clock(task_id)
+    assert clock is not None
+    assert clock.started_at is not None
+    assert clock.asked_at == now.now
+    assert clock.paused_s == 0
+
+
+async def test_the_brief_takes_the_ask_wait_of_the_persona(tmp_path) -> None:
+    settings = make_settings(
+        tmp_path,
+        config={
+            "ask_wait_s": 3600,
+            "personas": {
+                "quick": {"model": "m", "max_turns": 5, "timeout_s": 600, "ask_wait_s": 300}
+            },
+        },
+    )
+    store = TaskStore(settings.db_path)
+    manager = Manager(settings, store, LockManager())
+    manager.runtime = StubRuntime(manager, delay_s=None)
+    try:
+        quick, _ = await dispatch(manager, branch="one", persona="quick")
+        opus, _ = await dispatch(manager, branch="two", persona="opus")
+        quick_brief = build_brief(manager, manager.store.get_task_full(quick))
+        opus_brief = build_brief(manager, manager.store.get_task_full(opus))
+    finally:
+        store.close()
+    assert quick_brief["ask_wait_s"] == 300
+    assert "ask_wait_s" not in quick_brief["persona"]
+    assert opus_brief["ask_wait_s"] == 3600

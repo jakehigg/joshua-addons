@@ -106,15 +106,21 @@ async def test_a_report_with_a_pull_request_and_a_question(settings) -> None:
     manager.mark_running("no-such-task")
 
 
-async def test_the_lock_outlives_the_persona_timeout(settings) -> None:
-    manager = make_manager(settings, delay_s=None)
-    await manager.develop("alex", REPO, "brief", branch="feature", persona="sonnet")
-    info = manager.locks.get(REPO, "branch:feature")
-    assert info is not None
-    from datetime import datetime
+async def test_the_lock_stays_until_the_task_ends(settings) -> None:
+    from datetime import UTC, datetime, timedelta
 
-    span = datetime.fromisoformat(info.expires_at) - datetime.fromisoformat(info.started_at)
-    assert span.total_seconds() == 1200 + 600
+    now = [datetime(2026, 10, 4, 12, 0, tzinfo=UTC)]
+    locks = LockManager(clock=lambda: now[0])
+    manager = Manager(settings, make_store(settings), locks)
+    manager.runtime = StubRuntime(manager, delay_s=None)
+    task_id = (await manager.develop("alex", REPO, "brief", branch="feature"))["task_id"]
+    # Far past the persona timeout plus the old margin: the lock stays.
+    now[0] += timedelta(days=1)
+    again = await manager.develop("alex", REPO, "other", branch="feature")
+    assert again["status"] == "rejected" and again["reason"] == "locked"
+    assert manager.locks.get(REPO, "branch:feature").task_id == task_id  # type: ignore[union-attr]
+    await manager.record_report(task_id, Report(status="timed_out"))
+    assert manager.locks.get(REPO, "branch:feature") is None
 
 
 async def test_a_stored_persona_that_is_gone_falls_back(settings) -> None:

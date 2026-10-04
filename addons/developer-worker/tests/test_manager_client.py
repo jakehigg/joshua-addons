@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 import httpx
 import pytest
 from conftest import MANAGER_URL, TASK_ID, TASK_TOKEN, FakeManager
@@ -64,7 +62,7 @@ async def test_running_log_and_report(manager: FakeManager) -> None:
 async def test_ask_waits_for_the_answer(manager: FakeManager) -> None:
     manager.answer_after_polls = 3
     client = manager.client()
-    answer = await client.ask("Which port?", time.monotonic() + 10)
+    answer = await client.ask("Which port?", 10)
     assert answer == "Use port 8080."
     assert manager.questions == ["Which port?"]
     assert manager.polls == 3
@@ -74,17 +72,24 @@ async def test_ask_waits_for_the_answer(manager: FakeManager) -> None:
 async def test_ask_returns_none_when_the_deadline_passes(manager: FakeManager) -> None:
     manager.answer_after_polls = 10_000
     client = manager.client()
-    assert await client.ask("Which port?", time.monotonic() + 0.05, poll_pause_s=0.01) is None
+    assert await client.ask("Which port?", 0.05, poll_pause_s=0.01) is None
     await client.aclose()
 
 
 async def test_ask_raises_task_ended_on_409(manager: FakeManager) -> None:
     manager.answer_after_polls = 10_000
     client = manager.client()
-    await client.ask("Which port?", time.monotonic() - 1)
+    await client.ask("Which port?", -1)
     manager.ended = True
     with pytest.raises(TaskEnded):
-        await client.ask("Again?", time.monotonic() + 10)
+        await client.ask("Again?", 10)
+    await client.aclose()
+
+
+async def test_stop_ask_returns_the_paused_seconds(manager: FakeManager) -> None:
+    client = manager.client()
+    assert await client.stop_ask() == 0
+    assert manager.stops == 1
     await client.aclose()
 
 
@@ -95,7 +100,7 @@ async def test_ask_raises_not_sent_at_once_when_nobody_gets_it(
     manager.ask_reply = {"asked": True, "sent": False, "reason": reason}
     client = manager.client()
     with pytest.raises(NotSent) as exc:
-        await client.ask("Which port?", time.monotonic() + 10)
+        await client.ask("Which port?", 10)
     assert exc.value.reason == reason
     assert manager.questions == ["Which port?"]
     assert manager.polls == 0

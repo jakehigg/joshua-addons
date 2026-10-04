@@ -159,19 +159,19 @@ class ManagerClient:
         response = await self._call("POST", "/worker/log", json={"text": text})
         return bool(response.json().get("appended", False))
 
-    async def ask(self, question: str, deadline: float, poll_pause_s: float = 0.0) -> str | None:
+    async def ask(self, question: str, wait_s: float, poll_pause_s: float = 0.0) -> str | None:
         """Ask the person's assistant a question and wait for the answer.
 
-        ``deadline`` is a ``time.monotonic()`` value. Returns the answer, or
-        None when the deadline passes first. Raises TaskEnded when the task
-        ends while the worker waits, and NotSent at once when the manager
-        says nobody gets the question.
+        Returns the answer, or None when ``wait_s`` seconds pass first. Raises
+        TaskEnded when the task ends while the worker waits, and NotSent at
+        once when the manager says nobody gets the question.
         """
         asked = await self._call("POST", "/worker/ask", json={"question": question})
         data = asked.json() if asked.content else {}
         if isinstance(data, dict) and data.get("sent") is False:
             raise NotSent(str(data.get("reason") or "unknown"))
         read = httpx.Timeout(connect=10.0, read=ANSWER_READ_S, write=30.0, pool=10.0)
+        deadline = time.monotonic() + wait_s
         while time.monotonic() < deadline:
             response = await self._call("GET", "/worker/answer", http_timeout=read)
             if response.status_code == 200:
@@ -181,6 +181,11 @@ class ManagerClient:
             if poll_pause_s:
                 await asyncio.sleep(poll_pause_s)
         return None
+
+    async def stop_ask(self) -> int:
+        """Tell the manager the worker stopped waiting. Returns the task's paused seconds."""
+        response = await self._call("POST", "/worker/ask/stop")
+        return int(response.json().get("paused_s") or 0)
 
     async def report(self, report: Report) -> None:
         """Send the report. The task ends."""

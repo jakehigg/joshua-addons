@@ -4,9 +4,10 @@
 2. Configure git, clone the repository, and check out the branch.
 3. Read ``CLAUDE.md`` of the checkout as text, if there is one.
 4. Tell the manager the session runs, and run the session until it ends or
-   the deadline passes: the persona timeout minus ``DEADLINE_MARGIN_S``.
-5. Always: commit what is not committed, push the branch when it has new
-   commits, and send the report.
+   its clock runs out. The clock has the persona timeout minus
+   ``DEADLINE_MARGIN_S`` of work. It pauses while ``ask`` waits for an
+   answer, for up to ``ask_wait_s`` seconds for each question.
+5. Always: push the branch when the model made commits, and send the report.
 
 The exit code is 0 when the manager accepted the report, or when the task
 had already ended. It is 1 only when the report could not be sent.
@@ -27,6 +28,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from joshua_developer_worker import git, log, prompt, session
+from joshua_developer_worker.clock import Clock
 from joshua_developer_worker.manager_client import ManagerClient, ManagerError, Report, TaskEnded
 
 logger = log.get_logger("joshua_developer_worker.main")
@@ -35,8 +37,8 @@ WORKDIR = Path("/work")
 CHECKOUT = "repo"
 DEFAULT_TIMEOUT_S = 2400
 DEFAULT_MAX_TURNS = 80
-# The session stops this long before the persona timeout, so the commit, the
-# push, and the report fit before the manager kills the container.
+# The session stops this long before the persona timeout, so the push and the
+# report fit before the manager kills the container.
 DEADLINE_MARGIN_S = 90
 MAX_REPORT_LOG = 64_000
 MAX_SUMMARY = 8_000
@@ -126,9 +128,12 @@ async def _send(client: ManagerClient, report: Report) -> int:
     return 0
 
 
-def _stop_note(reason: str, pushed: bool, branch: str) -> str:
+def _stop_note(reason: str, pushed: bool, branch: str, waited_s: float = 0.0) -> str:
     where = f"The work so far is on branch {branch}." if pushed else "No work was pushed."
-    return f"Stopped: {reason}. {where}"
+    note = f"Stopped: {reason}. {where}"
+    if waited_s >= 1:
+        note += f" Waited {session.duration(waited_s)} for an answer."
+    return note
 
 
 _ARTIFACT_DIRS = ("__pycache__/", ".pytest_cache/", ".ruff_cache/", ".mypy_cache/", "node_modules/")
@@ -202,7 +207,7 @@ def finish(
 
     body = structured["summary"] if structured else result.text
     if result.timed_out or status == "blocked":
-        summary = _stop_note(reason, pushed, branch)
+        summary = _stop_note(reason, pushed, branch, asker.waited_s)
         if open_question:
             summary += f" Open question: {open_question}"
         if body:
@@ -248,7 +253,8 @@ async def _work(
     branch = str(brief["branch"])
     persona = brief.get("persona") or {}
     timeout_s = int(persona.get("timeout_s") or DEFAULT_TIMEOUT_S)
-    deadline = started + timeout_s - DEADLINE_MARGIN_S
+    clock = Clock(timeout_s - DEADLINE_MARGIN_S, start=started)
+    ask_wait_s = float(brief.get("ask_wait_s") or session.DEFAULT_ASK_WAIT_S)
     dest = workdir / CHECKOUT
     log_ = session.SessionLog(client)
 
@@ -288,7 +294,7 @@ async def _work(
         await client.running()
 
     env.config_dir.mkdir(parents=True, exist_ok=True)
-    asker = session.Asker(client, max(started, deadline - session.ASK_MARGIN_S))
+    asker = session.Asker(client, clock, ask_wait_s)
     options = session.build_options(
         prompt.compose(brief, claude_md),
         dest,
@@ -303,7 +309,7 @@ async def _work(
     if client_factory is not None:
         kwargs["client_factory"] = client_factory
     with step("session", task_id):
-        result = await session.run(options, START_PROMPT, deadline, **kwargs)
+        result = await session.run(options, START_PROMPT, clock, **kwargs)
     with step("finish", task_id):
         return finish(dest, brief, clone_head, result, asker, log_)
 

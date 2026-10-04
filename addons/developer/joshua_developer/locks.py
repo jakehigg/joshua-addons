@@ -2,12 +2,11 @@
 
 A lock key is ``(repo, scope)``. The scope is ``branch:<name>`` for
 ``develop`` and ``pr:<number>`` for ``rework``. A lock belongs to one task id.
-The locks live in the process, so a start clears them all; restart recovery
-marks every task that held one as failed.
-
-A lock also has an expiry, as a safety net for a task whose end the manager
-never sees. An acquire over an expired lock takes it, and the old owner then
-finds its lock stolen when it releases.
+The lock stays until its task ends: the manager releases it when it records
+the report, or when the worker does not start. A lock has no expiry. The
+manager watches every worker to its end, and a worker that waits for an
+answer can run for a long time. The locks live in the process, so a start
+clears them all; restart recovery marks every task that held one as failed.
 """
 
 from __future__ import annotations
@@ -15,10 +14,8 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
-
-DEFAULT_TTL_S = 3600
 
 
 class LockedError(Exception):
@@ -29,17 +26,12 @@ class LockedError(Exception):
         self.lock_info = lock_info
 
 
-class LockStolenError(Exception):
-    """The lock now belongs to another task."""
-
-
 @dataclass(frozen=True)
 class LockInfo:
     task_id: str
     task_type: str
     branch: str | None
     started_at: str
-    expires_at: str
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -57,9 +49,6 @@ class LockManager:
         self._locks: dict[tuple[str, str], LockInfo] = {}
         self._mutex = threading.Lock()
 
-    def _expired(self, info: LockInfo) -> bool:
-        return datetime.fromisoformat(info.expires_at) <= self._clock()
-
     def acquire(
         self,
         repo: str,
@@ -67,20 +56,17 @@ class LockManager:
         task_id: str,
         task_type: str,
         branch: str | None = None,
-        ttl_s: int = DEFAULT_TTL_S,
     ) -> LockInfo:
         """Take the lock for ``task_id``. Raises LockedError when another task holds it."""
-        now = self._clock()
         info = LockInfo(
             task_id=task_id,
             task_type=task_type,
             branch=branch,
-            started_at=now.isoformat(),
-            expires_at=(now + timedelta(seconds=ttl_s)).isoformat(),
+            started_at=self._clock().isoformat(),
         )
         with self._mutex:
             held = self._locks.get((repo, scope))
-            if held is not None and held.task_id != task_id and not self._expired(held):
+            if held is not None and held.task_id != task_id:
                 raise LockedError(
                     f"{scope} in {repo} is already being worked on by task "
                     f"{held.task_id} (started {held.started_at})",
@@ -92,27 +78,17 @@ class LockManager:
     def release(self, repo: str, scope: str, task_id: str) -> None:
         """Release the lock of ``task_id``.
 
-        A missing lock is not an error. Raises LockStolenError when another
-        task now holds the lock, and leaves that lock in place.
+        A missing lock, or a lock of another task, is not changed.
         """
         with self._mutex:
             held = self._locks.get((repo, scope))
-            if held is None:
-                return
-            if held.task_id != task_id:
-                raise LockStolenError(
-                    f"cannot release the lock for {scope} in {repo}: task "
-                    f"{held.task_id} holds it now"
-                )
-            del self._locks[(repo, scope)]
+            if held is not None and held.task_id == task_id:
+                del self._locks[(repo, scope)]
 
     def get(self, repo: str, scope: str) -> LockInfo | None:
-        """The lock on ``(repo, scope)``, or None. An expired lock counts as none."""
+        """The lock on ``(repo, scope)``, or None."""
         with self._mutex:
-            held = self._locks.get((repo, scope))
-        if held is None or self._expired(held):
-            return None
-        return held
+            return self._locks.get((repo, scope))
 
     def clear(self) -> None:
         """Release every lock."""

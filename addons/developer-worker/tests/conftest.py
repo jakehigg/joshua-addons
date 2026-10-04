@@ -106,6 +106,9 @@ class FakeManager:
     brief_error: str = "token_missing"
     answer_text: str = "Use port 8080."
     answer_after_polls: int = 1
+    # Each poll without an answer waits this long, as the manager's long poll does.
+    poll_delay_s: float = 0.0
+    stops: int = 0
     report_status: int = 200
     ended: bool = False
     running: bool = False
@@ -162,9 +165,15 @@ class FakeManager:
                 return refused
             self.polls += 1
             if self.questions and self.polls >= self.answer_after_polls:
-                return JSONResponse({"answer": self.answer_text})
-            await asyncio.sleep(0)
+                return JSONResponse({"answer": self.answer_text, "waited_s": 0})
+            await asyncio.sleep(self.poll_delay_s)
             return Response(status_code=204)
+
+        async def stop_ask(request: Request) -> Response:
+            if (refused := self._check(request)) is not None:
+                return refused
+            self.stops += 1
+            return JSONResponse({"paused_s": 0})
 
         async def log(request: Request) -> Response:
             if (refused := self._check(request)) is not None:
@@ -178,6 +187,7 @@ class FakeManager:
                 Route("/worker/running", running, methods=["POST"]),
                 Route("/worker/report", report, methods=["POST"]),
                 Route("/worker/ask", ask, methods=["POST"]),
+                Route("/worker/ask/stop", stop_ask, methods=["POST"]),
                 Route("/worker/answer", answer, methods=["GET"]),
                 Route("/worker/log", log, methods=["POST"]),
             ]

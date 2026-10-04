@@ -23,8 +23,12 @@ directory has no compose file and no `values.yaml`.
    question to the person's chat through the manager and waits for the
    answer. When the manager says nobody gets the question, `ask` returns at
    once and tells the model to set `blocked`. The session never gets WebSearch or WebFetch.
-5. The session stops at the persona timeout minus 90 seconds. Then the
-   worker pushes the branch when the model made new commits, and sends the
+5. The session has the persona timeout minus 90 seconds of work. The clock
+   pauses while `ask` waits for an answer. One wait stops after `ask_wait_s`
+   seconds, a value from the brief. The worker then tells the manager that
+   it stopped the wait, and `ask` tells the model that no answer came. When
+   the clock runs out, the worker interrupts the session. Then the worker
+   pushes the branch when the model made new commits, and sends the
    report. The worker never makes a commit of its own: a file the model left
    uncommitted is named in the report and is not pushed, because a commit the
    worker made could carry a file the model never meant to publish. The push

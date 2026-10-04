@@ -29,6 +29,9 @@ configFile:
     network: off
     default_persona: opus
     max_workers: 2
+    # The longest time a worker waits for one answer, in seconds. The task
+    # clock pauses while it waits. A persona can set its own value.
+    ask_wait_s: 7200
     platforms:
       github.com:
         kind: github

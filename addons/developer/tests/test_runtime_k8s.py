@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from conftest import make_settings
 from joshua_developer import runtime_k8s, server
-from joshua_developer.runtime import Report
+from joshua_developer.runtime import Report, TaskClock
 from joshua_developer.runtime_k8s import (
     KubernetesRuntime,
     cpu_quantity,
@@ -100,6 +100,7 @@ class Recorder:
         self.running: list[str] = []
         self.reports: list[tuple[str, Report]] = []
         self.active = True
+        self.clock: TaskClock | None = None
         self.active_ids: set[str] | None = None
 
     def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
@@ -109,6 +110,9 @@ class Recorder:
 
     def mark_running(self, task_id: str) -> None:
         self.running.append(task_id)
+
+    def task_clock(self, task_id: str) -> TaskClock | None:
+        return self.clock
 
     async def record_report(self, task_id: str, report: Report) -> dict:
         self.reports.append((task_id, report))
@@ -243,8 +247,8 @@ async def test_start_creates_the_job_and_returns_its_name(tmp_path) -> None:
     [created] = batch.created
     assert created["namespace"] == "joshua"
     assert created["body"]["metadata"]["name"] == name
-    # The sonnet persona has timeout_s 1200; the grace time is 120 s.
-    assert created["body"]["spec"]["activeDeadlineSeconds"] == 1320
+    # The hard cap: the sonnet timeout_s 1200, ask_wait_s 7200, and the grace time 120 s.
+    assert created["body"]["spec"]["activeDeadlineSeconds"] == 1200 + 7200 + 120
     assert recorder.running == [TASK["task_id"]]
     for supervisor in list(runtime._supervisors):
         supervisor.cancel()
@@ -415,3 +419,43 @@ def test_server_start_builds_the_kubernetes_runtime(tmp_path, monkeypatch) -> No
     assert isinstance(manager.runtime, KubernetesRuntime)
     assert manager.runtime.namespace == "joshua"
     assert batch.listed == [{"namespace": "joshua", "label_selector": SELECTOR}]
+
+
+async def test_the_job_hard_cap_takes_the_ask_wait_of_the_persona(tmp_path) -> None:
+    settings = settings_for(
+        tmp_path,
+        config={
+            "ask_wait_s": 1800,
+            "personas": {
+                "sonnet": {"model": "m", "max_turns": 5, "timeout_s": 600, "ask_wait_s": 60}
+            },
+        },
+    )
+    runtime, batch, _ = make_runtime(tmp_path, settings=settings)
+    await runtime.start(TASK)
+    await runtime.start({**TASK, "task_id": "abcdefgh-1", "persona": "opus"})
+    assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 600 + 60 + 120
+    assert batch.created[1]["body"]["spec"]["activeDeadlineSeconds"] == 2400 + 1800 + 120
+    for supervisor in list(runtime._supervisors):
+        supervisor.cancel()
+
+
+async def test_the_supervisor_waits_while_a_question_is_open(tmp_path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    t0 = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+    now = [t0 + timedelta(seconds=3000)]
+    recorder = Recorder()
+    recorder.clock = TaskClock(started_at=t0, asked_at=t0 + timedelta(seconds=600))
+    runtime, batch, _ = make_runtime(tmp_path, recorder, now=lambda: now[0])
+    await runtime.start(TASK)
+    await asyncio.sleep(0.05)
+    assert batch.deleted == []
+    # The worker stops waiting at 3000 s: 2400 s paused, the deadline is 3720 s.
+    recorder.clock = TaskClock(started_at=t0, paused_s=2400)
+    await asyncio.sleep(0.05)
+    assert batch.deleted == []
+    now[0] = t0 + timedelta(seconds=3720)
+    await wait_for(lambda: batch.deleted)
+    [(_, report)] = recorder.reports
+    assert report.status == "timed_out"

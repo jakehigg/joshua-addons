@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -203,6 +204,54 @@ async def test_the_ask_tool_in_the_flow(
     assert "mcp__manager__ask" in manager.reports[0]["log"]
 
 
+async def test_an_answer_after_the_old_deadline_still_finishes_success(
+    tmp_path: Path,
+    home: Path,
+    bare_repo: Path,
+    manager: FakeManager,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    askers: list[session.Asker] = []
+    real = session.ask_server
+    monkeypatch.setattr(session, "ask_server", lambda a: askers.append(a) or real(a))
+    # The answer comes after 10 polls of 0.25 s: 2.5 s of wall time.
+    manager.answer_after_polls = 10
+    manager.poll_delay_s = 0.25
+
+    async def ask(_: FakeSDKClient) -> AssistantMessage:
+        asker = askers[0]
+        reply = await asker({"question": "Which port?"})
+        assert reply["content"][0]["text"] == "Use port 8080."
+        # A clock that counted the wait would have run out by now.
+        assert time.monotonic() - asker.clock.start > asker.clock.budget_s
+        assert asker.clock.remaining() > 0
+        block = ToolUseBlock(id="t2", name="mcp__manager__ask", input={"question": "Which port?"})
+        return AssistantMessage(content=[block], model="m")
+
+    # timeout_s 92: 2 s of work after the margin of 90 s.
+    manager.brief = make_brief(
+        bare_repo, persona={"name": "opus", "model": "m", "max_turns": 5, "timeout_s": 92}
+    )
+    structured = {
+        "summary": "Added hello.txt on port 8080.",
+        "files_changed": ["hello.txt"],
+        "tests_run": "",
+        "blocked": None,
+    }
+    code, made = await run(
+        tmp_path,
+        home,
+        manager,
+        [ask, write_file("hello.txt", commit=True), result(structured)],
+    )
+    assert code == 0
+    assert not made[0].interrupted
+    [report] = manager.reports
+    assert report["status"] == "success"
+    assert report["pushed"] is True
+    assert manager.stops == 0
+
+
 async def test_timeout_pushes_nothing_the_model_did_not_commit(
     tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
 ) -> None:
@@ -232,18 +281,23 @@ async def test_timeout_while_a_question_is_open_is_blocked(
     real = session.ask_server
     monkeypatch.setattr(session, "ask_server", lambda a: askers.append(a) or real(a))
     manager.answer_after_polls = 10_000
+    manager.poll_delay_s = 0.01
 
     async def ask(_: FakeSDKClient) -> None:
         await askers[0]({"question": "Which port?"})
 
     manager.brief = make_brief(
-        bare_repo, persona={"name": "opus", "model": "m", "max_turns": 5, "timeout_s": 91}
+        bare_repo,
+        persona={"name": "opus", "model": "m", "max_turns": 5, "timeout_s": 91},
+        ask_wait_s=0.2,
     )
     code, _ = await run(tmp_path, home, manager, [ask, sleep_forever])
     assert code == 0
     [report] = manager.reports
     assert report["status"] == "blocked"
     assert report["open_question"] == "Which port?"
+    # The wait limit passed: the worker told the manager it stopped waiting.
+    assert manager.stops == 1
     assert report["pushed"] is False and report["head"] is None
 
 
@@ -475,3 +529,13 @@ def test_no_test_names_a_real_host() -> None:
         hosts |= set(re.findall(r"https?://(?:[^@/\s\"']+@)?([A-Za-z0-9.-]+)", path.read_text()))
     assert hosts
     assert all(host.endswith((".test", ".invalid")) for host in hosts), hosts
+
+
+def test_the_stop_note_says_how_long_the_worker_waited() -> None:
+    assert main._stop_note("the time limit ran out", False, BRANCH) == (
+        "Stopped: the time limit ran out. No work was pushed."
+    )
+    assert main._stop_note("blocked on a question", True, BRANCH, 7200.0) == (
+        f"Stopped: blocked on a question. The work so far is on branch {BRANCH}. "
+        "Waited 120 minutes for an answer."
+    )

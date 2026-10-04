@@ -7,14 +7,23 @@ through a ``Reporter``: the task runs, and later its report arrives.
 ``StubRuntime`` starts no container. It marks the task running and records a
 fake successful report after ``delay_s`` seconds, so the whole flow runs
 offline.
+
+A supervisor of a real runtime stops a worker at its deadline. The deadline
+moves while the worker waits for an answer: see ``Deadline``.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from joshua_developer.store import utcnow
 
 
 class Report(BaseModel):
@@ -55,6 +64,69 @@ def worker_name(task: dict[str, Any]) -> str:
     return f"{name}-r{runs}" if runs else name
 
 
+@dataclass(frozen=True)
+class TaskClock:
+    """The clock fields of a task row."""
+
+    started_at: datetime | None
+    # The seconds of the waits for an answer that ended.
+    paused_s: int = 0
+    # The start of the open wait, or None.
+    asked_at: datetime | None = None
+
+
+def kill_time(
+    clock: TaskClock | None,
+    timeout_s: float,
+    grace_s: float,
+    fallback_start: datetime,
+    now: datetime,
+) -> datetime:
+    """The time after which the supervisor stops the worker.
+
+    ``started_at + timeout_s + grace_s + paused_s``, plus the open wait so far.
+    """
+    clock = clock or TaskClock(started_at=None)
+    paused = float(clock.paused_s)
+    if clock.asked_at is not None:
+        paused += max(0.0, (now - clock.asked_at).total_seconds())
+    start = clock.started_at or fallback_start
+    return start + timedelta(seconds=timeout_s + grace_s + paused)
+
+
+class Deadline:
+    """The deadline of one worker, for its supervisor.
+
+    ``passed`` reads the task clock from the reporter on each call, so a wait
+    for an answer moves the deadline. ``timeout_s + ask_wait_s + grace_s``
+    after the start is a hard cap that no wait moves.
+    """
+
+    def __init__(
+        self,
+        reporter: Reporter,
+        task_id: str,
+        timeout_s: float,
+        ask_wait_s: float,
+        grace_s: float,
+        now: Callable[[], datetime] = utcnow,
+    ) -> None:
+        self.reporter = reporter
+        self.task_id = task_id
+        self.timeout_s = timeout_s
+        self.grace_s = grace_s
+        self.now = now
+        self.started = now()
+        self.hard_cap = time.monotonic() + timeout_s + ask_wait_s + grace_s
+
+    def passed(self) -> bool:
+        if time.monotonic() >= self.hard_cap:
+            return True
+        now = self.now()
+        clock = self.reporter.task_clock(self.task_id)
+        return now >= kill_time(clock, self.timeout_s, self.grace_s, self.started, now)
+
+
 class Reporter(Protocol):
     """The manager side that a runtime reports to."""
 
@@ -66,6 +138,10 @@ class Reporter(Protocol):
         ...
 
     def mark_running(self, task_id: str) -> None: ...
+
+    def task_clock(self, task_id: str) -> TaskClock | None:
+        """The clock fields of the task, or None when it is not known."""
+        ...
 
     async def record_report(self, task_id: str, report: Report) -> dict[str, Any] | None: ...
 

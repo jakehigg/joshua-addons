@@ -78,6 +78,30 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
   changes to `failed` with the error `manager restarted`, and its report
   goes to the chat.
 
+## The task clock
+
+A task has a time limit on its work: the persona's `timeout_s`. The clock
+pauses while a question waits for an answer, because a wait for a person is
+not work. One wait has its own limit, `ask_wait_s`, 2 hours by default.
+
+- When the answer comes, the clock starts again, and the worker continues.
+- When `ask_wait_s` passes with no answer, the worker stops the wait, and
+  the clock starts again. The model gets a reply that says no answer came,
+  and the question stays open. The task then ends `blocked` with the
+  question, and a later `answer` resumes it when the worker pushed.
+- `task_status` shows `waiting_since`, the start of the open wait, and
+  `paused_s`, the seconds of the waits that ended.
+
+The manager stops a worker 120 seconds after the persona timeout plus the
+paused time. On Kubernetes, the Job's `activeDeadlineSeconds` is
+`timeout_s + ask_wait_s + 120`, so Kubernetes stops a worker that the
+manager cannot.
+
+A worker that waits still holds one of the `max_workers` slots, and the lock
+of its branch. A long wait can thus stop a new task with
+`concurrency_limit`. Two settings control this: a lower `ask_wait_s` frees a
+slot sooner, and a higher `max_workers` lets other tasks run during a wait.
+
 ## Security
 
 The worker runs a model with Bash over code that a stranger can write. Text
@@ -128,6 +152,7 @@ dependency installs work, and a bad repository can send its content anywhere.
 network: off                       # off or on. See "The network setting".
 default_persona: opus              # the persona when neither the call nor the person names one
 max_workers: 2                     # tasks that run at the same time
+ask_wait_s: 7200                   # the longest wait for one answer. See "The task clock".
 worker: { memory: 2g, cpus: 2.0 }  # the limits of one worker
 personas:                          # a model, its effort, and its limits
   sonnet: { model: claude-sonnet-5,  effort: medium, max_turns: 60,  timeout_s: 1200 }
@@ -155,7 +180,9 @@ people:                            # one entry for each person in DEVELOPER_TOKE
 
 `personas` merges over the three built-in personas above. An entry with the
 name of a built-in persona replaces it. The other built-in personas stay.
-`effort` is `low`, `medium`, `high`, `xhigh`, or `max`.
+`effort` is `low`, `medium`, `high`, `xhigh`, or `max`. A persona can also
+set its own `ask_wait_s`, which replaces the instance value for its tasks.
+`ask_wait_s` is a positive whole number of seconds.
 
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks stops `blocked`. `notify` is a
@@ -377,10 +404,10 @@ request. One `answer` call resumes it. A new `develop` with the same
    It sends one real request and prints `PASS` or `FAIL`.
 2. Start one small `develop` on a scratch repository.
 3. Read `task_output` while the task runs. It shows the session log.
-4. Expect the report near the end of the persona timeout, at the latest. The
-   worker stops the session 90 seconds before the timeout, then commits,
-   pushes, and reports. The manager stops a worker that is still there 120
-   seconds after the timeout.
+4. Expect the report near the end of the persona timeout, at the latest.
+   Time that a question waits for an answer is added. The worker stops the
+   session 90 seconds before the timeout, then pushes and reports. The
+   manager stops a worker that is still there 120 seconds after the timeout.
 
 ## What is not verified
 

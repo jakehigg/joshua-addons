@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from joshua_developer.locks import LockedError, LockManager, LockStolenError
+from joshua_developer.locks import LockedError, LockManager
 
 REPO = "github.com/example-home/sandbox"
 SCOPE = "branch:feature"
@@ -69,16 +69,18 @@ def test_release_of_a_missing_lock_does_nothing(locks: LockManager) -> None:
     locks.release(REPO, SCOPE, "task-1")
 
 
-def test_an_expired_lock_is_taken_and_the_old_owner_finds_it_stolen(
-    locks: LockManager, clock: Clock
-) -> None:
-    locks.acquire(REPO, SCOPE, "task-1", "develop", ttl_s=60)
-    clock.now += timedelta(seconds=61)
-    assert locks.get(REPO, SCOPE) is None
-    locks.acquire(REPO, SCOPE, "task-2", "develop")
-    with pytest.raises(LockStolenError):
-        locks.release(REPO, SCOPE, "task-1")
-    assert locks.get(REPO, SCOPE).task_id == "task-2"  # type: ignore[union-attr]
+def test_a_lock_has_no_expiry(locks: LockManager, clock: Clock) -> None:
+    locks.acquire(REPO, SCOPE, "task-1", "develop")
+    clock.now += timedelta(days=2)
+    assert locks.get(REPO, SCOPE).task_id == "task-1"  # type: ignore[union-attr]
+    with pytest.raises(LockedError):
+        locks.acquire(REPO, SCOPE, "task-2", "develop")
+
+
+def test_a_release_by_another_task_leaves_the_lock(locks: LockManager) -> None:
+    locks.acquire(REPO, SCOPE, "task-1", "develop")
+    locks.release(REPO, SCOPE, "task-2")
+    assert locks.get(REPO, SCOPE).task_id == "task-1"  # type: ignore[union-attr]
 
 
 def test_clear(locks: LockManager) -> None:

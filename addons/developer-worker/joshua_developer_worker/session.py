@@ -4,6 +4,9 @@ The session gets the file tools and Bash, and one MCP server: ``manager``,
 in-process, with the one tool ``ask``. It loads no settings from the
 checkout (``setting_sources=[]``) and no MCP config but its own. It never
 holds WebSearch or WebFetch; ``check_options`` refuses options that do.
+
+The session runs on a ``Clock``. A watchdog interrupts the session when the
+clock has no time left. The clock pauses while ``ask`` waits for an answer.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import asyncio
 import contextlib
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,6 +33,7 @@ from claude_agent_sdk import (
     tool,
 )
 
+from joshua_developer_worker.clock import Clock
 from joshua_developer_worker.git import scrub
 from joshua_developer_worker.log import get_logger
 from joshua_developer_worker.manager_client import (
@@ -56,9 +60,6 @@ RESULT_SCHEMA: dict[str, Any] = {
     "required": ["summary", "files_changed", "tests_run", "blocked"],
     "additionalProperties": False,
 }
-NO_ANSWER = (
-    "No answer arrived before the deadline. Commit your work and report what you still need."
-)
 NOBODY = (
     "Nobody can be reached to answer this. Do the parts of the task that do not need "
     "the answer, and set `blocked` with your question in the final result."
@@ -67,10 +68,10 @@ ASK_DESCRIPTION = (
     "Ask the person's assistant one clear question, for a fact that is not in the "
     "repository. The answer can take minutes."
 )
-# The ask stops waiting this long before the session deadline, so the model
-# has time to commit and write its result.
-ASK_MARGIN_S = 120.0
+DEFAULT_ASK_WAIT_S = 7200.0
 LOG_FLUSH_S = 30.0
+# The watchdog checks the clock this often.
+WATCH_S = 1.0
 MAX_TOOL_INPUT = 200
 MAX_LOG_LINE = 1000
 STOP_TIMEOUT_S = 15.0
@@ -108,14 +109,40 @@ def _text(text: str, is_error: bool = False) -> dict[str, Any]:
     return out
 
 
-class Asker:
-    """The handler of the ``ask`` tool. It keeps the question that has no answer."""
+def duration(seconds: float) -> str:
+    """``seconds`` as words: ``45 seconds``, ``1 minute``, ``120 minutes``."""
+    if seconds < 60:
+        count, unit = round(seconds), "second"
+    else:
+        count, unit = round(seconds / 60), "minute"
+    return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
 
-    def __init__(self, client: ManagerClient, deadline: float) -> None:
+
+def no_answer(waited_s: float) -> str:
+    """The tool reply when the wait limit passes with no answer."""
+    return (
+        f"No answer arrived in {duration(waited_s)}. "
+        "Commit your work and report what you still need."
+    )
+
+
+class Asker:
+    """The handler of the ``ask`` tool. It keeps the question that has no answer.
+
+    While it waits for an answer, the task clock is paused. The wait stops
+    after ``ask_wait_s`` seconds of wall time.
+    """
+
+    def __init__(
+        self, client: ManagerClient, clock: Clock, ask_wait_s: float = DEFAULT_ASK_WAIT_S
+    ) -> None:
         self.client = client
-        self.deadline = deadline
+        self.clock = clock
+        self.ask_wait_s = ask_wait_s
         self.open_question: str | None = None
         self.asked = 0
+        # The seconds of every wait, in wall time.
+        self.waited_s = 0.0
 
     async def __call__(self, args: dict[str, Any]) -> dict[str, Any]:
         question = str(args.get("question") or "").strip()
@@ -124,8 +151,10 @@ class Asker:
         self.open_question = question
         self.asked += 1
         logger.info({"message": "ask", "task_id": self.client.task_id, "count": self.asked})
+        self.clock.pause()
+        started = time.monotonic()
         try:
-            answer = await self.client.ask(question, self.deadline)
+            answer = await self.client.ask(question, self.ask_wait_s)
         except TaskEnded:
             return _text("The task ended. Stop now.", is_error=True)
         except NotSent as exc:
@@ -139,8 +168,15 @@ class Asker:
                 "and set blocked.",
                 is_error=True,
             )
+        finally:
+            waited = time.monotonic() - started
+            self.waited_s += waited
+            self.clock.resume()
         if answer is None:
-            return _text(NO_ANSWER)
+            logger.info({"message": "ask wait limit passed", "task_id": self.client.task_id})
+            with contextlib.suppress(TaskEnded, ManagerError, httpx.HTTPError):
+                await self.client.stop_ask()
+            return _text(no_answer(waited))
         self.open_question = None
         return _text(answer)
 
@@ -312,25 +348,49 @@ async def _flush_every(log: SessionLog, every_s: float) -> None:
         await log.flush()
 
 
+async def _watchdog(work: Awaitable[None], clock: Clock, watch_s: float) -> None:
+    """Run ``work`` until it ends, or until ``clock`` has no time left.
+
+    The watchdog checks the clock every ``watch_s`` seconds, or sooner when
+    less time is left. A paused clock does not run out. Raises TimeoutError,
+    after it cancels ``work``, when the time is used.
+    """
+    task = asyncio.ensure_future(work)
+    try:
+        while True:
+            remaining = clock.remaining()
+            if remaining <= 0:
+                raise TimeoutError
+            done, _ = await asyncio.wait({task}, timeout=min(watch_s, remaining))
+            if done:
+                task.result()
+                return
+    finally:
+        if not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+
 async def run(
     options: ClaudeAgentOptions,
     prompt: str,
-    deadline: float,
+    clock: Clock,
     *,
     log: SessionLog,
     client_factory: Callable[..., Any] = ClaudeSDKClient,
     flush_s: float = LOG_FLUSH_S,
+    watch_s: float = WATCH_S,
 ) -> SessionResult:
-    """Run one session until it ends or ``deadline`` (a ``time.monotonic()`` value) passes."""
+    """Run one session until it ends or ``clock`` has no time left."""
     check_options(options)
     result = SessionResult()
     client = client_factory(options=options)
     flusher = asyncio.create_task(_flush_every(log, flush_s))
     try:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        if clock.remaining() <= 0:
             raise TimeoutError
-        await asyncio.wait_for(_consume(client, prompt, result, log), remaining)
+        await _watchdog(_consume(client, prompt, result, log), clock, watch_s)
     except TimeoutError:
         result.timed_out = True
         log.add("session stopped: the deadline passed")

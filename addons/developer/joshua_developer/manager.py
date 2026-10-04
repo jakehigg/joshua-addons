@@ -15,6 +15,10 @@ The manager also serves the worker side: it mints the task token of each
 task, takes a question from a worker, and wakes the worker that waits for
 the answer. An answer to a task that stopped ``blocked`` or ``timed_out``
 after a push starts a new worker for the same task, on the pushed branch.
+
+The task clock pauses while a question waits. ``asked_at`` holds the start
+of the open wait, and ``paused_s`` the seconds of the waits that ended. The
+supervisor of the runtime adds both to the deadline of the worker.
 """
 
 from __future__ import annotations
@@ -23,11 +27,12 @@ import asyncio
 import secrets
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 
 from joshua_developer import notify, platforms
 from joshua_developer.config import DeveloperConfig, Settings
-from joshua_developer.locks import LockedError, LockManager, LockStolenError
+from joshua_developer.locks import LockedError, LockManager
 from joshua_developer.log import get_logger
 from joshua_developer.platforms import Platform, PlatformConfigError, PlatformError, Resolved
 from joshua_developer.repos import (
@@ -39,15 +44,20 @@ from joshua_developer.repos import (
     parse_pr,
     repo_allowed,
 )
-from joshua_developer.runtime import Report, Runtime
+from joshua_developer.runtime import Report, Runtime, TaskClock
 from joshua_developer.scan import Finding, scan_diff
-from joshua_developer.store import ACTIVE_STATUSES, TERMINAL_STATUSES, TaskStore, now_iso
+from joshua_developer.store import (
+    ACTIVE_STATUSES,
+    TERMINAL_STATUSES,
+    TaskStore,
+    now_iso,
+    parse_time,
+    utcnow,
+)
 
 logger = get_logger("joshua_developer.manager")
 
 RESTART_ERROR = "manager restarted"
-# The time a lock outlives the persona's timeout before a new task may take it.
-LOCK_MARGIN_S = 600
 MAX_TEXT = 100_000
 MAX_QUESTION = 10_000
 DEFAULT_BASE_BRANCH = "main"
@@ -87,10 +97,17 @@ def finding_error(findings: list[Finding]) -> str:
 class Manager:
     """The task rules, over one store, one lock manager, and one runtime."""
 
-    def __init__(self, settings: Settings, store: TaskStore, locks: LockManager) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: TaskStore,
+        locks: LockManager,
+        clock: Callable[[], datetime] = utcnow,
+    ) -> None:
         self.settings = settings
         self.store = store
         self.locks = locks
+        self.clock = clock
         self.runtime: Runtime | None = None
         self.recovered: list[str] = []
         # One event for each task with an open question. answer() sets it.
@@ -361,9 +378,7 @@ class Manager:
         refused = self._check_capacity()
         if refused is not None:
             return refused
-        refused = self._take_lock(
-            repo, scope, task_id, task_type, fields.get("branch_name"), chosen
-        )
+        refused = self._take_lock(repo, scope, task_id, task_type, fields.get("branch_name"))
         if refused is not None:
             return refused
 
@@ -431,15 +446,10 @@ class Manager:
         task_id: str,
         task_type: str,
         branch: str | None,
-        persona: str,
     ) -> dict[str, Any] | None:
         """Take the lock of ``(repo, scope)`` for ``task_id``. A ``locked`` rejection, or None."""
-        persona_entry = (
-            self.config.personas.get(persona) or self.config.personas[self.config.default_persona]
-        )
-        ttl = persona_entry.timeout_s + LOCK_MARGIN_S
         try:
-            self.locks.acquire(repo, scope, task_id, task_type, branch, ttl)
+            self.locks.acquire(repo, scope, task_id, task_type, branch)
         except LockedError as exc:
             return rejected(
                 "locked",
@@ -473,7 +483,7 @@ class Manager:
                 error=f"the worker did not start: {type(exc).__name__}",
                 completed_at=now_iso(),
             )
-            self._release(full["repo"], full["scope"], task_id)
+            self.locks.release(full["repo"], full["scope"], task_id)
             return {"task_id": task_id, "status": "failed", "error": "the worker did not start"}
         return None
 
@@ -481,12 +491,6 @@ class Manager:
         if self.runtime is None:
             raise RuntimeError("the manager has no runtime")
         return self.runtime
-
-    def _release(self, repo: str, scope: str, task_id: str) -> None:
-        try:
-            self.locks.release(repo, scope, task_id)
-        except LockStolenError:
-            logger.warning({"message": "the lock of the task was taken", "task_id": task_id})
 
     # --- the Reporter side -------------------------------------------------
 
@@ -509,6 +513,17 @@ class Manager:
             return
         self.store.update_task(task_id, status="running", started_at=now_iso())
 
+    def task_clock(self, task_id: str) -> TaskClock | None:
+        """The clock fields of a task for its supervisor, or None when the task is not known."""
+        task = self.store.get_task_full(task_id)
+        if task is None:
+            return None
+        return TaskClock(
+            started_at=parse_time(task["started_at"]),
+            paused_s=int(task["paused_s"] or 0),
+            asked_at=parse_time(task["asked_at"]),
+        )
+
     async def record_report(self, task_id: str, report: Report) -> dict[str, Any] | None:
         """Record the report of a task, release its lock, and send the report on.
 
@@ -524,6 +539,7 @@ class Manager:
             return self.store.get_task(task_id)
         self._finishing.add(task_id)
         try:
+            self.store.end_wait(task_id, self.clock())
             fields: dict[str, Any] = {
                 "status": report.status,
                 "summary": report.summary,
@@ -547,7 +563,7 @@ class Manager:
             self.store.update_task(task_id, **fields)
         finally:
             self._finishing.discard(task_id)
-        self._release(task["repo"], task["scope"], task_id)
+        self.locks.release(task["repo"], task["scope"], task_id)
         event = self._answer_events.pop(task_id, None)
         if event is not None:
             event.set()
@@ -695,7 +711,8 @@ class Manager:
         """Give ``task`` the answer to its question.
 
         A running task with an open question and no answer yet gets the text
-        through the long poll of its worker. A task that ended ``blocked`` or
+        through the long poll of its worker, and its clock starts again. A
+        task that ended ``blocked`` or
         ``timed_out`` after its worker pushed the branch is resumed: a new
         worker starts on that branch, with the answer in its brief.
         """
@@ -716,6 +733,7 @@ class Manager:
             return rejected(
                 "not_waiting", f"task {task['task_id']} already has an answer to its question"
             )
+        self.store.end_wait(task["task_id"], self.clock())
         self.store.update_task(task["task_id"], answer=text)
         event = self._answer_events.get(task["task_id"])
         if event is not None:
@@ -747,12 +765,7 @@ class Manager:
         if refused is not None:
             return refused
         refused = self._take_lock(
-            full["repo"],
-            full["scope"],
-            task_id,
-            full["task_type"],
-            full["branch_name"],
-            full["persona"],
+            full["repo"], full["scope"], task_id, full["task_type"], full["branch_name"]
         )
         if refused is not None:
             return refused
@@ -771,6 +784,9 @@ class Manager:
             findings=None,
             started_at=None,
             completed_at=None,
+            asked_at=None,
+            paused_s=0,
+            last_wait_s=None,
         )
         self._log_full.discard(task_id)
         logger.info({"message": "task resumed", "task_id": task_id, "person": person})
@@ -797,11 +813,14 @@ class Manager:
         """Open a question for a task and send it to the person's chat.
 
         The question replaces an earlier one, and clears its answer. The
-        question is stored also when nobody gets it. Returns ``(True, None)``
+        question is stored also when nobody gets it. A question that was sent
+        pauses the task clock until the answer comes or the worker stops
+        waiting. Returns ``(True, None)``
         when channels accepted the event, else ``(False, reason)``: the reason
         is ``no_destination`` when the task and the person have no chat, or
         ``send_failed`` when the event did not go through.
         """
+        self.store.end_wait(task_id, self.clock())
         self.store.update_task(task_id, open_question=question, answer=None)
         old = self._answer_events.get(task_id)
         self._answer_events[task_id] = asyncio.Event()
@@ -816,8 +835,22 @@ class Manager:
             logger.info({"message": "question not sent: no destination", "task_id": task_id})
             return False, "no_destination"
         if await notify.send_question(self.settings, full, question, default):
+            self.store.update_task(task_id, asked_at=self.clock().isoformat())
             return True, None
         return False, "send_failed"
+
+    def stop_wait(self, task_id: str) -> int:
+        """The worker stops waiting for an answer. The clock starts again.
+
+        The question stays open. Returns the total paused seconds of the task.
+        """
+        waited = self.store.end_wait(task_id, self.clock())
+        if waited is not None:
+            logger.info(
+                {"message": "worker stopped waiting", "task_id": task_id, "waited_s": waited}
+            )
+        full = self.store.get_task_full(task_id)
+        return int(full["paused_s"] or 0) if full else 0
 
     def append_log(self, task_id: str, text: str) -> bool:
         """Add worker text to the session log. Returns False when the log is full.

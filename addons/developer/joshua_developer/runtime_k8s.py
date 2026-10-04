@@ -22,10 +22,12 @@ variables. The chart's ``networkPolicy`` block limits where it can connect.
 
 A supervisor reads the Job every ``poll_s`` seconds. When the Job ends and
 the task has no report, it records a ``failed`` report with the end of the
-pod log. When the persona timeout plus a grace time passes, it deletes the
-Job and, if no report came, records ``timed_out``. The Job's
-``activeDeadlineSeconds`` is the same time, so Kubernetes stops the pod if
-the manager cannot. When the supervisor ends, it deletes the Job: the log
+pod log. When the deadline passes, it deletes the Job and, if no report came,
+records ``timed_out``. The deadline is the same as on Docker: the persona
+timeout, plus a grace time, plus the time the worker waited for answers
+(``runtime.Deadline``). The Job's ``activeDeadlineSeconds`` is the hard cap,
+``timeout_s + ask_wait_s + grace``, so Kubernetes stops the pod if the
+manager cannot. When the supervisor ends, it deletes the Job: the log
 tail is in the report, and a finished Job has no other use.
 ``ttlSecondsAfterFinished`` removes a Job that no supervisor deletes.
 """
@@ -33,7 +35,8 @@ tail is in the report, and a finished Job has no other use.
 from __future__ import annotations
 
 import asyncio
-import time
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +46,7 @@ from kubernetes.client.exceptions import ApiException
 
 from joshua_developer.config import Settings
 from joshua_developer.log import get_logger
-from joshua_developer.runtime import Report, Reporter, worker_name
+from joshua_developer.runtime import Deadline, Report, Reporter, worker_name
 from joshua_developer.runtime_docker import (
     GRACE_S,
     LABEL,
@@ -53,6 +56,7 @@ from joshua_developer.runtime_docker import (
     TASK_LABEL,
     worker_environment,
 )
+from joshua_developer.store import utcnow
 
 logger = get_logger("joshua_developer.runtime_k8s")
 
@@ -187,6 +191,7 @@ class KubernetesRuntime:
         namespace: str | None = None,
         grace_s: float = GRACE_S,
         poll_s: float = POLL_S,
+        now: Callable[[], datetime] = utcnow,
     ) -> None:
         if not settings.worker_image:
             raise ValueError("WORKER_IMAGE is required for the kubernetes runtime")
@@ -199,6 +204,7 @@ class KubernetesRuntime:
         self.namespace = namespace or pod_namespace(settings)
         self.grace_s = grace_s
         self.poll_s = poll_s
+        self.now = now
         self._supervisors: set[asyncio.Task[None]] = set()
 
     def _jobs(self) -> list[Any]:
@@ -226,14 +232,25 @@ class KubernetesRuntime:
             logger.info({"message": "removed old workers", "count": removed})
         return removed
 
-    def _deadline_s(self, task: dict[str, Any]) -> int:
-        personas = self.settings.config.personas
-        persona = personas.get(task["persona"]) or personas[self.settings.config.default_persona]
-        return int(persona.timeout_s + self.grace_s)
+    def _deadline(self, task: dict[str, Any]) -> Deadline:
+        config = self.settings.config
+        return Deadline(
+            self.reporter,
+            task["task_id"],
+            config.persona_of(task["persona"]).timeout_s,
+            config.ask_wait_of(task["persona"]),
+            self.grace_s,
+            now=self.now,
+        )
+
+    def _hard_cap_s(self, task: dict[str, Any]) -> int:
+        """``timeout_s + ask_wait_s + grace``: the Job's ``activeDeadlineSeconds``."""
+        config = self.settings.config
+        persona = config.persona_of(task["persona"])
+        return int(persona.timeout_s + config.ask_wait_of(task["persona"]) + self.grace_s)
 
     async def start(self, task: dict[str, Any]) -> str:
-        deadline_s = self._deadline_s(task)
-        manifest = job_manifest(self.settings, task, self.namespace, max(deadline_s, 1))
+        manifest = job_manifest(self.settings, task, self.namespace, max(self._hard_cap_s(task), 1))
         name = manifest["metadata"]["name"]
         await asyncio.to_thread(
             self.batch.create_namespaced_job, namespace=self.namespace, body=manifest
@@ -241,16 +258,15 @@ class KubernetesRuntime:
         self.reporter.mark_running(task["task_id"])
         logger.info({"message": "worker started", "task_id": task["task_id"], "job": name})
         job = asyncio.create_task(
-            self._supervise(task["task_id"], task.get("worker_token"), name, deadline_s)
+            self._supervise(task["task_id"], task.get("worker_token"), name, self._deadline(task))
         )
         self._supervisors.add(job)
         job.add_done_callback(self._supervisors.discard)
         return name
 
     async def _supervise(
-        self, task_id: str, token: str | None, name: str, timeout_s: float
+        self, task_id: str, token: str | None, name: str, deadline: Deadline
     ) -> None:
-        deadline = time.monotonic() + timeout_s
         state: str | None = None
         try:
             while True:
@@ -266,7 +282,7 @@ class KubernetesRuntime:
                 state = _job_state(job)
                 if state is not None:
                     break
-                if time.monotonic() >= deadline:
+                if deadline.passed():
                     state = "deadline"
                     logger.warning({"message": "worker ran past its timeout", "task_id": task_id})
                     break

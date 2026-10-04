@@ -42,6 +42,8 @@ def test_defaults_without_a_file(tmp_path: Path) -> None:
     assert set(config.personas) == {"sonnet", "opus", "fable"}
     assert config.personas["opus"].timeout_s == 2400
     assert config.people == {}
+    assert config.ask_wait_s == 7200
+    assert config.ask_wait_of("opus") == 7200
 
 
 def test_the_plan_example_loads(tmp_path: Path) -> None:
@@ -90,6 +92,22 @@ def test_personas_in_the_file_merge_over_the_builtins() -> None:
     assert set(builtin_personas()) == {"sonnet", "opus", "fable"}
 
 
+def test_the_ask_wait_of_a_persona_wins_over_the_instance_value() -> None:
+    config = parse_config(
+        {
+            "ask_wait_s": 1800,
+            "personas": {
+                "quick": {"model": "m", "max_turns": 5, "timeout_s": 60, "ask_wait_s": 300},
+            },
+        }
+    )
+    assert config.ask_wait_of("quick") == 300
+    assert config.ask_wait_of("opus") == 1800
+    # A persona that is gone takes the default persona.
+    assert config.ask_wait_of("retired") == 1800
+    assert config.persona_of("retired") == config.personas["opus"]
+
+
 def test_worker_limits_have_defaults_and_refuse_a_bad_value() -> None:
     config = parse_config({})
     assert config.worker.memory == "2g"
@@ -109,6 +127,14 @@ def test_worker_limits_have_defaults_and_refuse_a_bad_value() -> None:
         ({"people": {"alex": {"default_persona": "haiku"}}}, "people.alex.default_persona"),
         ({"network": "maybe"}, "network"),
         ({"max_workers": 0}, "max_workers"),
+        ({"ask_wait_s": 0}, "ask_wait_s"),
+        ({"ask_wait_s": "60"}, "ask_wait_s"),
+        ({"ask_wait_s": 1.5}, "ask_wait_s"),
+        ({"ask_wait_s": True}, "ask_wait_s"),
+        (
+            {"personas": {"q": {"model": "m", "max_turns": 1, "timeout_s": 1, "ask_wait_s": -5}}},
+            "personas.q.ask_wait_s",
+        ),
         ({"platforms": {"github.com": {"kind": "svn", "token_env": "X"}}}, "platforms.github.com"),
         ({"platforms": {"github.com": {"kind": "github", "token_env": "lower"}}}, "token_env"),
         ({"platforms": {"GitHub.com": {"kind": "github", "token_env": "X"}}}, "platforms.GitHub"),

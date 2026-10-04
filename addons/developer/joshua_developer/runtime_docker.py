@@ -17,15 +17,20 @@ and ``no-new-privileges``.
 
 A supervisor watches each container. When the container exits and the task
 has no report, it records a ``failed`` report with the end of the container
-log. When the persona timeout plus a grace time passes, it kills the
-container and, if no report came, records ``timed_out``. Then it removes the
-container.
+log. When the deadline passes, it kills the container and, if no report
+came, records ``timed_out``. Then it removes the container.
+
+The deadline is the start of the task, plus the persona timeout, plus a grace
+time, plus the time the worker waited for answers (``runtime.Deadline``). The
+supervisor reads it from the task row on each poll. ``timeout_s + ask_wait_s
++ grace`` after the start is a hard cap.
 """
 
 from __future__ import annotations
 
 import asyncio
-import time
+from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import docker
@@ -33,7 +38,8 @@ from docker.errors import DockerException, ImageNotFound, NotFound
 
 from joshua_developer.config import GIT_PROXY_PORT, WORKER_API_PORT, Settings
 from joshua_developer.log import get_logger
-from joshua_developer.runtime import Report, Reporter, worker_name
+from joshua_developer.runtime import Deadline, Report, Reporter, worker_name
+from joshua_developer.store import utcnow
 
 logger = get_logger("joshua_developer.runtime_docker")
 
@@ -74,6 +80,7 @@ class DockerRuntime:
         client: docker.DockerClient | None = None,
         grace_s: float = GRACE_S,
         poll_s: float = POLL_S,
+        now: Callable[[], datetime] = utcnow,
     ) -> None:
         if not settings.worker_image:
             raise ValueError("WORKER_IMAGE is required for the docker runtime")
@@ -82,6 +89,7 @@ class DockerRuntime:
         self.client = client if client is not None else make_client(settings)
         self.grace_s = grace_s
         self.poll_s = poll_s
+        self.now = now
         self._supervisors: set[asyncio.Task[None]] = set()
 
     def count_active(self) -> int:
@@ -111,10 +119,16 @@ class DockerRuntime:
             logger.info({"message": "removed old workers", "count": removed})
         return removed
 
-    def _timeout_s(self, task: dict[str, Any]) -> float:
-        personas = self.settings.config.personas
-        persona = personas.get(task["persona"]) or personas[self.settings.config.default_persona]
-        return persona.timeout_s + self.grace_s
+    def _deadline(self, task: dict[str, Any]) -> Deadline:
+        config = self.settings.config
+        return Deadline(
+            self.reporter,
+            task["task_id"],
+            config.persona_of(task["persona"]).timeout_s,
+            config.ask_wait_of(task["persona"]),
+            self.grace_s,
+            now=self.now,
+        )
 
     def _create(self, task: dict[str, Any]) -> Any:
         limits = self.settings.config.worker
@@ -152,7 +166,7 @@ class DockerRuntime:
             {"message": "worker started", "task_id": task["task_id"], "container": container.name}
         )
         supervise = self._supervise(
-            task["task_id"], task.get("worker_token"), container, self._timeout_s(task)
+            task["task_id"], task.get("worker_token"), container, self._deadline(task)
         )
         job = asyncio.create_task(supervise)
         self._supervisors.add(job)
@@ -160,9 +174,8 @@ class DockerRuntime:
         return str(container.name)
 
     async def _supervise(
-        self, task_id: str, token: str | None, container: Any, timeout_s: float
+        self, task_id: str, token: str | None, container: Any, deadline: Deadline
     ) -> None:
-        deadline = time.monotonic() + timeout_s
         timed_out = False
         try:
             while True:
@@ -172,7 +185,7 @@ class DockerRuntime:
                     break
                 if container.status in ("exited", "dead"):
                     break
-                if time.monotonic() >= deadline:
+                if deadline.passed():
                     timed_out = True
                     logger.warning({"message": "worker ran past its timeout", "task_id": task_id})
                     await asyncio.to_thread(_kill, container)

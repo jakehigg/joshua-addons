@@ -25,6 +25,8 @@ DEFAULT_CONFIG = "/etc/joshua-addon/developer.yaml"
 RUNTIMES = ("stub", "docker", "kubernetes")
 # The runtimes this build can start. The others stop the addon at start.
 IMPLEMENTED_RUNTIMES = frozenset(RUNTIMES)
+# The longest time a worker waits for an answer to one question.
+DEFAULT_ASK_WAIT_S = 7200
 DEFAULT_MANAGER_HOST = "developer"
 DEFAULT_WORKER_NETWORK = "developer_workers"
 DEFAULT_PUBLIC_NETWORK = "bridge"
@@ -60,6 +62,8 @@ class Persona(_Model):
     effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
     max_turns: int = Field(gt=0)
     timeout_s: int = Field(gt=0)
+    # None takes the instance ask_wait_s.
+    ask_wait_s: int | None = Field(default=None, gt=0, strict=True)
 
 
 def builtin_personas() -> dict[str, Persona]:
@@ -127,6 +131,7 @@ class DeveloperConfig(_Model):
     network: Literal["off", "on"] = "off"
     default_persona: str = "opus"
     max_workers: int = Field(default=2, gt=0)
+    ask_wait_s: int = Field(default=DEFAULT_ASK_WAIT_S, gt=0, strict=True)
     # A persona in the file replaces the built-in persona of the same name.
     # The other built-in personas stay.
     personas: dict[str, Persona] = Field(default_factory=builtin_personas)
@@ -149,6 +154,14 @@ class DeveloperConfig(_Model):
     @classmethod
     def _merge_personas(cls, value: dict[str, Persona]) -> dict[str, Persona]:
         return {**builtin_personas(), **value}
+
+    def persona_of(self, name: str | None) -> Persona:
+        """The persona ``name``, else the default persona."""
+        return self.personas.get(name or "") or self.personas[self.default_persona]
+
+    def ask_wait_of(self, name: str | None) -> int:
+        """The ask wait of the persona ``name``: its own value, else the instance value."""
+        return self.persona_of(name).ask_wait_s or self.ask_wait_s
 
 
 def _looks_like_token(text: str) -> bool:

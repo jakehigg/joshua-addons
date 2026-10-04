@@ -17,9 +17,13 @@ Routes:
 - ``POST /worker/ask`` ``{"question"}``: send a question to the person's chat.
   202 ``{"asked": true, "sent": true}``, or ``{"asked": true, "sent": false,
   "reason"}`` when nobody gets it (``no_destination`` or ``send_failed``).
-  The question is stored in both cases.
-- ``GET /worker/answer``: wait up to 25 s for the answer. 200 with the answer,
-  or 204 when no answer came in that time.
+  The question is stored in both cases. A question that was sent pauses the
+  task clock (``asked_at``).
+- ``POST /worker/ask/stop``: the worker stops waiting for the answer
+  (``ask_wait_s`` passed). The clock starts again and the question stays
+  open. 200 ``{"paused_s"}``.
+- ``GET /worker/answer``: wait up to 25 s for the answer. 200 ``{"answer",
+  "waited_s"}``, or 204 when no answer came in that time.
 - ``POST /worker/log`` ``{"text"}``: add text to the session log.
 - ``/worker/claude/{path}``, any method: the Claude forwarder.
 
@@ -128,7 +132,7 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "repo_url": repo_url(task["repo"]),
         "branch": task["branch_name"],
         "base_branch": task["base_branch"],
-        "persona": {"name": persona_name, **persona.model_dump()},
+        "persona": {"name": persona_name, **persona.model_dump(exclude={"ask_wait_s"})},
         "git": {"name": person["git_name"], "email": person["git_email"]},
         "git_token": resolved.token,
         "git_username": resolved.credential_username,
@@ -136,6 +140,8 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "brief": task["brief"],
         "feedback": task["instructions"],
         "answer": task["answer"],
+        # The longest time the worker waits for an answer to one question.
+        "ask_wait_s": manager.config.ask_wait_of(persona_name),
         # A resumed task: an earlier worker pushed the branch and stopped.
         "resumed": bool(history),
         # Where the earlier worker stopped, for a resumed task.
@@ -266,8 +272,15 @@ def build_worker_app(
             if task["status"] in TERMINAL_STATUSES:
                 return _error(409, "task_ended")
         if task["answer"]:
-            return JSONResponse({"answer": task["answer"]})
+            return JSONResponse({"answer": task["answer"], "waited_s": task["last_wait_s"] or 0})
         return Response(status_code=204)
+
+    async def stop_ask(request: Request) -> Response:
+        found = authorize(request)
+        if isinstance(found, Response):
+            return found
+        task_id, _ = found
+        return JSONResponse({"paused_s": manager.stop_wait(task_id)})
 
     async def log(request: Request) -> Response:
         found = authorize(request)
@@ -348,6 +361,7 @@ def build_worker_app(
             Route("/worker/running", running, methods=["POST"]),
             Route("/worker/report", report, methods=["POST"]),
             Route("/worker/ask", ask, methods=["POST"]),
+            Route("/worker/ask/stop", stop_ask, methods=["POST"]),
             Route("/worker/answer", answer, methods=["GET"]),
             Route("/worker/log", log, methods=["POST"]),
             Route("/worker/claude/{path:path}", claude, methods=methods),

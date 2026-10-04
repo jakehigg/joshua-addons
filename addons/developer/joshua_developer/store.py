@@ -56,7 +56,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     session_log TEXT,
     scan TEXT,
     findings TEXT,
-    history TEXT
+    history TEXT,
+    asked_at TEXT,
+    paused_s INTEGER NOT NULL DEFAULT 0,
+    last_wait_s INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_person_created ON tasks(person, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -98,6 +101,8 @@ STATUS_COLUMNS = (
     "created_at",
     "started_at",
     "completed_at",
+    "asked_at",
+    "paused_s",
 )
 
 # The fields update_task may change.
@@ -123,6 +128,9 @@ ALLOWED_UPDATE_FIELDS = frozenset(
         "findings",
         "worker_token",
         "history",
+        "asked_at",
+        "paused_s",
+        "last_wait_s",
     }
 )
 
@@ -135,6 +143,9 @@ ADDED_COLUMNS = {
     "scan": "TEXT",
     "findings": "TEXT",
     "history": "TEXT",
+    "asked_at": "TEXT",
+    "paused_s": "INTEGER NOT NULL DEFAULT 0",
+    "last_wait_s": "INTEGER",
 }
 
 # The columns that hold JSON.
@@ -144,8 +155,17 @@ JSON_COLUMNS = ("report", "findings", "history")
 MAX_SESSION_LOG_BYTES = 1024 * 1024
 
 
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
 def now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return utcnow().isoformat()
+
+
+def parse_time(value: str | None) -> datetime | None:
+    """A stored timestamp as a datetime, or None."""
+    return datetime.fromisoformat(value) if value else None
 
 
 def build_update_sql(task_id: str, fields: dict[str, Any]) -> tuple[str, list[Any]]:
@@ -180,6 +200,9 @@ def _row(row: sqlite3.Row | None, columns: Iterable[str] | None = None) -> dict[
     for key in JSON_COLUMNS:
         if data.get(key):
             data[key] = json.loads(data[key])
+    if "asked_at" in data:
+        # The time the open question started to wait, while the clock is paused.
+        data["waiting_since"] = data["asked_at"]
     return data
 
 
@@ -302,8 +325,30 @@ class TaskStore:
         active = self.list_active_tasks()
         stamp = now_iso()
         for task in active:
-            self.update_task(task["task_id"], status="failed", error=error, completed_at=stamp)
+            self.update_task(
+                task["task_id"], status="failed", error=error, completed_at=stamp, asked_at=None
+            )
         return active
+
+    def end_wait(self, task_id: str, now: datetime) -> int | None:
+        """Close the open wait of a task: add its seconds to ``paused_s``.
+
+        Returns the seconds of the wait, or None when no wait was open.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT asked_at FROM tasks WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            asked = parse_time(row[0]) if row is not None else None
+            if asked is None:
+                return None
+            waited = max(0, round((now - asked).total_seconds()))
+            self._conn.execute(
+                "UPDATE tasks SET paused_s = paused_s + ?, asked_at = NULL, last_wait_s = ? "
+                "WHERE task_id = ?",
+                (waited, waited, task_id),
+            )
+        return waited
 
     # --- worker tokens and the session log ---------------------------------
 

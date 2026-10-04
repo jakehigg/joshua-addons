@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from conftest import (
@@ -19,6 +20,7 @@ from conftest import (
     sleep_forever,
 )
 from joshua_developer_worker import git, session
+from joshua_developer_worker.clock import Clock
 
 STRUCTURED = {
     "summary": "Added hello.txt.",
@@ -49,8 +51,8 @@ def tool_use(name: str, data: dict[str, Any]) -> AssistantMessage:
     return AssistantMessage(content=[ToolUseBlock(id="t1", name=name, input=data)], model="m")
 
 
-def options_for(tmp_path: Path, manager: FakeManager, deadline: float) -> Any:
-    asker = session.Asker(manager.client(), deadline)
+def options_for(tmp_path: Path, manager: FakeManager, clock: Clock) -> Any:
+    asker = session.Asker(manager.client(), clock)
     return session.build_options(
         "system",
         tmp_path,
@@ -66,7 +68,7 @@ def options_for(tmp_path: Path, manager: FakeManager, deadline: float) -> Any:
 def test_build_options_holds_the_tools_and_no_settings(
     tmp_path: Path, manager: FakeManager
 ) -> None:
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
     assert options.tools == ["Read", "Edit", "Write", "Bash", "Glob", "Grep"]
     assert options.allowed_tools == [*session.BASE_TOOLS, "mcp__manager__ask"]
     assert set(options.disallowed_tools) == {"WebSearch", "WebFetch"}
@@ -110,7 +112,7 @@ def test_the_cli_environment_points_at_the_forwarder(tmp_path: Path) -> None:
 def test_check_options_refuses_the_web_and_settings(
     tmp_path: Path, manager: FakeManager, change: dict[str, Any], message: str
 ) -> None:
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
     for key, value in change.items():
         setattr(options, key, value)
     with pytest.raises(AssertionError, match=message):
@@ -120,7 +122,7 @@ def test_check_options_refuses_the_web_and_settings(
 async def test_a_session_records_tools_and_the_structured_result(
     tmp_path: Path, manager: FakeManager
 ) -> None:
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
     made: list[FakeSDKClient] = []
     script = [
         tool_use("Bash", {"command": "pytest -q " + "x" * 400}),
@@ -129,7 +131,7 @@ async def test_a_session_records_tools_and_the_structured_result(
     ]
     log = session.SessionLog(manager.client())
     result = await session.run(
-        options, "go", time.monotonic() + 30, log=log, client_factory=fake_factory(script, made)
+        options, "go", Clock(30), log=log, client_factory=fake_factory(script, made)
     )
     assert result.structured == STRUCTURED
     assert result.is_error is False and result.timed_out is False
@@ -144,7 +146,7 @@ async def test_a_session_records_tools_and_the_structured_result(
 
 async def test_the_ask_tool_round_trip(tmp_path: Path, manager: FakeManager) -> None:
     manager.answer_after_polls = 2
-    asker = session.Asker(manager.client(), time.monotonic() + 30)
+    asker = session.Asker(manager.client(), Clock(30))
     reply = await asker({"question": "Which port?"})
     assert reply == {"content": [{"type": "text", "text": "Use port 8080."}]}
     assert asker.open_question is None
@@ -153,17 +155,20 @@ async def test_the_ask_tool_round_trip(tmp_path: Path, manager: FakeManager) -> 
 
 async def test_the_ask_tool_without_an_answer(manager: FakeManager) -> None:
     manager.answer_after_polls = 10_000
-    asker = session.Asker(manager.client(), time.monotonic() - 1)
+    asker = session.Asker(manager.client(), Clock(60), ask_wait_s=0.05)
     reply = await asker({"question": "Which port?"})
-    assert reply["content"][0]["text"] == session.NO_ANSWER
+    assert reply["content"][0]["text"] == session.no_answer(0)
+    assert reply["content"][0]["text"].startswith("No answer arrived in 0 seconds.")
     assert asker.open_question == "Which port?"
+    assert manager.stops == 1
+    assert asker.clock.paused is False
 
 
 async def test_the_ask_tool_returns_at_once_when_nobody_can_be_reached(
     manager: FakeManager,
 ) -> None:
     manager.ask_reply = {"asked": True, "sent": False, "reason": "no_destination"}
-    asker = session.Asker(manager.client(), time.monotonic() + 3600)
+    asker = session.Asker(manager.client(), Clock(3600))
     started = time.monotonic()
     reply = await asker({"question": "Which port?"})
     assert time.monotonic() - started < 5
@@ -175,31 +180,29 @@ async def test_the_ask_tool_returns_at_once_when_nobody_can_be_reached(
 
 
 async def test_the_ask_tool_refuses_an_empty_question(manager: FakeManager) -> None:
-    reply = await session.Asker(manager.client(), 0)({"question": "  "})
+    reply = await session.Asker(manager.client(), Clock(0))({"question": "  "})
     assert reply["is_error"] is True
     assert manager.questions == []
 
 
 async def test_the_ask_tool_after_the_task_ended(manager: FakeManager) -> None:
     manager.ended = True
-    reply = await session.Asker(manager.client(), time.monotonic() + 5)({"question": "Q?"})
+    reply = await session.Asker(manager.client(), Clock(5))({"question": "Q?"})
     assert "ended" in reply["content"][0]["text"]
 
 
 async def test_the_ask_tool_when_the_manager_fails(manager: FakeManager) -> None:
-    reply = await session.Asker(manager.client(token="wrong"), time.monotonic() + 5)(
-        {"question": "Q?"}
-    )
+    reply = await session.Asker(manager.client(token="wrong"), Clock(5))({"question": "Q?"})
     assert "could not be sent" in reply["content"][0]["text"]
 
 
 async def test_the_deadline_stops_the_session(tmp_path: Path, manager: FakeManager) -> None:
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
     made: list[FakeSDKClient] = []
     script = [tool_use("Read", {"file_path": "a.py"}), sleep_forever]
     log = session.SessionLog(manager.client())
     result = await session.run(
-        options, "go", time.monotonic() + 0.2, log=log, client_factory=fake_factory(script, made)
+        options, "go", Clock(0.2), log=log, client_factory=fake_factory(script, made)
     )
     assert result.timed_out is True
     assert made[0].interrupted and made[0].disconnected
@@ -207,11 +210,11 @@ async def test_the_deadline_stops_the_session(tmp_path: Path, manager: FakeManag
 
 
 async def test_a_deadline_in_the_past_starts_nothing(tmp_path: Path, manager: FakeManager) -> None:
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
     made: list[FakeSDKClient] = []
     log = session.SessionLog(None)
     result = await session.run(
-        options, "go", time.monotonic() - 1, log=log, client_factory=fake_factory([], made)
+        options, "go", Clock(-1), log=log, client_factory=fake_factory([], made)
     )
     assert result.timed_out is True
     assert made[0].connected is False
@@ -219,11 +222,11 @@ async def test_a_deadline_in_the_past_starts_nothing(tmp_path: Path, manager: Fa
 
 async def test_an_sdk_error_is_a_failed_session(tmp_path: Path, manager: FakeManager) -> None:
     git.register_secret(GIT_TOKEN)
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
     script = [RuntimeError(f"the CLI died with {GIT_TOKEN}")]
     log = session.SessionLog(manager.client())
     result = await session.run(
-        options, "go", time.monotonic() + 30, log=log, client_factory=fake_factory(script)
+        options, "go", Clock(30), log=log, client_factory=fake_factory(script)
     )
     assert result.is_error is True
     assert result.error and "RuntimeError" in result.error
@@ -232,7 +235,7 @@ async def test_an_sdk_error_is_a_failed_session(tmp_path: Path, manager: FakeMan
 
 
 async def test_an_error_result_is_a_failed_session(tmp_path: Path, manager: FakeManager) -> None:
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
     script = [
         AssistantMessage(content=[TextBlock(text="partial")], model="m"),
         result_message(
@@ -242,7 +245,7 @@ async def test_an_error_result_is_a_failed_session(tmp_path: Path, manager: Fake
     result = await session.run(
         options,
         "go",
-        time.monotonic() + 30,
+        Clock(30),
         log=session.SessionLog(None),
         client_factory=fake_factory(script),
     )
@@ -253,7 +256,7 @@ async def test_an_error_result_is_a_failed_session(tmp_path: Path, manager: Fake
 
 
 async def test_the_log_is_sent_every_interval(tmp_path: Path, manager: FakeManager) -> None:
-    options = options_for(tmp_path, manager, time.monotonic() + 60)
+    options = options_for(tmp_path, manager, Clock(60))
 
     async def pause(_: FakeSDKClient) -> None:
         await asyncio.sleep(0.15)
@@ -263,7 +266,7 @@ async def test_the_log_is_sent_every_interval(tmp_path: Path, manager: FakeManag
     await session.run(
         options,
         "go",
-        time.monotonic() + 30,
+        Clock(30),
         log=log,
         client_factory=fake_factory(script),
         flush_s=0.05,
@@ -307,3 +310,102 @@ def test_parse_structured() -> None:
     assert session.parse_structured("{not json") is None
     assert session.parse_structured({"files_changed": []}) is None
     assert session.parse_structured(None) is None
+
+
+async def test_the_ask_tool_pauses_the_clock_while_it_waits(manager: FakeManager) -> None:
+    now = [0.0]
+    clock = Clock(10, now=lambda: now[0])
+    manager.answer_after_polls = 3
+    manager.poll_delay_s = 0.05
+    asker = session.Asker(manager.client(), clock)
+    waiting = asyncio.create_task(asker({"question": "Which port?"}))
+    await asyncio.sleep(0.02)
+    assert clock.paused
+    # An hour passes while the question waits. It does not count as work.
+    now[0] += 3600
+    reply = await waiting
+    assert reply["content"][0]["text"] == "Use port 8080."
+    assert not clock.paused
+    assert clock.remaining() == 10
+    assert asker.waited_s > 0
+    assert manager.stops == 0
+
+
+async def test_the_ask_tool_stops_at_the_wait_limit(manager: FakeManager) -> None:
+    manager.answer_after_polls = 10_000
+    manager.poll_delay_s = 0.02
+    clock = Clock(60)
+    asker = session.Asker(manager.client(), clock, ask_wait_s=0.1)
+    started = time.monotonic()
+    reply = await asker({"question": "Which port?"})
+    assert time.monotonic() - started < 2
+    assert reply["content"][0]["text"].startswith("No answer arrived in 0 seconds.")
+    assert manager.stops == 1
+    assert not clock.paused
+    assert asker.open_question == "Which port?"
+
+
+async def test_a_failed_stop_still_returns_the_no_answer_text(manager: FakeManager) -> None:
+    manager.answer_after_polls = 10_000
+
+    async def broken() -> int:
+        raise httpx.ConnectError("the manager is gone")
+
+    client = manager.client()
+    client.stop_ask = broken  # type: ignore[method-assign]
+    asker = session.Asker(client, Clock(60), ask_wait_s=0.05)
+    reply = await asker({"question": "Which port?"})
+    assert reply["content"][0]["text"].startswith("No answer arrived")
+
+
+def test_duration() -> None:
+    assert session.duration(1) == "1 second"
+    assert session.duration(45) == "45 seconds"
+    assert session.duration(60) == "1 minute"
+    assert session.duration(7200) == "120 minutes"
+
+
+async def test_the_watchdog_stops_the_session_at_the_budget(
+    tmp_path: Path, manager: FakeManager
+) -> None:
+    options = options_for(tmp_path, manager, Clock(60))
+    made: list[FakeSDKClient] = []
+    started = time.monotonic()
+    result = await session.run(
+        options,
+        "go",
+        Clock(0.1),
+        log=session.SessionLog(None),
+        client_factory=fake_factory([sleep_forever], made),
+        watch_s=0.01,
+    )
+    assert result.timed_out is True
+    assert made[0].interrupted
+    assert time.monotonic() - started < 2
+
+
+async def test_the_watchdog_waits_while_the_clock_is_paused(
+    tmp_path: Path, manager: FakeManager
+) -> None:
+    clock = Clock(0.1)
+    options = options_for(tmp_path, manager, clock)
+    made: list[FakeSDKClient] = []
+
+    async def wait_for_an_answer(_: FakeSDKClient) -> None:
+        clock.pause()
+        # The wall time passes the budget three times over.
+        await asyncio.sleep(0.3)
+        clock.resume()
+
+    script = [wait_for_an_answer, result_message()]
+    result = await session.run(
+        options,
+        "go",
+        clock,
+        log=session.SessionLog(None),
+        client_factory=fake_factory(script, made),
+        watch_s=0.01,
+    )
+    assert result.timed_out is False
+    assert result.structured == STRUCTURED
+    assert not made[0].interrupted

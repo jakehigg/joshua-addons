@@ -83,7 +83,9 @@ def test_create_get_and_update(store: TaskStore) -> None:
     add(store, "t1", notify="telegram:dm:alex", branch_name="feature")
     task = store.get_task("t1")
     assert task is not None
-    assert tuple(task) == STATUS_COLUMNS
+    assert tuple(task) == (*STATUS_COLUMNS, "waiting_since")
+    assert task["paused_s"] == 0
+    assert task["asked_at"] is None and task["waiting_since"] is None
     assert task["status"] == "dispatched"
     assert task["notify"] == "telegram:dm:alex"
     assert "brief" not in task
@@ -194,4 +196,30 @@ def test_an_old_database_gets_the_new_columns(tmp_path: Path) -> None:
     assert full is not None
     assert full["worker_token"] == "t"
     assert full["session_log"] == "line\n"
+    assert full["paused_s"] == 0
+    assert full["asked_at"] is None and full["last_wait_s"] is None
     store.close()
+
+
+def test_end_wait_adds_the_wait_to_paused_s(store: TaskStore) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    start = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+    add(store, "a")
+    assert store.end_wait("a", start) is None
+    assert store.end_wait("missing", start) is None
+    store.update_task("a", asked_at=start.isoformat(), paused_s=30)
+    task = store.get_task("a")
+    assert task is not None and task["waiting_since"] == start.isoformat()
+    assert store.end_wait("a", start + timedelta(seconds=90.4)) == 90
+    full = store.get_task_full("a")
+    assert full is not None
+    assert (full["paused_s"], full["asked_at"], full["last_wait_s"]) == (120, None, 90)
+
+
+def test_a_restart_clears_the_open_wait(store: TaskStore) -> None:
+    add(store, "a")
+    store.update_task("a", status="running", asked_at="2026-10-04T12:00:00+00:00")
+    store.fail_active_tasks("manager restarted")
+    task = store.get_task("a")
+    assert task is not None and task["asked_at"] is None and task["waiting_since"] is None

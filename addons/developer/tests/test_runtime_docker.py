@@ -9,7 +9,7 @@ import pytest
 from conftest import make_settings
 from docker.errors import APIError, ImageNotFound, NotFound
 from joshua_developer import runtime_docker, server
-from joshua_developer.runtime import Report
+from joshua_developer.runtime import Report, TaskClock
 from joshua_developer.runtime_docker import DockerRuntime, make_client, worker_environment
 
 TASK = {
@@ -105,12 +105,16 @@ class Recorder:
         self.running: list[str] = []
         self.reports: list[tuple[str, Report]] = []
         self.active = True
+        self.clock: TaskClock | None = None
 
     def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
         return self.active
 
     def mark_running(self, task_id: str) -> None:
         self.running.append(task_id)
+
+    def task_clock(self, task_id: str) -> TaskClock | None:
+        return self.clock
 
     async def record_report(self, task_id: str, report: Report) -> dict:
         self.reports.append((task_id, report))
@@ -334,3 +338,38 @@ def test_server_start_builds_the_docker_runtime(tmp_path, monkeypatch) -> None:
 def test_server_start_refuses_a_runtime_it_does_not_have(tmp_path) -> None:
     with pytest.raises(RuntimeError, match="the podman runtime is not in this release"):
         server.start(make_settings(tmp_path, worker_runtime="podman"))
+
+
+async def test_the_deadline_moves_while_the_worker_waits_for_an_answer(tmp_path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    t0 = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+    now = [t0 + timedelta(seconds=1400)]
+    client = FakeClient()
+    recorder = Recorder()
+    # The sonnet persona: timeout_s 1200, and the grace time 120 s. With no
+    # wait, the deadline is 1320 s after the start. 200 s of waits that ended
+    # move it to 1520 s.
+    recorder.clock = TaskClock(started_at=t0, paused_s=200)
+    client.containers.next_statuses = ["running"] * 10_000
+    runtime = DockerRuntime(
+        recorder, settings_for(tmp_path), client=client, poll_s=0.01, now=lambda: now[0]
+    )
+    await runtime.start(TASK)
+    container = client.containers.made[0]
+    await asyncio.sleep(0.05)
+    assert not container.killed
+    # An open wait, started at 1000 s, moves it further while it lasts.
+    recorder.clock = TaskClock(started_at=t0, paused_s=0, asked_at=t0 + timedelta(seconds=1000))
+    now[0] = t0 + timedelta(seconds=5000)
+    await asyncio.sleep(0.05)
+    assert not container.killed
+    # The answer comes: the wait of 4000 s is in paused_s, and 5000 s is before 5320 s.
+    recorder.clock = TaskClock(started_at=t0, paused_s=4000)
+    await asyncio.sleep(0.05)
+    assert not container.killed
+    now[0] = t0 + timedelta(seconds=5320)
+    await wait_for(lambda: container.removed)
+    assert container.killed
+    [(_, report)] = recorder.reports
+    assert report.status == "timed_out"

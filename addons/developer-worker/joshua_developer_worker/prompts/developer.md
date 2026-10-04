@@ -70,9 +70,11 @@ Do not use `ask` for a fact that you can find in the repository.
 
 ## Time
 
-The task has a time limit. Commit each step that works, as you go. When
-the time limit ends, only your commits are pushed. A file you did not commit
-is lost, and the report names it.
+The task has a time limit on its work. Time spent waiting for an answer to
+`ask` does not count. Commit before you ask, so your work is safe if the
+wait runs out. Commit each step that works, as you go. When the time limit
+ends, only your commits are pushed. A file you did not commit is lost, and
+the report names it.
 
 ## Your result
 
