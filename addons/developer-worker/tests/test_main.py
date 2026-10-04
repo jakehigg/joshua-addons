@@ -168,11 +168,10 @@ async def test_blocked_reports_the_open_question(
     [report] = manager.reports
     assert report["status"] == "blocked"
     assert report["open_question"] == "Which port does the service use?"
-    assert report["summary"].startswith("Stopped: blocked on a question.")
-    assert report["pushed"] is True and report["head"] == BRANCH
-    assert report["files_changed"] == ["handler.py"]
-    message = run_git("log", "-1", "--format=%s", BRANCH, cwd=bare_repo).strip()
-    assert message == "wip: developer stopped (blocked on a question)"
+    assert report["summary"].startswith("Stopped: blocked on a question. No work was pushed.")
+    assert report["pushed"] is False and report["head"] is None
+    assert report["files_changed"] == []
+    assert "Left uncommitted and not pushed: handler.py." in report["summary"]
 
 
 async def test_the_ask_tool_in_the_flow(
@@ -204,7 +203,7 @@ async def test_the_ask_tool_in_the_flow(
     assert "mcp__manager__ask" in manager.reports[0]["log"]
 
 
-async def test_timeout_commits_wip_and_pushes(
+async def test_timeout_pushes_nothing_the_model_did_not_commit(
     tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
 ) -> None:
     persona = {"name": "sonnet", "model": "m", "max_turns": 5, "timeout_s": 91}
@@ -216,12 +215,10 @@ async def test_timeout_commits_wip_and_pushes(
     assert made[0].interrupted
     [report] = manager.reports
     assert report["status"] == "timed_out"
-    assert report["pushed"] is True and report["head"] == BRANCH
-    assert report["summary"].startswith(
-        f"Stopped: the time limit ran out. The work so far is on branch {BRANCH}."
-    )
-    message = run_git("log", "-1", "--format=%s", BRANCH, cwd=bare_repo).strip()
-    assert message == "wip: developer stopped (the time limit ran out)"
+    assert report["pushed"] is False and report["head"] is None
+    assert report["summary"].startswith("Stopped: the time limit ran out. No work was pushed.")
+    assert "Left uncommitted and not pushed: half.txt." in report["summary"]
+    assert report["commit_hash"] is None
 
 
 async def test_timeout_while_a_question_is_open_is_blocked(
@@ -250,7 +247,7 @@ async def test_timeout_while_a_question_is_open_is_blocked(
     assert report["pushed"] is False and report["head"] is None
 
 
-async def test_session_error_fails_but_still_pushes(
+async def test_session_error_fails_and_pushes_nothing_uncommitted(
     tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
 ) -> None:
     manager.brief = make_brief(bare_repo)
@@ -264,8 +261,9 @@ async def test_session_error_fails_but_still_pushes(
     [report] = manager.reports
     assert report["status"] == "failed"
     assert "RuntimeError" in report["error"]
-    assert report["pushed"] is True and report["head"] == BRANCH
-    assert remote_head(bare_repo, BRANCH) == report["commit_hash"]
+    assert report["pushed"] is False and report["head"] is None
+    assert report["commit_hash"] is None
+    assert "partial.txt" in report["summary"]
 
 
 async def test_a_push_failure_fails_the_task(

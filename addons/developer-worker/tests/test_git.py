@@ -140,18 +140,35 @@ def test_rework_refuses_a_missing_branch(home: Path, bare_repo: Path, tmp_path: 
         git.checkout(dest, "gone", "main", False)
 
 
-def test_dirty_commit_and_push(home: Path, bare_repo: Path, tmp_path: Path) -> None:
+def test_dirty_uncommitted_and_push(home: Path, bare_repo: Path, tmp_path: Path) -> None:
     _configure(home)
     dest = tmp_path / "work"
     git.clone(str(bare_repo), dest)
     start = git.checkout(dest, "developer/new", "main", True)
     assert git.dirty(dest) is False
-    assert git.commit_all(dest, "nothing") is None
+    assert git.uncommitted(dest) == []
     (dest / "hello.txt").write_text("hi\n")
+    (dest / "sub").mkdir()
+    (dest / "sub" / "two.txt").write_text("2\n")
     assert git.dirty(dest) is True
-    new = git.commit_all(dest, "feat: add hello")
+    assert sorted(git.uncommitted(dest)) == ["hello.txt", "sub/two.txt"]
+    run_git("add", "hello.txt", cwd=dest)
+    # The test helper sets its own seed identity; the model's commits carry
+    # the person's, which the worker put in the global config.
+    run_git(
+        "-c",
+        "user.name=Alex Example",
+        "-c",
+        "user.email=alex@example.test",
+        "commit",
+        "-q",
+        "-m",
+        "feat: add hello",
+        cwd=dest,
+    )
+    new = git.head(dest)
     assert new and new != start
-    assert git.dirty(dest) is False
+    assert git.uncommitted(dest) == ["sub/two.txt"]
     assert git.changed_files(dest, start) == ["hello.txt"]
     author = run_git("log", "-1", "--format=%an <%ae>", cwd=dest).strip()
     assert author == "Alex Example <alex@example.test>"
@@ -159,48 +176,18 @@ def test_dirty_commit_and_push(home: Path, bare_repo: Path, tmp_path: Path) -> N
     assert remote_head(bare_repo, "developer/new") == new
 
 
-def test_commit_all_leaves_out_secret_files(home: Path, bare_repo: Path, tmp_path: Path) -> None:
+def test_push_runs_no_hook(home: Path, bare_repo: Path, tmp_path: Path) -> None:
     _configure(home)
     dest = tmp_path / "work"
     git.clone(str(bare_repo), dest)
     git.checkout(dest, "developer/new", "main", True)
-    (dest / "sub").mkdir()
-    for name in (".env", "sub/.env", "server.pem", "id_rsa", "id_rsa.pub", "tls.key", "ok.txt"):
-        (dest / name).write_text("x\n")
-    run_git("add", "-f", ".env", cwd=dest)
-    git.commit_all(dest, "wip")
-    committed = run_git("show", "--name-only", "--format=", "HEAD", cwd=dest).split()
-    assert committed == ["ok.txt"]
-
-
-def test_commit_all_with_only_secret_files_makes_no_commit(
-    home: Path, bare_repo: Path, tmp_path: Path
-) -> None:
-    _configure(home)
-    dest = tmp_path / "work"
-    git.clone(str(bare_repo), dest)
-    git.checkout(dest, "developer/new", "main", True)
-    (dest / ".env").write_text("SECRET=1\n")
-    assert git.commit_all(dest, "wip") is None
-
-
-def test_excluded_names() -> None:
-    assert git.excluded("a/b/.env")
-    assert git.excluded("id_rsa.pub")
-    assert git.excluded("x.pem") and git.excluded("x.key")
-    assert not git.excluded("env.py")
-
-
-def test_commit_all_runs_no_hook(home: Path, bare_repo: Path, tmp_path: Path) -> None:
-    _configure(home)
-    dest = tmp_path / "work"
-    git.clone(str(bare_repo), dest)
-    git.checkout(dest, "developer/new", "main", True)
-    hook = dest / ".git" / "hooks" / "pre-commit"
+    hook = dest / ".git" / "hooks" / "pre-push"
     hook.write_text("#!/bin/sh\nexit 1\n")
     hook.chmod(0o755)
     (dest / "a.txt").write_text("a\n")
-    assert git.commit_all(dest, "feat: a") is not None
+    run_git("add", "a.txt", cwd=dest)
+    run_git("commit", "-q", "-m", "feat: a", cwd=dest)
+    assert git.push(dest, "developer/new") == (True, None)
 
 
 def test_a_failed_push_returns_a_scrubbed_error(
@@ -211,7 +198,8 @@ def test_a_failed_push_returns_a_scrubbed_error(
     git.clone(str(bare_repo), dest)
     git.checkout(dest, "developer/new", "main", True)
     (dest / "a.txt").write_text("a\n")
-    git.commit_all(dest, "feat: a")
+    run_git("add", "a.txt", cwd=dest)
+    run_git("commit", "-q", "-m", "feat: a", cwd=dest)
     run_git("remote", "set-url", "origin", str(tmp_path / "missing" / GIT_TOKEN), cwd=dest)
     ok, error = git.push(dest, "developer/new")
     assert ok is False

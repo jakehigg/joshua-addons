@@ -24,10 +24,11 @@ directory has no compose file and no `values.yaml`.
    answer. When the manager says nobody gets the question, `ask` returns at
    once and tells the model to set `blocked`. The session never gets WebSearch or WebFetch.
 5. The session stops at the persona timeout minus 90 seconds. Then the
-   worker commits all work that is not committed (`wip: developer stopped
-   (<reason>)`), pushes the branch when it has new commits, and sends the
-   report. The worker never commits `.env`, `*.pem`, `*.key`, or `id_rsa*`
-   files, and it runs no git hook of the checkout.
+   worker pushes the branch when the model made new commits, and sends the
+   report. The worker never makes a commit of its own: a file the model left
+   uncommitted is named in the report and is not pushed, because a commit the
+   worker made could carry a file the model never meant to publish. The push
+   runs no git hook of the checkout.
 
 The worker exits 0 when the manager accepted the report, or when the task
 had already ended. It exits 1 only when it could not send the report.

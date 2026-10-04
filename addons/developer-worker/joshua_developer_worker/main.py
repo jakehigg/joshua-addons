@@ -131,6 +131,14 @@ def _stop_note(reason: str, pushed: bool, branch: str) -> str:
     return f"Stopped: {reason}. {where}"
 
 
+_ARTIFACT_DIRS = ("__pycache__/", ".pytest_cache/", ".ruff_cache/", ".mypy_cache/", "node_modules/")
+
+
+def _artifact(path: str) -> bool:
+    """True for a build or test artifact, which the report need not name."""
+    return path.endswith((".pyc", ".pyo")) or any(part in path for part in _ARTIFACT_DIRS)
+
+
 def finish(
     dest: Path,
     brief: dict[str, Any],
@@ -139,7 +147,11 @@ def finish(
     asker: session.Asker,
     log_: session.SessionLog,
 ) -> Report:
-    """Commit, push, and build the report after the session."""
+    """Push the model's commits and build the report after the session.
+
+    The worker makes no commit of its own. A file the model left uncommitted
+    is named in the report and is not pushed.
+    """
     branch = str(brief["branch"])
     structured = result.structured
     if result.timed_out:
@@ -155,9 +167,9 @@ def finish(
     pushed = False
     push_failed = False
     new_head: str | None = clone_head
+    left: list[str] = []
     try:
-        if git.dirty(dest):
-            git.commit_all(dest, f"wip: developer stopped ({reason})")
+        left = [path for path in git.uncommitted(dest) if not _artifact(path)]
         new_head = git.head(dest)
         if new_head and new_head != clone_head:
             with step("push", asker.client.task_id):
@@ -168,7 +180,7 @@ def finish(
                 log_.add(error)
     except git.GitError as exc:
         push_failed = True
-        error = f"the commit after the session failed: {exc}"
+        error = f"the push after the session failed: {exc}"
         log_.add(error)
     moved = bool(new_head) and new_head != clone_head
 
@@ -197,6 +209,9 @@ def finish(
             summary += f"\n\n{body}"
     else:
         summary = body
+    if left:
+        shown = ", ".join(left[:20]) + (", ..." if len(left) > 20 else "")
+        summary = f"{summary}\n\nLeft uncommitted and not pushed: {shown}."
     files: list[str] = list(structured["files_changed"]) if structured else []
     if not files and moved:
         with contextlib.suppress(git.GitError):

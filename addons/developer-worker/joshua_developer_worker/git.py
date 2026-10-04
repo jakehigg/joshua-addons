@@ -12,11 +12,10 @@ credentials file.
 
 from __future__ import annotations
 
-import fnmatch
 import os
 import re
 import subprocess
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from urllib.parse import quote
 
 from joshua_developer_worker.log import get_logger
@@ -24,9 +23,7 @@ from joshua_developer_worker.log import get_logger
 logger = get_logger("joshua_developer_worker.git")
 
 CREDENTIALS_FILE = ".git-credentials"
-# A file whose name matches one of these is never committed by the worker.
-EXCLUDED = (".env", "*.pem", "id_rsa*", "*.key")
-# The worker's own commit and push run no hook from the checkout.
+# The worker's push runs no hook from the checkout.
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 TIMEOUT_S = 600
 
@@ -161,31 +158,18 @@ def head(dest: Path) -> str | None:
 
 def dirty(dest: Path) -> bool:
     """True when the work tree or the index has a change, untracked files included."""
-    return bool(_run(["status", "--porcelain"], cwd=dest).strip())
+    return bool(uncommitted(dest))
 
 
-def excluded(path: str) -> bool:
-    """True when the worker must never commit ``path``."""
-    name = PurePosixPath(path).name
-    return any(fnmatch.fnmatch(name, pattern) for pattern in EXCLUDED)
+def uncommitted(dest: Path) -> list[str]:
+    """The paths with a change the model did not commit, untracked files included.
 
-
-def _staged(dest: Path) -> list[str]:
-    out = _run(["diff", "--cached", "--name-only", "-z"], cwd=dest)
-    return [name for name in out.split("\0") if name]
-
-
-def commit_all(dest: Path, message: str) -> str | None:
-    """Commit every change but the excluded paths. Returns the new head, or None."""
-    _run(["add", "--all"], cwd=dest)
-    blocked = [name for name in _staged(dest) if excluded(name)]
-    if blocked:
-        _run(["reset", "--quiet", "--", *blocked], cwd=dest)
-        logger.warning({"message": "left files out of the commit", "count": len(blocked)})
-    if not _staged(dest):
-        return None
-    _run([*NO_HOOKS, "commit", "--quiet", "--no-verify", "-m", message], cwd=dest)
-    return head(dest)
+    The worker never commits them. They are named in the report and are lost
+    with the container: a commit the worker made itself could carry a file
+    the model never meant to publish.
+    """
+    out = _run(["status", "--porcelain", "--untracked-files=all"], cwd=dest)
+    return [line[3:] for line in out.splitlines() if line.strip()]
 
 
 def changed_files(dest: Path, since: str) -> list[str]:

@@ -70,8 +70,9 @@ Do not use `ask` for a fact that you can find in the repository.
 
 ## Time
 
-The task has a time limit. When the time limit is near, commit what you
-have. Work that is not committed is committed for you with a `wip:` message.
+The task has a time limit. Commit each step that works, as you go. When
+the time limit ends, only your commits are pushed. A file you did not commit
+is lost, and the report names it.
 
 ## Your result
 
