@@ -11,7 +11,7 @@ from conftest import mcp_session
 from joshua_chores import server
 from mcp import ClientSession
 
-SETTINGS = ("XP_PER_DOLLAR", "COOLDOWN_SECONDS", "MANAGER_LABEL", "CHORES_TZ")
+SETTINGS = ("XP_PER_DOLLAR", "COOLDOWN_SECONDS", "MANAGER_LABEL", "CHORES_TZ", "MANAGER_PIN")
 
 
 @pytest.fixture(autouse=True)

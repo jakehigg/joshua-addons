@@ -11,7 +11,8 @@ from joshua_chores import settings
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch) -> None:
-    for name in ("XP_PER_DOLLAR", "COOLDOWN_SECONDS", "MANAGER_LABEL", "CHORES_TZ"):
+    names = ("XP_PER_DOLLAR", "COOLDOWN_SECONDS", "MANAGER_LABEL", "CHORES_TZ", "MANAGER_PIN")
+    for name in names:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -91,6 +92,17 @@ def test_load_checks_every_setting(monkeypatch) -> None:
     monkeypatch.setenv("XP_PER_DOLLAR", "-3")
     with pytest.raises(ValueError, match="XP_PER_DOLLAR"):
         settings.load()
+
+
+def test_manager_pin_is_empty_by_default_and_stripped(monkeypatch) -> None:
+    assert settings.manager_pin() == ""
+    monkeypatch.setenv("MANAGER_PIN", " 4321 ")
+    assert settings.load().manager_pin == "4321"
+
+
+def test_settings_repr_does_not_show_the_pin(monkeypatch) -> None:
+    monkeypatch.setenv("MANAGER_PIN", "secret-pin-value")
+    assert "secret-pin-value" not in repr(settings.load())
 
 
 def _messages(exc: BaseException) -> list[str]:

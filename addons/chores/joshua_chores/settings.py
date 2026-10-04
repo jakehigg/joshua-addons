@@ -10,7 +10,7 @@ the startup.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -18,6 +18,7 @@ XP_PER_DOLLAR_ENV = "XP_PER_DOLLAR"
 COOLDOWN_SECONDS_ENV = "COOLDOWN_SECONDS"
 MANAGER_LABEL_ENV = "MANAGER_LABEL"
 CHORES_TZ_ENV = "CHORES_TZ"
+MANAGER_PIN_ENV = "MANAGER_PIN"
 
 DEFAULT_XP_PER_DOLLAR = 100
 DEFAULT_COOLDOWN_SECONDS = 60
@@ -66,6 +67,15 @@ def chores_tz() -> ZoneInfo:
         raise ValueError(f"{CHORES_TZ_ENV} must be an IANA time zone name, not {raw!r}") from None
 
 
+def manager_pin() -> str:
+    """Return the PIN of the manager routes under ``/api``.
+
+    An empty string means: no PIN is set, and the addon refuses each manager
+    route. Never log this value.
+    """
+    return os.environ.get(MANAGER_PIN_ENV, "").strip()
+
+
 @dataclass(frozen=True)
 class Settings:
     """The settings, read and checked one time."""
@@ -74,6 +84,9 @@ class Settings:
     cooldown_seconds: int
     manager_label: str
     tz: ZoneInfo
+    # ``repr=False`` keeps the PIN out of a log line or a traceback that
+    # shows the settings.
+    manager_pin: str = field(default="", repr=False)
 
 
 def load() -> Settings:
@@ -83,6 +96,7 @@ def load() -> Settings:
         cooldown_seconds=cooldown_seconds(),
         manager_label=manager_label(),
         tz=chores_tz(),
+        manager_pin=manager_pin(),
     )
 
 

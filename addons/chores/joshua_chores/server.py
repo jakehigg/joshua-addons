@@ -1,10 +1,11 @@
-"""The chores addon server: MCP at ``/mcp``, ``/healthz``, and the built UI at ``/``.
+"""The chores addon server: MCP at ``/mcp``, the HTTP API at ``/api``, and the UI at ``/``.
 
 The addon follows the contract in ``docs/adding-an-addon.md``. It serves MCP
 at ``/mcp`` over streamable HTTP, the transport the joshua-ai gateway expects
-from a ``type: http`` upstream. ``GET /healthz`` stays open. When
-``ADDON_TOKEN`` is set, ``/mcp`` needs ``Authorization: Bearer <ADDON_TOKEN>``.
-When ``ADDON_TOKEN`` is not set, the docker network is the boundary.
+from a ``type: http`` upstream. ``GET /healthz`` and ``GET /version`` stay
+open. When ``ADDON_TOKEN`` is set, ``/mcp`` needs ``Authorization: Bearer
+<ADDON_TOKEN>``. When ``ADDON_TOKEN`` is not set, the docker network is the
+boundary. ``joshua_chores.api`` has its own guard for the manager routes.
 """
 
 from __future__ import annotations
@@ -39,6 +40,9 @@ PROTECTED_PREFIX = "/mcp"
 # The value of ``transactions.actor`` for each write from a tool. The gateway
 # does not tell the addon who calls.
 ACTOR = "mcp"
+
+# The environment variable that holds the image version, for ``/version``.
+VERSION_ENV = "JOSHUA_ADDONS_VERSION"
 
 # The number of ledger rows that ``get_balance`` returns.
 LEDGER_ROWS = 10
@@ -80,6 +84,10 @@ async def lifespan(server: MCPServer) -> AsyncIterator[dict[str, Any]]:
     """
     global _sessionmaker, _settings
     loaded = settings_module.load()
+    if not loaded.manager_pin:
+        logger.warning(
+            {"message": "MANAGER_PIN is not set; each manager route under /api answers 503"}
+        )
     engine = build_engine()
     await run_migrations(engine)
     _settings = loaded
@@ -95,17 +103,25 @@ async def lifespan(server: MCPServer) -> AsyncIterator[dict[str, Any]]:
 mcp = MCPServer(name="chores", lifespan=lifespan)
 
 
-async def _run[T](work: Callable[[AsyncSession], Awaitable[T]]) -> T:
-    """Run ``work`` in a new session. Change each service error to a ``ToolError``."""
+type Work[T] = Callable[[AsyncSession], Awaitable[T]]
+
+
+async def _in_session[T](work: Work[T]) -> T:
+    """Run ``work`` in a new session. A service error goes to the caller."""
     async with _session_factory()() as session:
-        try:
-            return await work(session)
-        except service.Cooldown as exc:
-            raise ToolError(
-                f"the chore was completed recently; try again in {exc.retry_after} seconds"
-            ) from None
-        except service.ChoresError as exc:
-            raise ToolError(str(exc)) from None
+        return await work(session)
+
+
+async def _run[T](work: Work[T]) -> T:
+    """Run ``work`` in a new session. Change each service error to a ``ToolError``."""
+    try:
+        return await _in_session(work)
+    except service.Cooldown as exc:
+        raise ToolError(
+            f"the chore was completed recently; try again in {exc.retry_after} seconds"
+        ) from None
+    except service.ChoresError as exc:
+        raise ToolError(str(exc)) from None
 
 
 def _iso(value: date | datetime | None) -> str | None:
@@ -214,6 +230,11 @@ async def complete_chore(chore_id: int, note: str | None = None) -> dict[str, An
         chore_id: The id of the chore.
         note: An optional note to keep with the completion.
     """
+    return await _run(_complete_work(chore_id, note, ACTOR))
+
+
+def _complete_work(chore_id: int, note: str | None, actor: str) -> Work[dict[str, Any]]:
+    """Return the work of one completion. The MCP tool and the HTTP API both use it."""
     now = _utc_now()
     today = _local_today(now)
     cooldown = _config().cooldown_seconds
@@ -226,7 +247,7 @@ async def complete_chore(chore_id: int, note: str | None = None) -> dict[str, An
             today=today,
             note=note,
             cooldown_seconds=cooldown,
-            actor=ACTOR,
+            actor=actor,
         )
         chore = await service.get_chore(session, chore_id)
         return {
@@ -240,7 +261,7 @@ async def complete_chore(chore_id: int, note: str | None = None) -> dict[str, An
             "is_active": result.is_active,
         }
 
-    return await _run(work)
+    return work
 
 
 @mcp.tool()
@@ -265,15 +286,18 @@ async def get_balance(slug: str) -> dict[str, Any]:
     return await _run(work)
 
 
-async def _ledger_write(
+def _ledger_work(
     write: Callable[..., Awaitable[service.LedgerResult]],
     slug: str,
     points: int,
     description: str,
-) -> dict[str, Any]:
+    actor: str,
+) -> Work[dict[str, Any]]:
+    """Return the work of one award or deduction. The MCP tool and the HTTP API both use it."""
+
     async def work(session: AsyncSession) -> dict[str, Any]:
         member = await service.get_member_by_slug(session, slug)
-        result = await write(session, member.id, points, description, actor=ACTOR)
+        result = await write(session, member.id, points, description, actor=actor)
         return {
             "slug": member.slug,
             "transaction": _transaction(result.transaction),
@@ -281,7 +305,7 @@ async def _ledger_write(
             "balance_dollars": _dollars(result.balance),
         }
 
-    return await _run(work)
+    return work
 
 
 @mcp.tool()
@@ -293,7 +317,7 @@ async def award_xp(slug: str, points: int, description: str) -> dict[str, Any]:
         points: The XP to add. It must be a whole number more than 0.
         description: Why the member gets the XP.
     """
-    return await _ledger_write(service.award, slug, points, description)
+    return await _run(_ledger_work(service.award, slug, points, description, ACTOR))
 
 
 @mcp.tool()
@@ -307,7 +331,7 @@ async def deduct_xp(slug: str, points: int, description: str) -> dict[str, Any]:
         points: The XP to remove. It must be a whole number more than 0.
         description: Why the XP goes out.
     """
-    return await _ledger_write(service.deduct, slug, points, description)
+    return await _run(_ledger_work(service.deduct, slug, points, description, ACTOR))
 
 
 @mcp.tool()
@@ -328,14 +352,22 @@ async def add_chore(
         next_due_date: The first due date, as YYYY-MM-DD. The default is
             today in the time zone of the household.
     """
-    due = _parse_date(next_due_date, "next_due_date") or _local_today(_utc_now())
+    due = _parse_date(next_due_date, "next_due_date")
+    return await _run(_add_chore_work(slug, name, points, frequency, due))
+
+
+def _add_chore_work(
+    slug: str, name: str, points: int, frequency: str, next_due_date: date | None
+) -> Work[dict[str, Any]]:
+    """Return the work that adds a chore. The default due date is today in ``CHORES_TZ``."""
+    due = next_due_date or _local_today(_utc_now())
 
     async def work(session: AsyncSession) -> dict[str, Any]:
         member = await service.get_member_by_slug(session, slug)
         chore = await service.add_chore(session, member.id, name, points, frequency, due)
         return {"slug": member.slug, **_chore(chore)}
 
-    return await _run(work)
+    return work
 
 
 @mcp.tool()
@@ -506,26 +538,35 @@ async def healthz(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+async def version(request: Request) -> Response:
+    """Give the image version, so that the kiosk can reload after a deploy."""
+    return JSONResponse({"version": os.environ.get(VERSION_ENV, "").strip() or "dev"})
+
+
 mcp.custom_route("/healthz", methods=["GET"])(healthz)
+mcp.custom_route("/version", methods=["GET"])(version)
 
 
 def build_app() -> ASGIApp:
-    """Build the ASGI app of the addon: MCP, the built UI, and the auth wrapper.
+    """Build the ASGI app of the addon: MCP, the HTTP API, the built UI, and the auth wrapper.
 
     ``host="0.0.0.0"`` turns off the loopback-only DNS-rebinding guard of the
     SDK. A caller reaches this addon by its compose or cluster hostname (for
     example ``http://chores:8000/mcp``), never by ``localhost``, and the guard
     would refuse each real request.
 
-    The built UI mounts on the ``Starlette`` instance that the MCP SDK returns,
-    after ``/mcp`` and ``/healthz``. Starlette tries routes in the order they
-    were added, so those two match first and the catch-all mount at ``/``
-    matches last. The mount does not change the lifespan of that instance, so
-    the database opens the same way with or without the UI.
+    The HTTP API and the built UI mount on the ``Starlette`` instance that the
+    MCP SDK returns, after ``/mcp``, ``/healthz``, and ``/version``. Starlette
+    tries routes in the order they were added, so those match first, then
+    ``/api``, and the catch-all UI mount at ``/`` matches last. A mount does
+    not change the lifespan of that instance, so the database opens the same
+    way with or without the UI.
     """
+    from joshua_chores.api import build_api_app
     from joshua_chores.static import build_static_app
 
     inner = mcp.streamable_http_app(streamable_http_path="/mcp", host="0.0.0.0")
+    inner.mount("/api", build_api_app())
     static_app = build_static_app()
     if static_app is not None:
         inner.mount("/", static_app)

@@ -149,3 +149,20 @@ async def mcp_session(app: ASGIApp, headers: dict[str, str] | None = None):
                     yield session
     finally:
         await client.aclose()
+
+
+@contextlib.asynccontextmanager
+async def api_client(app: ASGIApp, headers: dict[str, str] | None = None):
+    """Open an HTTP client to ``app`` with the server lifespan running.
+
+    Like ``mcp_session``, this starts the session manager by hand, so the
+    database and the settings are ready for the ``/api`` routes.
+    """
+    from joshua_chores.server import mcp as chores_mcp
+
+    transport = httpx2.ASGITransport(app=app)
+    async with chores_mcp.session_manager.run():
+        async with httpx2.AsyncClient(
+            transport=transport, base_url="http://testserver", headers=headers or {}, timeout=10
+        ) as client:
+            yield client

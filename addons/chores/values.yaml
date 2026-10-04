@@ -12,7 +12,10 @@ persistence:
   size: 1Gi
 
 # Optional settings. The README of the addon tells what each one does.
+# Put MANAGER_PIN in a Secret (existingSecret), not here. Without it, each
+# manager route under /api gets 503.
 # env:
+#   JOSHUA_ADDONS_VERSION: "0.1.3"
 #   XP_PER_DOLLAR: "100"
 #   COOLDOWN_SECONDS: "60"
 #   MANAGER_LABEL: "Parent"

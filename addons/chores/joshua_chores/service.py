@@ -218,16 +218,22 @@ async def balance(session: AsyncSession, member_id: int) -> int:
     return int(total or 0)
 
 
-async def ledger(session: AsyncSession, member_id: int, limit: int = 50) -> list[Transaction]:
-    """Return the newest ``limit`` ledger rows of the member, newest first."""
+async def ledger(
+    session: AsyncSession, member_id: int | None, limit: int = 50
+) -> list[Transaction]:
+    """Return the newest ``limit`` ledger rows of the member, newest first.
+
+    When ``member_id`` is ``None``, return the newest rows of all members.
+    """
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         raise InvalidArgument(f"limit must be a whole number more than 0, not {limit!r}")
     query = (
         select(Transaction)
-        .where(Transaction.member_id == member_id)
         .order_by(Transaction.created_at.desc(), Transaction.id.desc())
         .limit(limit)
     )
+    if member_id is not None:
+        query = query.where(Transaction.member_id == member_id)
     return list((await session.scalars(query)).all())
 
 

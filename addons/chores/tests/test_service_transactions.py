@@ -91,6 +91,19 @@ async def test_ledger_is_newest_first_and_limited(session: AsyncSession, add_tes
     assert len(await service.ledger(session, member.id)) == 5
 
 
+async def test_ledger_of_no_member_gives_the_rows_of_all_members(
+    session: AsyncSession, add_test_member
+) -> None:
+    alpha = await add_test_member("alpha", "Alpha")
+    beta = await add_test_member("beta", "Beta")
+    await service.award(session, alpha.id, 5, "first")
+    await service.award(session, beta.id, 7, "second")
+
+    rows = await service.ledger(session, None)
+    assert {row.member_id for row in rows} == {alpha.id, beta.id}
+    assert [row.description for row in await service.ledger(session, beta.id)] == ["second"]
+
+
 @pytest.mark.parametrize("limit", [0, -1, True])
 async def test_ledger_refuses_a_bad_limit(session: AsyncSession, limit) -> None:
     with pytest.raises(service.InvalidArgument, match="limit"):
