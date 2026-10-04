@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import threading
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -181,6 +182,9 @@ class Manager:
         self._log_full: set[str] = set()
         # The tasks whose report the manager records now.
         self._finishing: set[str] = set()
+        # Held around the capacity check, the lock, and the row write of a
+        # dispatch or a resume, so two calls cannot both take the last slot.
+        self._admission = threading.Lock()
 
     @property
     def config(self) -> DeveloperConfig:
@@ -357,7 +361,9 @@ class Manager:
             person=person,
             task_type="rework",
             repo=normalized,
-            scope=f"pr:{number}",
+            # The branch, as for develop: a develop and a rework on the same
+            # branch never run together.
+            scope=f"branch:{found.source_branch}",
             persona=persona,
             notify_to=notify_to,
             instructions=feedback,
@@ -449,25 +455,25 @@ class Manager:
                 f"the persona {persona!r} is not known; list_personas names the personas",
             )
 
-        refused = self._check_capacity()
-        if refused is not None:
-            return refused
-        refused = self._take_lock(repo, scope, task_id, task_type, fields.get("branch_name"))
-        if refused is not None:
-            return refused
-
         destination = notify_to or self.effective_settings(person)["notify"]
-        self.store.create_task(
-            task_id=task_id,
-            person=person,
-            task_type=task_type,
-            repo=repo,
-            scope=scope,
-            persona=chosen,
-            notify=destination,
-            worker_token=secrets.token_urlsafe(32),
-            **fields,
-        )
+        with self._admission:
+            refused = self._check_capacity()
+            if refused is not None:
+                return refused
+            refused = self._take_lock(repo, scope, task_id, task_type, fields.get("branch_name"))
+            if refused is not None:
+                return refused
+            self.store.create_task(
+                task_id=task_id,
+                person=person,
+                task_type=task_type,
+                repo=repo,
+                scope=scope,
+                persona=chosen,
+                notify=destination,
+                worker_token=secrets.token_urlsafe(32),
+                **fields,
+            )
         logger.info(
             {
                 "message": "task dispatched",
@@ -502,8 +508,14 @@ class Manager:
         }
 
     def _check_capacity(self) -> dict[str, Any] | None:
-        """A ``concurrency_limit`` rejection when ``max_workers`` workers run, else None."""
-        active = self._runtime().count_active()
+        """A ``concurrency_limit`` rejection when ``max_workers`` tasks are active, else None.
+
+        It counts the task rows in ``dispatched`` or ``running``, so a task
+        whose worker is still starting takes its slot. Call it with
+        ``_admission`` held, together with the row write.
+        """
+        self._runtime()
+        active = self.store.count_active_tasks()
         limit = self.config.max_workers
         if active >= limit:
             return rejected(
@@ -581,7 +593,12 @@ class Manager:
         return worker_token is None or task["worker_token"] == worker_token
 
     def mark_running(self, task_id: str) -> None:
-        """Mark a dispatched task as running."""
+        """Mark a dispatched task as running, and start its clock (``started_at``).
+
+        The worker API calls it when the worker reads its brief, so the time
+        to pull the image and start the container is not on the task clock.
+        A later call changes nothing.
+        """
         task = self.store.get_task(task_id)
         if task is None or task["status"] != "dispatched":
             return
@@ -689,7 +706,7 @@ class Manager:
                 findings = scan_diff(diff)
                 if findings:
                     return await self._reject_push(platform, task, report, findings)
-                out["scan"] = "partial" if diff.unscanned else "clean"
+                out["scan"] = "partial" if diff.unscanned or diff.truncated else "clean"
             if report.status != "success" or platform.kind == "git":
                 return out
             if task["task_type"] == "develop":
@@ -825,6 +842,15 @@ class Manager:
             return rejected(
                 "not_waiting", f"task {task['task_id']} already has an answer to its question"
             )
+        if not full["asked_at"]:
+            # The worker stopped waiting, or the question was never sent. An
+            # answer stored now would reach no one.
+            return rejected(
+                "not_waiting",
+                f"the worker of task {task['task_id']} no longer waits for an answer. "
+                "The task will end blocked or success. Then call answer again to resume it "
+                "with this answer.",
+            )
         self.store.end_wait(task["task_id"], self.clock())
         self.store.update_task(task["task_id"], answer=text)
         event = self._answer_events.get(task["task_id"])
@@ -853,33 +879,34 @@ class Manager:
                 f"the worker of task {task_id} pushed nothing, so no branch holds its work. "
                 "Call develop again with the brief and the answer.",
             )
-        refused = self._check_capacity()
-        if refused is not None:
-            return refused
-        refused = self._take_lock(
-            full["repo"], full["scope"], task_id, full["task_type"], full["branch_name"]
-        )
-        if refused is not None:
-            return refused
         history.append({**previous, "completed_at": full["completed_at"]})
-        self.store.update_task(
-            task_id,
-            status="dispatched",
-            worker_token=secrets.token_urlsafe(32),
-            history=history,
-            answer=text,
-            report=None,
-            summary=None,
-            error=None,
-            open_question=None,
-            scan=None,
-            findings=None,
-            started_at=None,
-            completed_at=None,
-            asked_at=None,
-            paused_s=0,
-            last_wait_s=None,
-        )
+        with self._admission:
+            refused = self._check_capacity()
+            if refused is not None:
+                return refused
+            refused = self._take_lock(
+                full["repo"], full["scope"], task_id, full["task_type"], full["branch_name"]
+            )
+            if refused is not None:
+                return refused
+            self.store.update_task(
+                task_id,
+                status="dispatched",
+                worker_token=secrets.token_urlsafe(32),
+                history=history,
+                answer=text,
+                report=None,
+                summary=None,
+                error=None,
+                open_question=None,
+                scan=None,
+                findings=None,
+                started_at=None,
+                completed_at=None,
+                asked_at=None,
+                paused_s=0,
+                last_wait_s=None,
+            )
         self._log_full.discard(task_id)
         logger.info({"message": "task resumed", "task_id": task_id, "person": person})
         failed = await self._start_worker(task_id)
@@ -926,9 +953,12 @@ class Manager:
         if not notify.destination_for(self.settings, full, default):
             logger.info({"message": "question not sent: no destination", "task_id": task_id})
             return False, "no_destination"
+        # The wait opens before the send, so an answer that comes back at
+        # once finds it open.
+        self.store.update_task(task_id, asked_at=self.clock().isoformat())
         if await notify.send_question(self.settings, full, question, default):
-            self.store.update_task(task_id, asked_at=self.clock().isoformat())
             return True, None
+        self.store.update_task(task_id, asked_at=None)
         return False, "send_failed"
 
     def stop_wait(self, task_id: str) -> int:

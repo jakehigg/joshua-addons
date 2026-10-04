@@ -6,7 +6,14 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from joshua_developer.runtime import Deadline, Report, StubRuntime, TaskClock, kill_time
+from joshua_developer.runtime import (
+    Deadline,
+    Report,
+    StubRuntime,
+    TaskClock,
+    kill_time,
+    no_start_report,
+)
 
 
 class Recorder:
@@ -113,20 +120,54 @@ def test_the_deadline_reads_the_row_on_each_call() -> None:
     deadline = Deadline(reporter, "t1", 1200, 7200, 120, now=lambda: now[0])  # type: ignore[arg-type]
     reporter.clock = TaskClock(started_at=T0)
     now[0] = at(1319)
-    assert not deadline.passed()
+    assert deadline.check() is None
     now[0] = at(1320)
-    assert deadline.passed()
+    assert deadline.check() == "deadline"
     reporter.clock = TaskClock(started_at=T0, paused_s=300)
-    assert not deadline.passed()
+    assert deadline.check() is None
     reporter.clock = TaskClock(started_at=T0, asked_at=at(1000))
     now[0] = at(5000)
-    assert not deadline.passed()
+    assert deadline.check() is None
 
 
-def test_the_hard_cap_is_timeout_plus_ask_wait_plus_grace() -> None:
+def test_the_hard_cap_is_timeout_plus_ask_wait_plus_grace_after_the_start() -> None:
+    now = [at(-900)]
     reporter = ClockReporter()
+    # The worker read its brief 900 s after its start; a wait is open since then.
     reporter.clock = TaskClock(started_at=T0, asked_at=T0)
-    deadline = Deadline(reporter, "t1", 1200, 7200, 120, now=lambda: T0)  # type: ignore[arg-type]
-    assert not deadline.passed()
-    deadline.hard_cap -= 1200 + 7200 + 120
-    assert deadline.passed()
+    deadline = Deadline(reporter, "t1", 1200, 7200, 120, now=lambda: now[0])  # type: ignore[arg-type]
+    now[0] = at(1200 + 7200 + 120 - 1)
+    assert deadline.check() is None
+    now[0] = at(1200 + 7200 + 120)
+    assert deadline.check() == "deadline"
+
+
+def test_a_worker_that_has_not_read_its_brief_is_starting() -> None:
+    now = [T0]
+    reporter = ClockReporter()
+    reporter.clock = TaskClock(started_at=None)
+    deadline = Deadline(  # type: ignore[arg-type]
+        reporter, "t1", 60, 60, 0, start_grace_s=600, now=lambda: now[0]
+    )
+    # Far past timeout_s + ask_wait_s: no clock runs before the brief.
+    now[0] = at(599)
+    assert deadline.check() is None
+    now[0] = at(600)
+    assert deadline.check() == "no_start"
+    reporter.clock = None
+    assert deadline.check() == "no_start"
+    # The brief at 599 s starts the clock: the start grace no longer applies.
+    reporter.clock = TaskClock(started_at=at(599))
+    now[0] = at(599 + 60 + 0 - 1)
+    assert deadline.check() is None
+    now[0] = at(599 + 60)
+    assert deadline.check() == "deadline"
+
+
+def test_the_no_start_report_names_the_image_and_the_setting() -> None:
+    report = no_start_report(600, "pulling")
+    assert report.status == "failed"
+    assert "did not start in 600 seconds" in (report.error or "")
+    assert "WORKER_IMAGE" in (report.error or "")
+    assert "WORKER_START_GRACE_S" in (report.error or "")
+    assert report.log == "pulling"

@@ -135,6 +135,19 @@ async def test_success_pushes_the_branch_and_reports(
     assert "Add a greeting file" in options.system_prompt
 
 
+async def test_the_ca_bundle_of_the_brief_reaches_git(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
+) -> None:
+    pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+    manager.brief = make_brief(bare_repo, git_ca_pem=pem)
+    code, _ = await run(tmp_path, home, manager, [result(None)])
+    assert code == 0
+    ca_file = home / "git-ca.pem"
+    assert ca_file.read_text() == pem
+    configured = run_git("config", "--global", "--get", "http.sslCAInfo").strip()
+    assert configured == str(ca_file)
+
+
 async def test_claude_md_reaches_the_prompt(
     tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
 ) -> None:

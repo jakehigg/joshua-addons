@@ -17,24 +17,32 @@ is the Helm release name.
 
 The pod runs as uid 1000 with no Linux capabilities, no privilege
 escalation, and a read-only root file system. ``/work`` and ``/tmp`` are
-emptyDir volumes. The pod gets no ServiceAccount token and no Service
-variables. The chart's ``networkPolicy`` block limits where it can connect.
+emptyDir volumes, each with the ``sizeLimit`` ``worker.disk``, and the
+container has the ``ephemeral-storage`` limit ``worker.disk``. The pod gets
+no ServiceAccount token and no Service variables. The chart's
+``networkPolicy`` block limits where it can connect.
 
 A supervisor reads the Job every ``poll_s`` seconds. When the Job ends and
 the task has no report, it records a ``failed`` report with the end of the
-pod log. When the deadline passes, it deletes the Job and, if no report came,
-records ``timed_out``. The deadline is the same as on Docker: the persona
-timeout, plus a grace time, plus the time the worker waited for answers
-(``runtime.Deadline``). The Job's ``activeDeadlineSeconds`` is the hard cap,
-``timeout_s + ask_wait_s + grace``, so Kubernetes stops the pod if the
-manager cannot. When the supervisor ends, it deletes the Job: the log
-tail is in the report, and a finished Job has no other use.
-``ttlSecondsAfterFinished`` removes a Job that no supervisor deletes.
+pod log. When the deadline passes, it deletes the Job, waits until its pod
+is gone, and then, if no report came, records ``timed_out``: the worker
+cannot push after the status is final. The deadline is the same as on
+Docker: from the time the worker read its brief, the persona timeout, plus a
+grace time, plus the time the worker waited for answers
+(``runtime.Deadline``). A worker that has not read its brief
+``WORKER_START_GRACE_S`` seconds after the Job starts (a slow or failed image
+pull) is deleted the same way, and its task fails. The Job's
+``activeDeadlineSeconds`` is the hard cap, ``timeout_s + ask_wait_s + grace +
+WORKER_START_GRACE_S``, so Kubernetes stops the pod if the manager cannot.
+When the supervisor ends, it deletes the Job: the log tail is in the report,
+and a finished Job has no other use. ``ttlSecondsAfterFinished`` removes a
+Job that no supervisor deletes.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -46,7 +54,7 @@ from kubernetes.client.exceptions import ApiException
 
 from joshua_developer.config import Settings
 from joshua_developer.log import get_logger
-from joshua_developer.runtime import Deadline, Report, Reporter, worker_name
+from joshua_developer.runtime import Deadline, Report, Reporter, no_start_report, worker_name
 from joshua_developer.runtime_docker import (
     GRACE_S,
     LABEL,
@@ -68,6 +76,8 @@ LOG_TAIL_LINES = 1000
 WORKER_UID = 1000
 SA_NAMESPACE_FILE = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 DEFAULT_NAMESPACE = "default"
+# How long a stop waits for the pod of a deleted Job to go.
+KILL_WAIT_S = 60.0
 _MEMORY_UNITS = {"b": "", "k": "Ki", "m": "Mi", "g": "Gi"}
 
 
@@ -110,7 +120,11 @@ def job_manifest(
     """The Job for the worker of ``task`` (the full row)."""
     labels = {NAME_LABEL: NAME_VALUE, LABEL: LABEL_VALUE, TASK_LABEL: task["task_id"]}
     limits = settings.config.worker
-    quantities = {"memory": memory_quantity(limits.memory), "cpu": cpu_quantity(limits.cpus)}
+    quantities = {
+        "memory": memory_quantity(limits.memory),
+        "cpu": cpu_quantity(limits.cpus),
+        "ephemeral-storage": limits.disk,
+    }
     env = [{"name": k, "value": v} for k, v in worker_environment(settings, task).items()]
     pod: dict[str, Any] = {
         "restartPolicy": "Never",
@@ -141,8 +155,8 @@ def job_manifest(
             }
         ],
         "volumes": [
-            {"name": "work", "emptyDir": {}},
-            {"name": "tmp", "emptyDir": {}},
+            {"name": "work", "emptyDir": {"sizeLimit": limits.disk}},
+            {"name": "tmp", "emptyDir": {"sizeLimit": limits.disk}},
         ],
     }
     if settings.worker_image_pull_secret:
@@ -192,6 +206,7 @@ class KubernetesRuntime:
         grace_s: float = GRACE_S,
         poll_s: float = POLL_S,
         now: Callable[[], datetime] = utcnow,
+        kill_wait_s: float = KILL_WAIT_S,
     ) -> None:
         if not settings.worker_image:
             raise ValueError("WORKER_IMAGE is required for the kubernetes runtime")
@@ -205,6 +220,7 @@ class KubernetesRuntime:
         self.grace_s = grace_s
         self.poll_s = poll_s
         self.now = now
+        self.kill_wait_s = kill_wait_s
         self._supervisors: set[asyncio.Task[None]] = set()
 
     def _jobs(self) -> list[Any]:
@@ -240,14 +256,24 @@ class KubernetesRuntime:
             config.persona_of(task["persona"]).timeout_s,
             config.ask_wait_of(task["persona"]),
             self.grace_s,
+            self.settings.worker_start_grace_s,
             now=self.now,
         )
 
     def _hard_cap_s(self, task: dict[str, Any]) -> int:
-        """``timeout_s + ask_wait_s + grace``: the Job's ``activeDeadlineSeconds``."""
+        """The Job's ``activeDeadlineSeconds``.
+
+        ``timeout_s + ask_wait_s + grace + WORKER_START_GRACE_S``: the Job's
+        clock starts before the image pull, and the task clock after it.
+        """
         config = self.settings.config
         persona = config.persona_of(task["persona"])
-        return int(persona.timeout_s + config.ask_wait_of(task["persona"]) + self.grace_s)
+        return int(
+            persona.timeout_s
+            + config.ask_wait_of(task["persona"])
+            + self.grace_s
+            + self.settings.worker_start_grace_s
+        )
 
     async def start(self, task: dict[str, Any]) -> str:
         manifest = job_manifest(self.settings, task, self.namespace, max(self._hard_cap_s(task), 1))
@@ -255,7 +281,6 @@ class KubernetesRuntime:
         await asyncio.to_thread(
             self.batch.create_namespaced_job, namespace=self.namespace, body=manifest
         )
-        self.reporter.mark_running(task["task_id"])
         logger.info({"message": "worker started", "task_id": task["task_id"], "job": name})
         job = asyncio.create_task(
             self._supervise(task["task_id"], task.get("worker_token"), name, self._deadline(task))
@@ -282,14 +307,26 @@ class KubernetesRuntime:
                 state = _job_state(job)
                 if state is not None:
                     break
-                if deadline.passed():
-                    state = "deadline"
-                    logger.warning({"message": "worker ran past its timeout", "task_id": task_id})
+                state = deadline.check()
+                if state is not None:
+                    logger.warning(
+                        {
+                            "message": "worker ran past its timeout"
+                            if state == "deadline"
+                            else "worker did not start in time",
+                            "task_id": task_id,
+                        }
+                    )
                     break
                 await asyncio.sleep(self.poll_s)
             if self.reporter.is_active(task_id, token):
                 tail = await asyncio.to_thread(self._log_tail, name)
-                await self.reporter.record_report(task_id, _report(state, tail))
+                if state in ("deadline", "no_start"):
+                    # The pod goes before the report, so the worker cannot
+                    # push after the status is final.
+                    await asyncio.to_thread(self._stop, name)
+                report = _report(state, tail, self.settings.worker_start_grace_s)
+                await self.reporter.record_report(task_id, report)
         except Exception as exc:
             logger.error(
                 {
@@ -316,6 +353,26 @@ class KubernetesRuntime:
             return ""
         return str(text or "")[-LOG_TAIL_CHARS:]
 
+    def _stop(self, name: str) -> None:
+        """Delete the Job ``name`` and wait up to ``kill_wait_s`` for its pod to go."""
+        self._delete(name)
+        end = time.monotonic() + self.kill_wait_s
+        while True:
+            try:
+                pods = self.core.list_namespaced_pod(
+                    namespace=self.namespace, label_selector=f"job-name={name}"
+                ).items
+            except ApiException:
+                return
+            if not pods:
+                return
+            if time.monotonic() >= end:
+                logger.warning(
+                    {"message": "the pod of a stopped worker is still there", "job": name}
+                )
+                return
+            time.sleep(min(self.poll_s, 1.0))
+
     def _delete(self, name: str) -> bool:
         """Delete the Job and its pod. False when the API refuses."""
         try:
@@ -332,7 +389,9 @@ class KubernetesRuntime:
         return True
 
 
-def _report(state: str | None, tail: str) -> Report:
+def _report(state: str | None, tail: str, start_grace_s: float) -> Report:
+    if state == "no_start":
+        return no_start_report(start_grace_s, tail)
     if state == "deadline":
         return Report(
             status="timed_out",

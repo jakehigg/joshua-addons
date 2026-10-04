@@ -37,9 +37,14 @@ def normalize_repo(raw: str) -> str:
         parts = urlsplit(text)
         if parts.scheme not in ("http", "https", "ssh", "git"):
             raise bad
+        try:
+            port = parts.port
+        except ValueError:
+            # A port that is not a number from 0 to 65535.
+            raise bad from None
         host = parts.hostname or ""
-        if parts.port:
-            host = f"{host}:{parts.port}"
+        if port is not None:
+            host = f"{host}:{port}"
         path = parts.path
     elif scp:
         host, path = scp.group(1), scp.group(2)
@@ -51,6 +56,9 @@ def normalize_repo(raw: str) -> str:
         path = path[: -len(".git")]
     segments = path.split("/") if path else []
     if not _HOST_RE.match(host) or "." not in host.split(":")[0] or len(segments) < 2:
+        raise bad
+    _, colon, port_text = host.partition(":")
+    if colon and not 1 <= int(port_text) <= 65535:
         raise bad
     if any(not _PART_RE.match(s) or s in (".", "..") for s in segments):
         raise bad

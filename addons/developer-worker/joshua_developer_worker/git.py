@@ -23,6 +23,8 @@ from joshua_developer_worker.log import get_logger
 logger = get_logger("joshua_developer_worker.git")
 
 CREDENTIALS_FILE = ".git-credentials"
+# The CA bundle of the git host, from the brief, when the manager has one.
+CA_FILE = "git-ca.pem"
 # The worker's push runs no hook from the checkout.
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 TIMEOUT_S = 600
@@ -87,12 +89,14 @@ def configure(
     token: str,
     host: str,
     proxy_url: str | None = None,
+    ca_pem: str | None = None,
 ) -> None:
     """Write the credentials file and the global git config under ``home``.
 
     ``home`` must be ``$HOME`` of this process, because git reads its global
     config and the credentials file from there. ``proxy_url`` goes into
-    ``http.proxy``, and into no environment variable.
+    ``http.proxy``, and into no environment variable. ``ca_pem`` is a CA
+    bundle in PEM: git then trusts it for the git host (``http.sslCAInfo``).
     """
     register_secret(token)
     register_secret(proxy_url)
@@ -107,6 +111,10 @@ def configure(
     _run(["config", "--global", "user.name", name])
     _run(["config", "--global", "user.email", email])
     _run(["config", "--global", "init.defaultBranch", "main"])
+    if ca_pem:
+        ca_path = home / CA_FILE
+        ca_path.write_text(ca_pem, encoding="utf-8")
+        _run(["config", "--global", "http.sslCAInfo", str(ca_path)])
     if proxy_url:
         _run(["config", "--global", "http.proxy", proxy_url])
         # curl sends a Basic proxy credential at once with this; with the

@@ -29,9 +29,15 @@ configFile:
     network: off
     default_persona: opus
     max_workers: 2
-    # The longest time a worker waits for one answer, in seconds. The task
-    # clock pauses while it waits. A persona can set its own value.
+    # The total time a worker waits for answers in one task, in seconds. The
+    # task clock pauses while it waits. A persona can set its own value.
     ask_wait_s: 7200
+    # The limits of one worker. disk is the sizeLimit of each emptyDir and
+    # the ephemeral-storage limit of the worker pod.
+    worker:
+      memory: 2g
+      cpus: 2.0
+      disk: 4Gi
     platforms:
       github.com:
         kind: github
@@ -54,8 +60,11 @@ env:
   # Service, and put JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   # CHANNELS_URL: http://<joshua-ai channels service>:8000
   # A CA bundle for a git host with a private certificate authority. Mount
-  # the file, and give its path.
+  # the file, and give its path. The manager also gives it to each worker.
   # GIT_CA_BUNDLE: /etc/ssl/certs/git-host-ca.pem
+  # The seconds a worker has from its start to its first brief call (the
+  # image pull). A worker that takes longer fails its task.
+  # WORKER_START_GRACE_S: "600"
 
 # The namespace of the worker Jobs: the namespace of the manager pod.
 extraEnv:

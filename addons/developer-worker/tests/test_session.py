@@ -345,6 +345,38 @@ async def test_the_ask_tool_stops_at_the_wait_limit(manager: FakeManager) -> Non
     assert asker.open_question == "Which port?"
 
 
+async def test_the_wait_limit_is_a_total_for_the_task(manager: FakeManager) -> None:
+    manager.answer_after_polls = 10_000
+    manager.poll_delay_s = 0.02
+    asker = session.Asker(manager.client(), Clock(60), ask_wait_s=1.0)
+    # The first question waits about 0.3 s of the 1 s, then gets its answer.
+    first = asyncio.create_task(asker({"question": "Which port?"}))
+    await asyncio.sleep(0.3)
+    manager.answer_after_polls = 0
+    reply = await first
+    assert reply["content"][0]["text"] == "Use port 8080."
+    used = asker.waited_s
+    assert 0.25 < used < 0.9
+    # The second question gets only what is left, not a full second.
+    manager.answer_after_polls = 10_000
+    started = time.monotonic()
+    reply = await asker({"question": "Which host?"})
+    second = time.monotonic() - started
+    assert reply["content"][0]["text"].startswith("No answer arrived")
+    assert second < 1.0 - used + 0.2
+    assert manager.stops == 1
+    assert asker.waited_s < 1.0 + 0.2
+    # Nothing is left: a third question returns at once, unsent, and stops the wait.
+    started = time.monotonic()
+    reply = await asker({"question": "Which user?"})
+    assert time.monotonic() - started < 0.05
+    assert reply["content"][0]["text"] == session.no_wait_left(1.0)
+    assert manager.questions == ["Which port?", "Which host?"]
+    assert manager.stops == 2
+    assert asker.open_question == "Which user?"
+    assert not asker.clock.paused
+
+
 async def test_a_failed_stop_still_returns_the_no_answer_text(manager: FakeManager) -> None:
     manager.answer_after_polls = 10_000
 

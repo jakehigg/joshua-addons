@@ -114,7 +114,18 @@ def test_worker_limits_have_defaults_and_refuse_a_bad_value() -> None:
     assert config.worker.cpus == 2.0
     custom = parse_config({"worker": {"memory": "512m", "cpus": 0.5}})
     assert custom.worker.memory == "512m"
-    for bad in ({"memory": "lots"}, {"cpus": 0}, {"swap": "1g"}):
+    assert config.worker.disk == "4Gi"
+    assert config.worker.disk_docker_storage_opt is False
+    disk = parse_config({"worker": {"disk": "20Gi", "disk_docker_storage_opt": True}})
+    assert disk.worker.disk == "20Gi" and disk.worker.disk_docker_storage_opt is True
+    for bad in (
+        {"memory": "lots"},
+        {"cpus": 0},
+        {"swap": "1g"},
+        {"disk": "4g"},
+        {"disk": "0Gi"},
+        {"disk": "lots"},
+    ):
         with pytest.raises(ConfigError) as exc:
             parse_config({"worker": bad})
         assert "worker" in str(exc.value)
@@ -259,6 +270,15 @@ def test_a_container_runtime_needs_a_worker_image(tmp_path: Path, runtime: str) 
         settings_from_env(env)
     settings = settings_from_env({**env, "WORKER_IMAGE": "example/worker:1"})
     assert settings.worker_runtime == runtime
+
+
+def test_the_worker_start_grace_comes_from_the_environment(tmp_path: Path) -> None:
+    base = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml")}
+    assert settings_from_env(base).worker_start_grace_s == 600
+    assert settings_from_env({**base, "WORKER_START_GRACE_S": " 900 "}).worker_start_grace_s == 900
+    for bad in ("0", "-5", "ten", "1.5"):
+        with pytest.raises(ConfigError, match="WORKER_START_GRACE_S"):
+            settings_from_env({**base, "WORKER_START_GRACE_S": bad})
 
 
 def test_the_kubernetes_settings_come_from_the_environment(tmp_path: Path) -> None:

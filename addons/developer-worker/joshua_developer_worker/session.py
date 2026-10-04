@@ -126,11 +126,21 @@ def no_answer(waited_s: float) -> str:
     )
 
 
+def no_wait_left(total_s: float) -> str:
+    """The tool reply when the task has used all of its wait time."""
+    return (
+        f"This task has used all of its {duration(total_s)} of wait time for answers, "
+        "so the question was not sent. Commit your work and report what you still need."
+    )
+
+
 class Asker:
     """The handler of the ``ask`` tool. It keeps the question that has no answer.
 
-    While it waits for an answer, the task clock is paused. The wait stops
-    after ``ask_wait_s`` seconds of wall time.
+    While it waits for an answer, the task clock is paused. ``ask_wait_s`` is
+    the total wall time of all the waits of the task: each wait stops when
+    the total is used. The manager's hard cap on the worker has room for this
+    total and no more.
     """
 
     def __init__(
@@ -141,7 +151,7 @@ class Asker:
         self.ask_wait_s = ask_wait_s
         self.open_question: str | None = None
         self.asked = 0
-        # The seconds of every wait, in wall time.
+        # The seconds of all the waits so far, in wall time.
         self.waited_s = 0.0
 
     async def __call__(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -151,10 +161,16 @@ class Asker:
         self.open_question = question
         self.asked += 1
         logger.info({"message": "ask", "task_id": self.client.task_id, "count": self.asked})
+        left = self.ask_wait_s - self.waited_s
+        if left <= 0:
+            logger.info({"message": "ask wait time used", "task_id": self.client.task_id})
+            with contextlib.suppress(TaskEnded, ManagerError, httpx.HTTPError):
+                await self.client.stop_ask()
+            return _text(no_wait_left(self.ask_wait_s))
         self.clock.pause()
         started = time.monotonic()
         try:
-            answer = await self.client.ask(question, self.ask_wait_s)
+            answer = await self.client.ask(question, left)
         except TaskEnded:
             return _text("The task ended. Stop now.", is_error=True)
         except NotSent as exc:

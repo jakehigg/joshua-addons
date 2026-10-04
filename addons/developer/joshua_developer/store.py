@@ -320,6 +320,13 @@ class TaskStore:
         )
         return [row for row in (_row(r) for r in cursor.fetchall()) if row is not None]
 
+    def count_active_tasks(self) -> int:
+        """The number of tasks in ``dispatched`` or ``running``."""
+        cursor = self._execute(
+            "SELECT COUNT(*) FROM tasks WHERE status IN ('dispatched', 'running')"
+        )
+        return int(cursor.fetchone()[0])
+
     def fail_active_tasks(self, error: str) -> list[dict[str, Any]]:
         """Mark every active task ``failed`` with ``error``. Returns the tasks it changed."""
         active = self.list_active_tasks()

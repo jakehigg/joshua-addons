@@ -145,9 +145,37 @@ async def test_a_second_rework_on_the_same_pr_is_locked(holding_app) -> None:
     assert first["status"] == "dispatched"
     assert second["reason"] == "locked"
     assert status["task_type"] == "rework"
-    assert status["scope"] == "pr:5"
+    # A rework locks the source branch of its pull request.
+    assert status["scope"] == "branch:pr-5"
     assert status["pr_number"] == 5
     assert status["pr_url"] == args["pr"]
+
+
+async def test_a_rework_on_the_branch_of_a_running_develop_is_locked(holding_app) -> None:
+    async with mcp_session(holding_app) as session:
+        # The fake host gives pull request 5 the source branch pr-5.
+        first = payload(await session.call_tool("develop", develop_args(branch="pr-5")))
+        rework = payload(
+            await session.call_tool("rework", {"repo": REPO, "pr": 5, "feedback": "fix"})
+        )
+        other = payload(
+            await session.call_tool("rework", {"repo": REPO, "pr": 6, "feedback": "fix"})
+        )
+    assert first["status"] == "dispatched"
+    assert rework["status"] == "rejected"
+    assert rework["reason"] == "locked"
+    assert rework["lock_info"]["task_id"] == first["task_id"]
+    assert other["status"] == "dispatched"
+
+
+async def test_a_develop_on_the_branch_of_a_running_rework_is_locked(holding_app) -> None:
+    async with mcp_session(holding_app) as session:
+        first = payload(
+            await session.call_tool("rework", {"repo": REPO, "pr": 5, "feedback": "fix"})
+        )
+        second = payload(await session.call_tool("develop", develop_args(branch="pr-5")))
+    assert first["status"] == "dispatched"
+    assert second["reason"] == "locked"
 
 
 async def test_max_workers_limits_the_running_tasks(data_dir) -> None:
@@ -240,7 +268,9 @@ async def test_answer_needs_a_waiting_task(holding_app) -> None:
         not_waiting = payload(
             await session.call_tool("answer", {"task_id": task_id, "text": "use sqlite"})
         )
-        server._get_manager().store.update_task(task_id, open_question="Which database?")
+        server._get_manager().store.update_task(
+            task_id, open_question="Which database?", asked_at="2026-10-04T12:00:00+00:00"
+        )
         empty = payload(await session.call_tool("answer", {"task_id": task_id, "text": " "}))
         too_long = payload(
             await session.call_tool("answer", {"task_id": task_id, "text": "x" * 100_001})
@@ -260,6 +290,21 @@ async def test_answer_needs_a_waiting_task(holding_app) -> None:
     assert status["open_question"] == "Which database?"
     full = server._get_manager().store.get_task_full(task_id)
     assert full is not None and full["answer"] == "use sqlite"
+
+
+async def test_a_late_answer_is_refused_when_the_worker_stopped_waiting(holding_app) -> None:
+    async with mcp_session(holding_app) as session:
+        task_id = payload(await session.call_tool("develop", develop_args()))["task_id"]
+        # The worker asked, then stopped waiting: the question is open, the wait is not.
+        server._get_manager().store.update_task(task_id, open_question="Which database?")
+        late = payload(await session.call_tool("answer", {"task_id": task_id, "text": "sqlite"}))
+    assert late["status"] == "rejected"
+    assert late["reason"] == "not_waiting"
+    assert "no longer waits" in late["message"]
+    assert "blocked or success" in late["message"]
+    assert "answer again to resume" in late["message"]
+    full = server._get_manager().store.get_task_full(task_id)
+    assert full is not None and full["answer"] is None
 
 
 async def test_list_tasks_limit(app) -> None:

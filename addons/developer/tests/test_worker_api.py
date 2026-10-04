@@ -167,8 +167,63 @@ async def test_the_brief_has_what_the_worker_needs(manager) -> None:
         "answer": None,
         "resumed": False,
         "note": None,
+        "git_ca_pem": None,
     }
     assert token not in response.text
+
+
+class QuietRuntime:
+    """A runtime that starts nothing, so only the worker API moves the task."""
+
+    def count_active(self) -> int:
+        return 0
+
+    async def start(self, task: dict) -> str:
+        return task["task_id"]
+
+
+async def test_the_first_brief_starts_the_task_clock(manager) -> None:
+    now = Now()
+    manager.clock = now
+    manager.runtime = QuietRuntime()
+    task_id, token = await dispatch(manager)
+    task = manager.store.get_task(task_id)
+    assert task is not None and task["status"] == "dispatched" and task["started_at"] is None
+    async with worker_client(manager, token) as client:
+        assert (await client.get("/worker/brief")).status_code == 200
+        first = manager.store.get_task(task_id)
+        assert first is not None and first["status"] == "running" and first["started_at"]
+        # A second brief call, or the running call, does not move the start.
+        assert (await client.get("/worker/brief")).status_code == 200
+        assert (await client.post("/worker/running")).status_code == 200
+    again = manager.store.get_task(task_id)
+    assert again is not None and again["started_at"] == first["started_at"]
+    assert manager.task_clock(task_id).started_at is not None  # type: ignore[union-attr]
+
+
+async def test_a_brief_refused_for_its_token_does_not_start_the_clock(manager, monkeypatch) -> None:
+    manager.runtime = QuietRuntime()
+    task_id, token = await dispatch(manager)
+    monkeypatch.delenv("GITHUB_TOKEN_ALEX")
+    async with worker_client(manager, token) as client:
+        assert (await client.get("/worker/brief")).status_code == 503
+    task = manager.store.get_task(task_id)
+    assert task is not None and task["started_at"] is None
+
+
+async def test_the_brief_carries_the_ca_bundle(tmp_path, manager, caplog) -> None:
+    import dataclasses
+
+    pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+    bundle = tmp_path / "ca.pem"
+    bundle.write_text(pem)
+    task_id, _ = await dispatch(manager)
+    full = manager.store.get_task_full(task_id)
+    manager.settings = dataclasses.replace(manager.settings, git_ca_bundle=str(bundle))
+    assert build_brief(manager, full)["git_ca_pem"] == pem
+    bundle.unlink()
+    assert build_brief(manager, full)["git_ca_pem"] is None
+    assert "GIT_CA_BUNDLE could not be read" in caplog.text
 
 
 async def test_the_brief_of_a_rework_and_of_a_persona_that_is_gone(manager) -> None:
@@ -646,6 +701,23 @@ async def test_a_question_that_was_not_sent_does_not_pause_the_clock(manager, mo
     assert (sent, reason) == (False, "send_failed")
     task = manager.store.get_task(task_id)
     assert task is not None and task["asked_at"] is None and task["paused_s"] == 0
+
+
+async def test_an_answer_that_comes_during_the_send_finds_the_wait_open(
+    manager, monkeypatch
+) -> None:
+    replies: list[dict] = []
+
+    async def answered_at_once(settings, task, question, default=None) -> bool:
+        replies.append(await manager.answer("alex", {"task_id": task["task_id"]}, "port 80"))
+        return True
+
+    monkeypatch.setattr(notify, "send_question", answered_at_once)
+    task_id, _ = await dispatch(manager)
+    assert await manager.ask(task_id, "Which port?") == (True, None)
+    assert replies[0]["status"] == "answered"
+    full = manager.store.get_task_full(task_id)
+    assert full is not None and full["answer"] == "port 80" and full["asked_at"] is None
 
 
 async def test_a_report_closes_the_open_wait(manager, sent) -> None:

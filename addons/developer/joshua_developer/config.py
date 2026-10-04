@@ -25,8 +25,11 @@ DEFAULT_CONFIG = "/etc/joshua-addon/developer.yaml"
 RUNTIMES = ("stub", "docker", "kubernetes")
 # The runtimes this build can start. The others stop the addon at start.
 IMPLEMENTED_RUNTIMES = frozenset(RUNTIMES)
-# The longest time a worker waits for an answer to one question.
+# The total time a worker waits for answers, over all the questions of a task.
 DEFAULT_ASK_WAIT_S = 7200
+# The longest time from the start of a worker to its first brief call: the
+# image pull and the container start.
+DEFAULT_WORKER_START_GRACE_S = 600
 DEFAULT_MANAGER_HOST = "developer"
 DEFAULT_WORKER_NETWORK = "developer_workers"
 DEFAULT_PUBLIC_NETWORK = "bridge"
@@ -119,10 +122,18 @@ class Person(_Model):
 
 
 class WorkerLimits(_Model):
-    """The memory and CPU limits of one worker container."""
+    """The memory, CPU, and disk limits of one worker container.
+
+    ``disk`` is a Kubernetes quantity. On Kubernetes it is the ``sizeLimit``
+    of each emptyDir and the ``ephemeral-storage`` limit of the pod. Docker
+    has no disk limit for a container unless its storage driver supports
+    ``storage_opt``; ``disk_docker_storage_opt`` turns that on.
+    """
 
     memory: str = Field(default="2g", pattern=r"^[0-9]+[bkmg]?$")
     cpus: float = Field(default=2.0, gt=0, le=64)
+    disk: str = Field(default="4Gi", pattern=r"^[1-9][0-9]*(Ki|Mi|Gi|Ti)?$")
+    disk_docker_storage_opt: bool = False
 
 
 class DeveloperConfig(_Model):
@@ -297,6 +308,8 @@ class Settings:
     pod_namespace: str = ""
     # The image pull Secret of a worker pod. Empty means none.
     worker_image_pull_secret: str = ""
+    # The longest time a started worker takes to call GET /worker/brief.
+    worker_start_grace_s: int = DEFAULT_WORKER_START_GRACE_S
 
     @property
     def open(self) -> bool:
@@ -384,6 +397,13 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if git_ca_bundle and not Path(git_ca_bundle).is_file():
         raise ConfigError("GIT_CA_BUNDLE must be the path of a file")
 
+    raw_grace = env.get("WORKER_START_GRACE_S", "").strip()
+    start_grace = DEFAULT_WORKER_START_GRACE_S
+    if raw_grace:
+        if not raw_grace.isdigit() or int(raw_grace) <= 0:
+            raise ConfigError("WORKER_START_GRACE_S must be a positive whole number of seconds")
+        start_grace = int(raw_grace)
+
     return Settings(
         config=config,
         data_dir=Path(env.get("DEVELOPER_DATA_DIR", "").strip() or DEFAULT_DATA_DIR),
@@ -400,4 +420,5 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         git_ca_bundle=git_ca_bundle,
         pod_namespace=env.get("POD_NAMESPACE", "").strip(),
         worker_image_pull_secret=env.get("WORKER_IMAGE_PULL_SECRET", "").strip(),
+        worker_start_grace_s=start_grace,
     )

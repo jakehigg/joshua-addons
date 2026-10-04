@@ -32,11 +32,20 @@ releases, with the images and the packaged chart, are at
   With `network: off`, the default, it connects to the manager only, so it
   cannot install dependencies. A worker asks a question with `ask`. The
   question arrives in the person's chat as an event, and Joshua answers with
-  `answer`. The task clock pauses while a question waits, for up to
-  `ask_wait_s` seconds (2 hours by default, and a persona can set its own).
-  A waiting worker still holds a `max_workers` slot. An `answer` to a task
-  that stopped `blocked` or `timed_out` after a push starts a new worker on
-  the same branch. To run it, mint `JOSHUA_TOKEN_DEVELOPER` and give it to the
+  `answer`. The task clock starts when the worker reads its brief, so an
+  image pull is not on it, and a worker that does not read its brief in
+  `WORKER_START_GRACE_S` seconds (600 by default) fails its task. The clock
+  pauses while a question waits, for up to `ask_wait_s` seconds in total
+  for the task (2 hours by default, and a persona can set its own). An
+  `answer` that comes after the worker stopped waiting gets `not_waiting`.
+  Each `dispatched` or `running` task holds a `max_workers` slot, a waiting
+  one too. A `develop` and a `rework` on the same branch never run
+  together. An `answer` to a task that stopped `blocked` or `timed_out`
+  after a push starts a new worker on the same branch. A worker has a
+  read-only root file system and a process limit on Docker, and a disk
+  limit (`worker.disk`) on Kubernetes. The worker gets the `GIT_CA_BUNDLE`
+  of the manager for git. On a GitHub diff of more than 300 files, the scan
+  is `partial`. To run it, mint `JOSHUA_TOKEN_DEVELOPER` and give it to the
   manager and to channels, add `developer` to
   `channels.webhooks.allowed_callers`, and add the `developer` entry with one
   `identities` entry for each person to `joshua.yaml`.

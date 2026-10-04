@@ -51,7 +51,8 @@ wait: it does the work that does not need the answer, and stops `blocked`
 with the question.
 
 The status of a task is `dispatched`, `running`, `success`, `failed`,
-`blocked`, or `timed_out`. `repo` is a URL or `host/owner/name`, such as
+`blocked`, or `timed_out`. A task is `dispatched` until its worker reads its
+brief, and `running` after that. `repo` is a URL or `host/owner/name`, such as
 `github.com/owner/name`.
 
 A call that breaks a rule gets `status: rejected`, a `reason`, and a
@@ -60,14 +61,19 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `platform_error`, `unknown_persona`, `concurrency_limit`, `locked`,
 `not_waiting`, and `not_resumable`. The rules:
 
-- One task at a time works on one branch of a repository, or on one pull
-  request. A second call gets `locked` and the id of the first task.
-- `max_workers` sets how many tasks run at the same time.
+- One task at a time works on one branch of a repository. A `rework` works
+  on the source branch of its pull request, so a `develop` and a `rework` on
+  the same branch do not run together. A second call gets `locked` and the
+  id of the first task.
+- `max_workers` sets how many tasks are `dispatched` or `running` at the
+  same time. A task whose worker still starts holds its slot.
 - The persona is the `persona` argument, else the default of the person,
   else `default_persona`.
 - A person sees only their own tasks.
-- `answer` on a `running` task works only when the task has an open
-  question and no answer yet.
+- `answer` on a `running` task works only when the worker waits for the
+  answer to its open question. When the worker stopped the wait, or the
+  question was not sent, `answer` gets `not_waiting`. The task then ends
+  `blocked` or `success`, and an `answer` after that resumes it.
 - `answer` on a `blocked` or `timed_out` task resumes it, when a worker of
   the task pushed the branch. The task keeps its id, and a new worker gets
   the answer and the summary of the last worker. `max_workers` and the lock
@@ -81,21 +87,30 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 ## The task clock
 
 A task has a time limit on its work: the persona's `timeout_s`. The clock
-pauses while a question waits for an answer, because a wait for a person is
-not work. One wait has its own limit, `ask_wait_s`, 2 hours by default.
+starts when the worker reads its brief, so the image pull and the container
+start are not on it. The clock pauses while a question waits for an answer,
+because a wait for a person is not work. `ask_wait_s`, 2 hours by default,
+is the total time that a task can wait for answers, over all its questions.
 
 - When the answer comes, the clock starts again, and the worker continues.
-- When `ask_wait_s` passes with no answer, the worker stops the wait, and
-  the clock starts again. The model gets a reply that says no answer came,
-  and the question stays open. The task then ends `blocked` with the
-  question, and a later `answer` resumes it when the worker pushed.
-- `task_status` shows `waiting_since`, the start of the open wait, and
-  `paused_s`, the seconds of the waits that ended.
+- When the task has used its `ask_wait_s` with no answer, the worker stops
+  the wait, and the clock starts again. The model gets a reply that says no
+  answer came, and the question stays open. A later question in the same
+  task gets that reply at once and is not sent. The task then ends
+  `blocked` with the question, and a later `answer` resumes it when the
+  worker pushed.
+- `task_status` shows `started_at`, `waiting_since` (the start of the open
+  wait), and `paused_s` (the seconds of the waits that ended).
 
 The manager stops a worker 120 seconds after the persona timeout plus the
-paused time. On Kubernetes, the Job's `activeDeadlineSeconds` is
-`timeout_s + ask_wait_s + 120`, so Kubernetes stops a worker that the
-manager cannot.
+paused time, and at most `timeout_s + ask_wait_s + 120` seconds after
+`started_at`. A worker that has not read its brief `WORKER_START_GRACE_S`
+seconds (600 by default) after its start is stopped, and its task fails
+with an error that names the image pull. On Kubernetes, the Job's
+`activeDeadlineSeconds` is `timeout_s + ask_wait_s + 120 +
+WORKER_START_GRACE_S`, so Kubernetes stops a worker that the manager cannot.
+The manager stops the container, or deletes the Job and waits for its pod
+to go, before it records `timed_out`, so the worker cannot push after that.
 
 A worker that waits still holds one of the `max_workers` slots, and the lock
 of its branch. A long wait can thus stop a new task with
@@ -164,8 +179,8 @@ dependency installs work, and a bad repository can send its content anywhere.
 network: off                       # off or on. See "The network setting".
 default_persona: opus              # the persona when neither the call nor the person names one
 max_workers: 2                     # tasks that run at the same time
-ask_wait_s: 7200                   # the longest wait for one answer. See "The task clock".
-worker: { memory: 2g, cpus: 2.0 }  # the limits of one worker
+ask_wait_s: 7200                   # the total wait for answers in one task. See "The task clock".
+worker: { memory: 2g, cpus: 2.0, disk: 4Gi }  # the limits of one worker
 personas:                          # a model, its effort, and its limits
   sonnet: { model: claude-sonnet-5,  effort: medium, max_turns: 60,  timeout_s: 1200 }
   opus:   { model: claude-opus-5,    effort: high,   max_turns: 80,  timeout_s: 2400 }
@@ -195,6 +210,15 @@ name of a built-in persona replaces it. The other built-in personas stay.
 `effort` is `low`, `medium`, `high`, `xhigh`, or `max`. A persona can also
 set its own `ask_wait_s`, which replaces the instance value for its tasks.
 `ask_wait_s` is a positive whole number of seconds.
+
+`worker.disk` is a Kubernetes quantity, such as `4Gi`. On Kubernetes, it is
+the `sizeLimit` of each of the two emptyDirs and the `ephemeral-storage`
+limit of the worker. Docker has no disk limit for a container. On Docker,
+`worker.disk_docker_storage_opt: true` (off by default) sets the
+`storage_opt` `size` of the container to `worker.disk`. The storage driver
+must support it (overlay2 on xfs with `pquota`). The limit applies to the
+writable layer of the container only, so with this setting `/work` and
+`/tmp` stay in that layer, and the root file system is not read-only.
 
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks stops `blocked`. `notify` is a
@@ -226,7 +250,8 @@ applies before the value in the file.
 | `DOCKER_HOST` | empty | The Docker API address. Empty means the Docker SDK default. |
 | `POD_NAMESPACE` | the namespace of the pod | The namespace of the worker Jobs. |
 | `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. |
-| `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. |
+| `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. The manager trusts it for the host API, and sends its text to each worker, which trusts it for git. |
+| `WORKER_START_GRACE_S` | `600` | The seconds a worker has from its start to its first brief call: the image pull and the container start. A worker that takes longer is stopped, and its task fails. |
 | each `token_env` in `developer.yaml` | empty | The git tokens. |
 | `LOG_LEVEL` | `INFO` | The log level. |
 
@@ -310,8 +335,15 @@ The manager is also on the joshua-ai network, where the gateway reaches it
 at `http://developer:8000/mcp`. The addon publishes no port. With
 `network: on`, each worker also joins `PUBLIC_NETWORK`.
 
-A worker gets the `worker` memory and CPU limits, no Linux capabilities, and
-`no-new-privileges`.
+A worker gets the `worker` memory and CPU limits, at most 512 processes, no
+Linux capabilities, `no-new-privileges`, and a read-only root file system.
+It writes to `/work` and `/tmp`, two anonymous volumes that the manager
+removes with the container. Docker has no disk limit for them: see
+`worker.disk`. Each worker has the label `joshua-developer-instance` with
+the value of `MANAGER_HOST`. The manager removes old workers, and counts
+workers, with that label only, so two installs on one Docker daemon need
+two values of `MANAGER_HOST`. The manager pulls the worker image when it
+starts, and a task pulls it again only when it is missing.
 
 `.env` also takes two compose settings. `JOSHUA_ADDONS_VERSION` picks the
 release of both images. `JOSHUA_NETWORK` names the joshua-ai network when
@@ -358,9 +390,10 @@ The manager starts one Job for each task, named
 `dev-worker-<first 8 characters of the task id>`, with `-r<n>` added for
 the worker of a resumed task. The worker pod runs as uid
 1000 with no Linux capabilities, the `RuntimeDefault` seccomp profile, and a
-read-only root file system. It writes to two emptyDirs, `/work` and `/tmp`.
-It gets no ServiceAccount token. The `worker` limits are its requests and its
-limits.
+read-only root file system. It writes to two emptyDirs, `/work` and `/tmp`,
+each with the `sizeLimit` `worker.disk`. It gets no ServiceAccount token. The
+`worker` limits, with `ephemeral-storage` set to `worker.disk`, are its
+requests and its limits.
 
 ## Git hosts
 
@@ -383,7 +416,9 @@ request as the owner of the token. Give a person their own token to show
 them on the host.
 
 For a git host with a private certificate authority, mount the CA bundle and
-set `GIT_CA_BUNDLE` to its path. The manager trusts it for the host API.
+set `GIT_CA_BUNDLE` to its path. The manager trusts it for the host API. The
+brief gives its text to the worker, which writes it to its home folder and
+sets `http.sslCAInfo`, so git trusts it too.
 
 ### Branches
 
@@ -396,6 +431,10 @@ from the pull request.
 A task never works on its base branch, `main`, or `master`. `develop` and
 `rework` refuse such a branch with `branch_is_base`, and a `rework` on a
 `git` host refuses `main` and `master`.
+
+On GitLab, the manager finds the merge request of a branch only when it
+comes from the same project. A merge request from a fork with a branch of
+the same name is not taken.
 
 ### The pull request gate
 
@@ -420,7 +459,10 @@ After the worker pushes, the manager:
    request. A `rework` push changes the pull request that is there.
 
 `scan` in `task_status` is `clean`, `partial` (the host sent no text for a
-file), `hit`, or `unavailable` (a `git` host has no diff API). A task that
+file, or did not list every file), `hit`, or `unavailable` (a `git` host
+has no diff API). GitHub lists at most 300 files in one compare reply. The
+manager reads the reply page by page, and when the list stops at that cap,
+the scan is `partial`. A task that
 ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
 request. One `answer` call resumes it. A new `develop` with the same
 `branch` also continues the work, as a new task.

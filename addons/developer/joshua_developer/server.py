@@ -322,6 +322,7 @@ def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | Non
 
         runtime = DockerRuntime(manager, settings)
         runtime.remove_orphans()
+        runtime.pull_image()
         return runtime
     if settings.worker_runtime == "kubernetes":
         from joshua_developer.runtime_k8s import KubernetesRuntime

@@ -6,7 +6,7 @@
 4. Tell the manager the session runs, and run the session until it ends or
    its clock runs out. The clock has the persona timeout minus
    ``DEADLINE_MARGIN_S`` of work. It pauses while ``ask`` waits for an
-   answer, for up to ``ask_wait_s`` seconds for each question.
+   answer, for up to ``ask_wait_s`` seconds in total for the task.
 5. Always: push the branch when the model made commits, and send the report.
 
 The exit code is 0 when the manager accepted the report, or when the task
@@ -276,6 +276,7 @@ async def _work(
                 str(brief["git_token"]),
                 urlsplit(str(brief["repo_url"])).netloc,
                 env.proxy_url,
+                brief.get("git_ca_pem") or None,
             )
         with step("clone", task_id):
             git.clone(str(brief["repo_url"]), dest)

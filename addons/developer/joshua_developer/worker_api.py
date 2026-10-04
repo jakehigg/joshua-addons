@@ -10,9 +10,10 @@ every route, so the token is of no use after the report.
 Routes:
 
 - ``GET /worker/brief``: what the worker needs to do the task, with the git
-  token, its user name for git, and the platform kind. 503 when the token
-  variable is not set.
-- ``POST /worker/running``: the worker started.
+  token, its user name for git, the platform kind, and the CA bundle of
+  ``GIT_CA_BUNDLE`` when it is set. 503 when the token variable is not set.
+  The first brief call marks the task ``running`` and starts its clock.
+- ``POST /worker/running``: the worker starts its session.
 - ``POST /worker/report``: the report (``runtime.Report``). The task ends.
 - ``POST /worker/ask`` ``{"question"}``: send a question to the person's chat.
   202 ``{"asked": true, "sent": true}``, or ``{"asked": true, "sent": false,
@@ -20,7 +21,7 @@ Routes:
   The question is stored in both cases. A question that was sent pauses the
   task clock (``asked_at``).
 - ``POST /worker/ask/stop``: the worker stops waiting for the answer
-  (``ask_wait_s`` passed). The clock starts again and the question stays
+  (the task used its ``ask_wait_s``). The clock starts again and the question stays
   open. 200 ``{"paused_s"}``.
 - ``GET /worker/answer``: wait up to 25 s for the answer. 200 ``{"answer",
   "waited_s"}``, or 204 when no answer came in that time.
@@ -54,6 +55,7 @@ import contextlib
 import json
 import re
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -133,6 +135,19 @@ def repo_url(repo: str) -> str:
     return f"https://{repo}.git"
 
 
+def read_ca_bundle(path: str) -> str | None:
+    """The text of the CA bundle at ``path``, or None when ``path`` is empty or unreadable."""
+    if not path:
+        return None
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning(
+            {"message": "GIT_CA_BUNDLE could not be read", "error_type": type(exc).__name__}
+        )
+        return None
+
+
 def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
     """The brief of a task (the full row) for its worker.
 
@@ -164,8 +179,11 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "brief": task["brief"],
         "feedback": task["instructions"],
         "answer": task["answer"],
-        # The longest time the worker waits for an answer to one question.
+        # The total time the worker waits for answers, over all its questions.
         "ask_wait_s": manager.config.ask_wait_of(persona_name),
+        # The CA bundle of the git host, for git in the worker. None when
+        # GIT_CA_BUNDLE is not set.
+        "git_ca_pem": read_ca_bundle(manager.settings.git_ca_bundle),
         # A resumed task: an earlier worker pushed the branch and stopped.
         "resumed": bool(history),
         # Where the earlier worker stopped, for a resumed task.
@@ -257,6 +275,7 @@ def build_worker_app(
                 {"message": "brief refused: no git token", "task_id": task_id, "reason": exc.reason}
             )
             return _error(503, exc.reason)
+        manager.mark_running(task_id)
         logger.debug({"message": "brief served", "task_id": task_id})
         return JSONResponse(body)
 

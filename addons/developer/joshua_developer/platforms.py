@@ -33,6 +33,11 @@ MAX_ERROR_MESSAGE = 300
 USER_AGENT = "joshua-developer"
 
 CREDENTIAL_USERNAMES = {"github": "x-access-token", "gitlab": "oauth2", "git": "git"}
+# The GitHub compare: the files of one page, the most files one reply can
+# list, and the most pages the scan reads.
+GITHUB_PAGE_SIZE = 100
+GITHUB_COMPARE_FILE_CAP = 300
+GITHUB_MAX_PAGES = 30
 
 _URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^\s/@]+@")
 
@@ -101,14 +106,16 @@ class Diff:
     """The text the scan reads.
 
     ``unscanned`` names the files the host sent no patch text for: a binary
-    file, or a file too large for the API. ``unavailable`` is True when the
-    host has no API for a diff.
+    file, or a file too large for the API. ``truncated`` is True when the
+    host did not list every file of the diff. ``unavailable`` is True when
+    the host has no API for a diff.
     """
 
     files: list[DiffFile] = field(default_factory=list)
     additions: int = 0
     deletions: int = 0
     unscanned: list[str] = field(default_factory=list)
+    truncated: bool = False
     unavailable: bool = False
 
 
@@ -293,21 +300,56 @@ class GitHubPlatform(_HttpPlatform):
         return self._parse(await self._request("GET", f"{self._repo_path(repo)}/pulls/{number}"))
 
     async def compare(self, repo: str, base: str, head: str) -> Diff:
+        """The diff from ``base`` to ``head``, page by page.
+
+        The pages continue while a page has ``GITHUB_PAGE_SIZE`` files or
+        more. One reply lists at most ``GITHUB_COMPARE_FILE_CAP`` files. When
+        a page reaches that cap and the next page adds no file, or the pages
+        stop at ``GITHUB_MAX_PAGES``, some files can be missing, so the diff
+        is ``truncated`` and the scan is ``partial``.
+        """
         spec = f"{quote(base, safe='/')}...{quote(head, safe='/')}"
-        data = await self._request("GET", f"{self._repo_path(repo)}/compare/{spec}")
         files: list[DiffFile] = []
         unscanned: list[str] = []
+        seen: set[str] = set()
         additions = deletions = 0
-        for item in (data or {}).get("files") or []:
-            path = str(item.get("filename") or "")
-            additions += int(item.get("additions") or 0)
-            deletions += int(item.get("deletions") or 0)
-            patch = item.get("patch")
-            if patch:
-                files.append(DiffFile(path=path, patch=patch))
-            elif item.get("status") != "removed" and int(item.get("additions") or 0) > 0:
-                unscanned.append(path)
-        return Diff(files=files, additions=additions, deletions=deletions, unscanned=unscanned)
+        truncated = False
+        for page in range(1, GITHUB_MAX_PAGES + 1):
+            data = await self._request(
+                "GET",
+                f"{self._repo_path(repo)}/compare/{spec}",
+                params={"per_page": str(GITHUB_PAGE_SIZE), "page": str(page)},
+            )
+            items = (data or {}).get("files") or []
+            new = 0
+            for item in items:
+                path = str(item.get("filename") or "")
+                if path in seen:
+                    continue
+                seen.add(path)
+                new += 1
+                additions += int(item.get("additions") or 0)
+                deletions += int(item.get("deletions") or 0)
+                patch = item.get("patch")
+                if patch:
+                    files.append(DiffFile(path=path, patch=patch))
+                elif item.get("status") != "removed" and int(item.get("additions") or 0) > 0:
+                    unscanned.append(path)
+            if page > 1 and new == 0 and len(seen) >= GITHUB_COMPARE_FILE_CAP:
+                # The host sent the same capped list again: it cannot page the files.
+                truncated = True
+                break
+            if len(items) < GITHUB_PAGE_SIZE:
+                break
+        else:
+            truncated = True
+        return Diff(
+            files=files,
+            additions=additions,
+            deletions=deletions,
+            unscanned=unscanned,
+            truncated=truncated,
+        )
 
     async def delete_branch(self, repo: str, branch: str) -> None:
         await self._request(
@@ -362,12 +404,22 @@ class GitLabPlatform(_HttpPlatform):
         return self._parse(data)
 
     async def find_pr(self, repo: str, head: str) -> PullRequest | None:
+        """The open merge request from ``head`` of this project into this project.
+
+        A merge request from a fork with a branch of the same name has
+        another ``source_project_id``, and is not taken.
+        """
         data = await self._request(
             "GET",
             f"{self._project(repo)}/merge_requests",
             params={"source_branch": head, "state": "opened"},
         )
-        return self._parse(data[0]) if data else None
+        for item in data or []:
+            target = item.get("target_project_id", item.get("project_id"))
+            source = item.get("source_project_id")
+            if source is not None and source == target:
+                return self._parse(item)
+        return None
 
     async def pr(self, repo: str, number: int) -> PullRequest:
         return self._parse(

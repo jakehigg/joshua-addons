@@ -3,6 +3,7 @@ the reports after a restart, and the log that never holds a brief."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -59,6 +60,50 @@ async def test_a_runtime_that_cannot_start_fails_the_task_and_frees_the_lock(set
     assert task["status"] == "failed"
     assert task["error"] == "the worker did not start: OSError"
     assert manager.locks.get(REPO, "branch:feature") is None
+
+
+class SlowRuntime:
+    """A runtime whose start takes time, and that counts a worker only once it runs."""
+
+    def __init__(self) -> None:
+        self.started: list[str] = []
+
+    def count_active(self) -> int:
+        return len(self.started)
+
+    async def start(self, task: dict) -> str:
+        await asyncio.sleep(0.05)
+        self.started.append(task["task_id"])
+        return task["task_id"]
+
+
+async def test_two_dispatches_at_once_cannot_both_take_the_last_slot(data_dir) -> None:
+    settings = make_settings(data_dir, config={"max_workers": 1})
+    manager = Manager(settings, make_store(settings), LockManager())
+    runtime = SlowRuntime()
+    manager.runtime = runtime
+    results = await asyncio.gather(
+        manager.develop("alex", REPO, "brief one", branch="one"),
+        manager.develop("alex", "github.com/example-home/other", "brief two", branch="two"),
+    )
+    statuses = sorted(result["status"] for result in results)
+    assert statuses == ["dispatched", "rejected"]
+    [refused] = [result for result in results if result["status"] == "rejected"]
+    assert refused["reason"] == "concurrency_limit"
+    assert len(runtime.started) == 1
+    assert manager.store.count_active_tasks() == 1
+
+
+async def test_a_task_whose_worker_still_starts_takes_its_slot(data_dir) -> None:
+    settings = make_settings(data_dir, config={"max_workers": 1})
+    manager = Manager(settings, make_store(settings), LockManager())
+    # The worker never reads its brief, and the runtime counts no container.
+    manager.runtime = BrokenRuntime()
+    manager.runtime.start = SlowRuntime().start  # type: ignore[method-assign]
+    first = await manager.develop("alex", REPO, "brief", branch="one")
+    assert manager.store.get_task(first["task_id"])["status"] == "dispatched"  # type: ignore[index]
+    second = await manager.develop("alex", REPO, "brief", branch="two")
+    assert second["reason"] == "concurrency_limit"
 
 
 async def test_a_manager_without_a_runtime_refuses_to_dispatch(settings) -> None:
@@ -196,3 +241,15 @@ async def test_build_app_reads_the_environment(tmp_path, monkeypatch) -> None:
 
 def test_make_settings_is_a_fixture_helper(tmp_path) -> None:
     assert make_settings(tmp_path).db_path == tmp_path / "developer.db"
+
+
+@pytest.mark.parametrize("port", ["99999", "0"])
+async def test_a_repo_with_a_bad_port_is_invalid_arguments(settings, port: str) -> None:
+    manager = make_manager(settings)
+    repo = f"https://user:ghp_SECRETSECRET@github.com:{port}/example-home/app"
+    result = await manager.develop("alex", repo, "brief")
+    assert result["status"] == "rejected"
+    assert result["reason"] == "invalid_arguments"
+    assert "ghp_SECRETSECRET" not in json.dumps(result)
+    rework = await manager.rework("alex", repo, 5, "fix")
+    assert rework["reason"] == "invalid_arguments"

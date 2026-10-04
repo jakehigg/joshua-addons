@@ -69,6 +69,9 @@ GH_PR = {
 }
 GL_MR = {
     "iid": 3,
+    "project_id": 11,
+    "source_project_id": 11,
+    "target_project_id": 11,
     "web_url": "https://gitlab.example.net/group/sub/project/-/merge_requests/3",
     "source_branch": "joshua/fix-3",
     "target_branch": "develop",
@@ -148,7 +151,7 @@ async def test_github_compare() -> None:
     diff = await platform.compare(GH_REPO, "main", "joshua/fix-7")
     assert recorder.last.method == "GET"
     assert recorder.last.url.raw_path.decode() == (
-        "/repos/example-home/app/compare/main...joshua/fix-7"
+        "/repos/example-home/app/compare/main...joshua/fix-7?per_page=100&page=1"
     )
     assert_github_headers(recorder.last)
     assert [f.path for f in diff.files] == ["a.py"]
@@ -156,6 +159,66 @@ async def test_github_compare() -> None:
     assert (diff.additions, diff.deletions) == (2, 4)
     assert diff.unscanned == ["logo.png"]
     assert diff.unavailable is False
+    assert diff.truncated is False
+
+
+def compare_file(index: int) -> dict:
+    return {"filename": f"f{index}.py", "patch": "@@ -0,0 +1 @@\n+x", "additions": 1}
+
+
+async def test_github_compare_reads_every_page() -> None:
+    pages = {
+        "1": {"files": [compare_file(i) for i in range(100)]},
+        "2": {"files": [compare_file(i) for i in range(100, 150)]},
+    }
+    seen: list[str] = []
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["per_page"] == "100"
+        seen.append(request.url.params["page"])
+        return httpx.Response(200, json=pages[request.url.params["page"]])
+
+    platform = GitHubPlatform("github.com", TOKEN, client=client_for(Recorder(reply)))
+    diff = await platform.compare(GH_REPO, "main", "joshua/fix-7")
+    assert seen == ["1", "2"]
+    assert len(diff.files) == 150 and diff.additions == 150
+    assert diff.truncated is False
+
+
+async def test_github_compare_at_the_file_cap_is_truncated() -> None:
+    # The host lists 300 files on each page and pages no further: files can be missing.
+    capped = {"files": [compare_file(i) for i in range(300)]}
+    seen: list[str] = []
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params["page"])
+        return httpx.Response(200, json=capped if request.url.params["page"] == "1" else {})
+
+    platform = GitHubPlatform("github.com", TOKEN, client=client_for(Recorder(reply)))
+    diff = await platform.compare(GH_REPO, "main", "joshua/fix-7")
+    assert seen == ["1", "2"]
+    assert len(diff.files) == 300
+    assert diff.truncated is True
+
+    again = GitHubPlatform(
+        "github.com", TOKEN, client=client_for(Recorder(json_reply(200, capped)))
+    )
+    assert (await again.compare(GH_REPO, "main", "x")).truncated is True
+
+
+async def test_github_compare_stops_at_the_page_limit(monkeypatch) -> None:
+    from joshua_developer import platforms
+
+    monkeypatch.setattr(platforms, "GITHUB_MAX_PAGES", 2)
+    count = iter(range(10_000))
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"files": [compare_file(next(count)) for _ in range(100)]})
+
+    platform = GitHubPlatform("github.com", TOKEN, client=client_for(Recorder(reply)))
+    diff = await platform.compare(GH_REPO, "main", "x")
+    assert len(diff.files) == 200
+    assert diff.truncated is True
 
 
 async def test_github_delete_branch() -> None:
@@ -219,6 +282,25 @@ async def test_gitlab_find_pr() -> None:
         "gitlab.example.net", TOKEN, client=client_for(Recorder(json_reply(200, [])))
     )
     assert await none.find_pr(GL_REPO, "x") is None
+
+
+async def test_gitlab_find_pr_skips_a_merge_request_from_a_fork() -> None:
+    fork = {**GL_MR, "iid": 9, "source_project_id": 99}
+    unknown = {**GL_MR, "iid": 10, "source_project_id": None}
+    recorder = Recorder(json_reply(200, [fork, unknown, GL_MR]))
+    platform = GitLabPlatform("gitlab.example.net", TOKEN, client=client_for(recorder))
+    found = await platform.find_pr(GL_REPO, "joshua/fix-3")
+    assert found is not None and found.number == 3
+    only_fork = GitLabPlatform(
+        "gitlab.example.net", TOKEN, client=client_for(Recorder(json_reply(200, [fork])))
+    )
+    assert await only_fork.find_pr(GL_REPO, "joshua/fix-3") is None
+    # project_id stands in when target_project_id is missing.
+    old = {k: v for k, v in GL_MR.items() if k != "target_project_id"}
+    older = GitLabPlatform(
+        "gitlab.example.net", TOKEN, client=client_for(Recorder(json_reply(200, [old])))
+    )
+    assert (await older.find_pr(GL_REPO, "joshua/fix-3")) is not None
 
 
 async def test_gitlab_pr() -> None:

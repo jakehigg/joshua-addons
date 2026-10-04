@@ -326,7 +326,7 @@ async def test_a_clean_push_opens_a_pull_request(manager, git_host, reports) -> 
     assert row["pr_url"] == "https://github.com/example-home/app/pull/42"
     assert row["pr_number"] == 42
     assert git_host.calls() == [
-        f"GET /repos/example-home/app/compare/main...{head}",
+        f"GET /repos/example-home/app/compare/main...{head}?per_page=100&page=1",
         f"GET /repos/example-home/app/pulls?head=example-home%3A{head.replace('/', '%2F')}"
         "&state=open",
         "POST /repos/example-home/app/pulls",
@@ -369,7 +369,7 @@ async def test_a_scan_hit_deletes_the_branch_and_fails(manager, git_host, report
     ]
     assert row["pr_url"] is None
     assert git_host.calls() == [
-        "GET /repos/example-home/app/compare/main...feature/leak",
+        "GET /repos/example-home/app/compare/main...feature/leak?per_page=100&page=1",
         "DELETE /repos/example-home/app/git/refs/heads/feature/leak",
     ]
     assert SECRET not in json.dumps(row)
@@ -391,7 +391,9 @@ async def test_the_scan_reads_only_the_commits_of_the_worker(manager, git_host) 
         task["task_id"], pushed(head="feature/x", clone_head=CLONE_HEAD)
     )
     assert row is not None and row["status"] == "success"
-    assert git_host.calls()[0] == (f"GET /repos/example-home/app/compare/{CLONE_HEAD}...feature/x")
+    assert git_host.calls()[0] == (
+        f"GET /repos/example-home/app/compare/{CLONE_HEAD}...feature/x?per_page=100&page=1"
+    )
 
 
 @pytest.mark.parametrize("clone_head", [None, "main", "HEAD~3", "ABC" * 14, "a" * 39])
@@ -400,7 +402,10 @@ async def test_a_clone_head_that_is_not_a_commit_scans_from_the_base(
 ) -> None:
     task = await develop(manager, branch="feature/x")
     await manager.record_report(task["task_id"], pushed(head="feature/x", clone_head=clone_head))
-    assert git_host.calls()[0] == "GET /repos/example-home/app/compare/main...feature/x"
+    assert (
+        git_host.calls()[0]
+        == "GET /repos/example-home/app/compare/main...feature/x?per_page=100&page=1"
+    )
 
 
 async def test_a_scan_hit_on_a_branch_that_was_there_keeps_it(manager, git_host) -> None:
@@ -495,6 +500,15 @@ async def test_a_push_with_files_without_patch_is_partial(manager, git_host) -> 
     assert row is not None and row["scan"] == "partial" and row["status"] == "success"
 
 
+async def test_a_diff_at_the_github_file_cap_is_partial(manager, git_host) -> None:
+    # The fake host sends the same 300 files for every page.
+    git_host.compare_files = [clean_file(f"f{index}.py") for index in range(300)]
+    task = await develop(manager)
+    row = await manager.record_report(task["task_id"], pushed())
+    assert row is not None and row["scan"] == "partial" and row["status"] == "success"
+    assert len([c for c in git_host.calls() if "/compare/" in c]) == 2
+
+
 async def test_a_report_without_a_push_touches_no_host(manager, git_host) -> None:
     task = await develop(manager)
     row = await manager.record_report(task["task_id"], pushed(pushed=False))
@@ -580,7 +594,7 @@ async def test_a_rework_push_confirms_the_pr(manager, git_host) -> None:
     assert row["pr_number"] == 5
     assert git_host.calls() == [
         "GET /repos/example-home/app/pulls/5",
-        "GET /repos/example-home/app/compare/main...pr-5",
+        "GET /repos/example-home/app/compare/main...pr-5?per_page=100&page=1",
         "GET /repos/example-home/app/pulls/5",
     ]
 

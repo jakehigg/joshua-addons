@@ -41,6 +41,12 @@ def test_a_gitlab_subgroup_and_a_port() -> None:
         "gitlab.example.net:2222/group/app"
     )
     assert repo_host("gitlab.example.net:2222/group/app") == "gitlab.example.net:2222"
+    assert (
+        normalize_repo("gitlab.example.net:65535/group/app") == "gitlab.example.net:65535/group/app"
+    )
+    assert (
+        normalize_repo("https://gitlab.example.net:1/group/app") == "gitlab.example.net:1/group/app"
+    )
 
 
 @pytest.mark.parametrize(
@@ -55,6 +61,12 @@ def test_a_gitlab_subgroup_and_a_port() -> None:
         "localhost/example-home/app",
         "github.com/example home/app",
         "file:///etc/passwd",
+        "https://github.com:99999/example-home/app",
+        "https://github.com:0/example-home/app",
+        "https://github.com:x/example-home/app",
+        "github.com:99999/example-home/app",
+        "github.com:0/example-home/app",
+        "github.com:65536/example-home/app",
     ],
 )
 def test_a_bad_repo_is_refused(raw: str) -> None:

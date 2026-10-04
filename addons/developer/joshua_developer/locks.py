@@ -1,7 +1,9 @@
 """One task at a time for each unit of work.
 
-A lock key is ``(repo, scope)``. The scope is ``branch:<name>`` for
-``develop`` and ``pr:<number>`` for ``rework``. A lock belongs to one task id.
+A lock key is ``(repo, scope)``. The scope is ``branch:<name>`` for both
+``develop`` and ``rework``: a rework locks the source branch of its pull
+request, so a develop and a rework on one branch never run together. A lock
+belongs to one task id.
 The lock stays until its task ends: the manager releases it when it records
 the report, or when the worker does not start. A lock has no expiry. The
 manager watches every worker to its end, and a worker that waits for an

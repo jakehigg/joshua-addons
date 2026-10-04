@@ -18,6 +18,7 @@ from joshua_developer.runtime_k8s import (
     memory_quantity,
     pod_namespace,
 )
+from joshua_developer.store import utcnow
 from kubernetes.client.exceptions import ApiException
 
 TASK = {
@@ -56,6 +57,8 @@ class FakeBatch:
         self.statuses: list[Any] = [running()]
         self.read_error: ApiException | None = None
         self.delete_error: ApiException | None = None
+        # The fake core API: a delete makes its pods go, as the garbage collector does.
+        self.core: Any = None
 
     def create_namespaced_job(self, namespace: str, body: dict) -> None:
         self.created.append({"namespace": namespace, "body": body})
@@ -74,6 +77,8 @@ class FakeBatch:
         if self.delete_error is not None:
             raise self.delete_error
         self.deleted.append((name, namespace, propagation_policy))
+        if self.core is not None and not self.core.pods_stay:
+            self.core.pods = []
 
 
 class FakeCore:
@@ -83,9 +88,13 @@ class FakeCore:
         self.log_error: ApiException | None = None
         self.log_calls: list[dict] = []
         self.pod_selectors: list[str] = []
+        self.pods_stay = False
+        self.list_error: ApiException | None = None
 
     def list_namespaced_pod(self, namespace: str, label_selector: str) -> Any:
         self.pod_selectors.append(label_selector)
+        if self.list_error is not None:
+            raise self.list_error
         return SimpleNamespace(items=list(self.pods))
 
     def read_namespaced_pod_log(self, **kwargs: Any) -> str:
@@ -100,7 +109,8 @@ class Recorder:
         self.running: list[str] = []
         self.reports: list[tuple[str, Report]] = []
         self.active = True
-        self.clock: TaskClock | None = None
+        # The worker read its brief when the recorder was made.
+        self.clock: TaskClock | None = TaskClock(started_at=utcnow())
         self.active_ids: set[str] | None = None
 
     def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
@@ -136,6 +146,7 @@ def make_runtime(
     tmp_path, recorder=None, **kwargs
 ) -> tuple[KubernetesRuntime, FakeBatch, FakeCore]:
     batch, core = FakeBatch(), FakeCore()
+    batch.core = core
     settings = kwargs.pop("settings", None) or settings_for(tmp_path)
     runtime = KubernetesRuntime(
         recorder or Recorder(),
@@ -199,17 +210,24 @@ def test_the_job_manifest_has_every_security_field(tmp_path) -> None:
     ]
     assert "envFrom" not in container
     assert container["resources"] == {
-        "requests": {"memory": "1Gi", "cpu": "1500m"},
-        "limits": {"memory": "1Gi", "cpu": "1500m"},
+        "requests": {"memory": "1Gi", "cpu": "1500m", "ephemeral-storage": "4Gi"},
+        "limits": {"memory": "1Gi", "cpu": "1500m", "ephemeral-storage": "4Gi"},
     }
     assert container["volumeMounts"] == [
         {"name": "work", "mountPath": "/work"},
         {"name": "tmp", "mountPath": "/tmp"},
     ]
     assert pod["volumes"] == [
-        {"name": "work", "emptyDir": {}},
-        {"name": "tmp", "emptyDir": {}},
+        {"name": "work", "emptyDir": {"sizeLimit": "4Gi"}},
+        {"name": "tmp", "emptyDir": {"sizeLimit": "4Gi"}},
     ]
+
+
+def test_the_disk_limit_comes_from_worker_disk(tmp_path) -> None:
+    settings = settings_for(tmp_path, config={"worker": {"disk": "10Gi"}})
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    assert pod["containers"][0]["resources"]["limits"]["ephemeral-storage"] == "10Gi"
+    assert [v["emptyDir"]["sizeLimit"] for v in pod["volumes"]] == ["10Gi", "10Gi"]
 
 
 def test_the_pull_secret_goes_on_the_pod_when_it_is_set(tmp_path) -> None:
@@ -247,9 +265,11 @@ async def test_start_creates_the_job_and_returns_its_name(tmp_path) -> None:
     [created] = batch.created
     assert created["namespace"] == "joshua"
     assert created["body"]["metadata"]["name"] == name
-    # The hard cap: the sonnet timeout_s 1200, ask_wait_s 7200, and the grace time 120 s.
-    assert created["body"]["spec"]["activeDeadlineSeconds"] == 1200 + 7200 + 120
-    assert recorder.running == [TASK["task_id"]]
+    # The hard cap: the sonnet timeout_s 1200, ask_wait_s 7200, the grace time
+    # 120 s, and WORKER_START_GRACE_S 600, because the Job clock counts the pull.
+    assert created["body"]["spec"]["activeDeadlineSeconds"] == 1200 + 7200 + 120 + 600
+    # The task starts running when the worker reads its brief, not here.
+    assert recorder.running == []
     for supervisor in list(runtime._supervisors):
         supervisor.cancel()
 
@@ -309,15 +329,67 @@ async def test_an_end_after_a_report_records_nothing_and_deletes_the_job(tmp_pat
 
 async def test_a_worker_past_its_timeout_is_deleted_and_timed_out(tmp_path) -> None:
     recorder = Recorder()
-    runtime, batch, _ = make_runtime(tmp_path, recorder, grace_s=-10_000)
+    runtime, batch, core = make_runtime(tmp_path, recorder, grace_s=-20_000)
+    at_report: list[tuple[int, int]] = []
+    record = recorder.record_report
+
+    async def check_order(task_id: str, report: Report) -> dict:
+        at_report.append((len(batch.deleted), len(core.pods)))
+        return await record(task_id, report)
+
+    recorder.record_report = check_order  # type: ignore[method-assign]
     await runtime.start({**TASK, "persona": "retired"})
-    await wait_for(lambda: batch.deleted)
+    await wait_for(lambda: recorder.reports)
     [(_, report)] = recorder.reports
     assert report.status == "timed_out"
     assert report.log.endswith("the end")
-    assert batch.deleted == [("dev-worker-12345678", "joshua", "Background")]
+    # The Job was deleted, and its pod gone, before timed_out was recorded.
+    assert at_report == [(1, 0)]
+    await wait_for(lambda: len(batch.deleted) == 2)
+    assert batch.deleted[0] == ("dev-worker-12345678", "joshua", "Background")
     # The Job deadline is never below one second.
     assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 1
+
+
+async def test_a_worker_that_never_reads_its_brief_fails_after_the_start_grace(tmp_path) -> None:
+    from datetime import timedelta
+
+    t0 = utcnow()
+    now = [t0]
+    recorder = Recorder()
+    recorder.clock = TaskClock(started_at=None)
+    runtime, batch, core = make_runtime(tmp_path, recorder, now=lambda: now[0])
+    await runtime.start(TASK)
+    now[0] = t0 + timedelta(seconds=599)
+    await asyncio.sleep(0.05)
+    assert batch.deleted == []
+    now[0] = t0 + timedelta(seconds=600)
+    await wait_for(lambda: recorder.reports)
+    [(_, report)] = recorder.reports
+    assert report.status == "failed"
+    assert "did not start in 600 seconds" in (report.error or "")
+    assert report.log.endswith("the end")
+    assert batch.deleted[0][0] == "dev-worker-12345678"
+
+
+async def test_the_start_grace_comes_from_the_settings(tmp_path) -> None:
+    settings = settings_for(tmp_path, worker_start_grace_s=30)
+    runtime, batch, _ = make_runtime(tmp_path, settings=settings)
+    await runtime.start(TASK)
+    assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 1200 + 7200 + 120 + 30
+    for supervisor in list(runtime._supervisors):
+        supervisor.cancel()
+
+
+def test_a_stop_gives_up_when_the_pod_stays(tmp_path, caplog) -> None:
+    runtime, batch, core = make_runtime(tmp_path, kill_wait_s=0.02)
+    core.pods_stay = True
+    runtime._stop("dev-worker-12345678")
+    assert batch.deleted == [("dev-worker-12345678", "joshua", "Background")]
+    assert "the pod of a stopped worker is still there" in caplog.text
+    core.list_error = ApiException(status=403)
+    runtime._stop("dev-worker-12345678")
+    assert len(batch.deleted) == 2
 
 
 async def test_the_job_deadline_of_kubernetes_is_timed_out(tmp_path) -> None:
@@ -434,8 +506,8 @@ async def test_the_job_hard_cap_takes_the_ask_wait_of_the_persona(tmp_path) -> N
     runtime, batch, _ = make_runtime(tmp_path, settings=settings)
     await runtime.start(TASK)
     await runtime.start({**TASK, "task_id": "abcdefgh-1", "persona": "opus"})
-    assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 600 + 60 + 120
-    assert batch.created[1]["body"]["spec"]["activeDeadlineSeconds"] == 2400 + 1800 + 120
+    assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 600 + 60 + 120 + 600
+    assert batch.created[1]["body"]["spec"]["activeDeadlineSeconds"] == 2400 + 1800 + 120 + 600
     for supervisor in list(runtime._supervisors):
         supervisor.cancel()
 

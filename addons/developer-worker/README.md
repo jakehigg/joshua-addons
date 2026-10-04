@@ -7,8 +7,12 @@ directory has no compose file and no `values.yaml`.
 
 ## What the worker does
 
-1. It gets the brief of its task from the manager.
-2. It writes the git token to `$HOME/.git-credentials` (mode 0600), clones
+1. It gets the brief of its task from the manager. The manager starts the
+   task clock at this call.
+2. It writes the git token to `$HOME/.git-credentials` (mode 0600). When the
+   brief has a CA bundle (`git_ca_pem`, from `GIT_CA_BUNDLE` on the
+   manager), it writes it to `$HOME/git-ca.pem` and sets git's
+   `http.sslCAInfo` to that file. It clones
    the repository through the git tunnel of the manager, and checks out the
    branch of the task. A `develop` task makes the branch from the base
    branch when the remote does not have it. A `rework` task uses the branch
@@ -24,9 +28,12 @@ directory has no compose file and no `values.yaml`.
    answer. When the manager says nobody gets the question, `ask` returns at
    once and tells the model to set `blocked`. The session never gets WebSearch or WebFetch.
 5. The session has the persona timeout minus 90 seconds of work. The clock
-   pauses while `ask` waits for an answer. One wait stops after `ask_wait_s`
-   seconds, a value from the brief. The worker then tells the manager that
-   it stopped the wait, and `ask` tells the model that no answer came. When
+   pauses while `ask` waits for an answer. `ask_wait_s`, a value from the
+   brief, is the total waiting time for the task: each wait stops when the
+   waits of the task reach it. The worker then tells the manager that it
+   stopped the wait, and `ask` tells the model that no answer came. When no
+   wait time is left, `ask` sends no question and returns that reply at
+   once. When
    the clock runs out, the worker interrupts the session. Then the worker
    pushes the branch when the model made new commits, and sends the
    report. The worker never makes a commit of its own: a file the model left
@@ -62,8 +69,10 @@ The manager sets these four variables. The worker takes no other setting.
 
 The image sets `HOME=/work/home` and `CLAUDE_CONFIG_DIR=/work/home/.claude`.
 The checkout is `/work/repo`. The worker keeps its files in `/work` and `/tmp`.
-On Kubernetes, the root file system is read-only, and these two folders are
-emptyDirs.
+The root file system is read-only. On Kubernetes, these two folders are
+emptyDirs with a size limit. On Docker, they are anonymous volumes, except
+with `worker.disk_docker_storage_opt: true`, which keeps them in a writable
+root file system with a size limit.
 
 The worker puts `GIT_PROXY_URL` in git's own config (`http.proxy`), and not
 in `HTTPS_PROXY`. Only git uses the tunnel.

@@ -113,6 +113,9 @@ def _pr(gitlab: bool, number: int, head: str, base: str, state: str | None = Non
     if gitlab:
         return {
             "iid": number,
+            "project_id": 7,
+            "source_project_id": 7,
+            "target_project_id": 7,
             "web_url": f"https://gitlab.example.net/g/p/-/merge_requests/{number}",
             "source_branch": head,
             "target_branch": base,

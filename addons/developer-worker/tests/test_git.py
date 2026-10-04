@@ -55,6 +55,20 @@ def test_configure_without_a_proxy_sets_none(home: Path) -> None:
     assert _global("http.proxyAuthMethod") == ""
 
 
+def test_a_ca_bundle_goes_under_home_and_into_ssl_ca_info(home: Path) -> None:
+    pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+    git.configure(home, "A", "a@example.test", "git", "t0k", "git.test", ca_pem=pem)
+    path = home / git.CA_FILE
+    assert path.read_text() == pem
+    assert _global("http.sslCAInfo") == str(path)
+
+
+def test_no_ca_bundle_sets_no_ssl_ca_info(home: Path) -> None:
+    _configure(home)
+    assert _global("http.sslCAInfo") == ""
+    assert not (home / git.CA_FILE).exists()
+
+
 def test_scrub_removes_the_token_the_url_and_the_credentials_path(home: Path) -> None:
     _configure(home)
     raw = (

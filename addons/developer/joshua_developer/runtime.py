@@ -9,13 +9,13 @@ fake successful report after ``delay_s`` seconds, so the whole flow runs
 offline.
 
 A supervisor of a real runtime stops a worker at its deadline. The deadline
-moves while the worker waits for an answer: see ``Deadline``.
+starts when the worker reads its brief, and moves while the worker waits for
+an answer: see ``Deadline``.
 """
 
 from __future__ import annotations
 
 import asyncio
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -23,6 +23,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from joshua_developer.config import DEFAULT_WORKER_START_GRACE_S
 from joshua_developer.store import utcnow
 
 
@@ -104,9 +105,18 @@ def kill_time(
 class Deadline:
     """The deadline of one worker, for its supervisor.
 
-    ``passed`` reads the task clock from the reporter on each call, so a wait
-    for an answer moves the deadline. ``timeout_s + ask_wait_s + grace_s``
-    after the start is a hard cap that no wait moves.
+    The clock of the task starts when the worker reads its brief
+    (``started_at``), not when the runtime creates the container, so an
+    image pull uses none of the persona timeout. ``check`` reads the task
+    clock from the reporter on each call, so a wait for an answer moves the
+    deadline. It returns:
+
+    - ``no_start`` when the worker has not read its brief
+      ``start_grace_s`` seconds after the runtime created it;
+    - ``deadline`` when ``kill_time`` passes, or at the hard cap,
+      ``timeout_s + ask_wait_s + grace_s`` after ``started_at``, that no
+      wait moves;
+    - None while the worker may still run.
     """
 
     def __init__(
@@ -116,22 +126,45 @@ class Deadline:
         timeout_s: float,
         ask_wait_s: float,
         grace_s: float,
+        start_grace_s: float = DEFAULT_WORKER_START_GRACE_S,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         self.reporter = reporter
         self.task_id = task_id
         self.timeout_s = timeout_s
+        self.ask_wait_s = ask_wait_s
         self.grace_s = grace_s
+        self.start_grace_s = start_grace_s
         self.now = now
-        self.started = now()
-        self.hard_cap = time.monotonic() + timeout_s + ask_wait_s + grace_s
+        self.created = now()
 
-    def passed(self) -> bool:
-        if time.monotonic() >= self.hard_cap:
-            return True
+    def check(self) -> Literal["deadline", "no_start"] | None:
         now = self.now()
         clock = self.reporter.task_clock(self.task_id)
-        return now >= kill_time(clock, self.timeout_s, self.grace_s, self.started, now)
+        if clock is None or clock.started_at is None:
+            if now >= self.created + timedelta(seconds=self.start_grace_s):
+                return "no_start"
+            return None
+        hard_cap = clock.started_at + timedelta(
+            seconds=self.timeout_s + self.ask_wait_s + self.grace_s
+        )
+        if now >= hard_cap:
+            return "deadline"
+        if now >= kill_time(clock, self.timeout_s, self.grace_s, clock.started_at, now):
+            return "deadline"
+        return None
+
+
+def no_start_report(start_grace_s: float, log: str = "") -> Report:
+    """The report of a worker that did not read its brief in ``start_grace_s`` seconds."""
+    return Report(
+        status="failed",
+        error=(
+            f"the worker did not start in {round(start_grace_s)} seconds: check that the "
+            "worker image (WORKER_IMAGE) can be pulled, or set a longer WORKER_START_GRACE_S"
+        ),
+        log=log,
+    )
 
 
 class Reporter(Protocol):
