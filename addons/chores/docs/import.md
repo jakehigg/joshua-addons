@@ -152,3 +152,88 @@ missing field, a bad value, an `external_id` that is in the batch two
 times, or a reference to a row that does not exist stops the call. The
 import then writes nothing. The error gives the path of each problem, for
 example `chores[2].points: Input should be greater than 0`.
+
+## Export from the old chores app
+
+The script `scripts/export_legacy_chores.py` reads the Postgres database of
+the old chores app and writes a version 1 file. The script only reads. Each
+query is a SELECT, and the script never commits. The script
+`scripts/chores_import.py` then sends the file to `import_data`.
+
+### Procedure
+
+1. Open a port-forward to the old database, in a first terminal:
+
+   ```sh
+   kubectl -n <namespace> port-forward svc/<service> 5432:5432
+   ```
+
+2. Run the export from the repository root, in a second terminal:
+
+   ```sh
+   DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<db> \
+     uv run --with asyncpg python scripts/export_legacy_chores.py --out chores_export.json
+   ```
+
+3. Read the summary on stderr. It gives the row count of each table and
+   the stored balance of each member.
+
+4. If the export stops with exit code 2, read the integrity gate below.
+
+5. Run the import:
+
+   ```sh
+   uv run python scripts/chores_import.py chores_export.json \
+     --url https://<chores-addon>/mcp --token <ADDON_TOKEN>
+   ```
+
+6. Compare the balances that the import prints with the stored balances
+   from step 3. They must be equal.
+
+The import script sends the members and the chores in the first call.
+Then it sends the completions and the ledger rows in batches of 500
+rows. Use `--batch-size` to change the batch size. If a call fails, the
+script exits with code 1. A second run of the same file changes nothing,
+so you can run the same command again.
+
+### The integrity gate
+
+The old app keeps a stored balance for each member. The addon calculates
+the balance from the ledger. Before it writes the file, the export
+compares the stored balance with the sum of the ledger of each member.
+
+If a member fails the check, the export lists each mismatch and exits
+with code 2. It does not write the file. Correct the old data, then run
+the export again.
+
+With `--force`, the export writes the file and prints a warning. The
+import then gives each member the sum of the ledger, not the stored
+balance.
+
+A value that the import rejects also stops the export, with exit code 1.
+Examples are a slug that is not valid and a chore with 0 points.
+`--force` does not change this.
+
+### What the export maps
+
+| Old table | Section | `external_id` |
+|---|---|---|
+| `kids` | `members` | none, the `slug` is the key |
+| `chores` | `chores` | `legacy-chore-<id>` |
+| `completions` | `completions` | `legacy-completion-<id>` |
+| `transactions` | `transactions` | `legacy-tx-<id>` |
+
+The order of the kid ids gives `sort_order`. Each member is active. A
+completion refers to its chore with `external_chore_id`, and the member
+of the chore is the member of the completion. A ledger row with source
+`chore` gets `completion_external_id` when its `reference_id` is an
+exported completion.
+
+The file does not keep these old values:
+
+- The stored balance of a member. The ledger gives the balance.
+- The `updated_at` time of a chore. The import sets it to `created_at`.
+- The kid of a completion. The summary counts each completion with a kid
+  that is not the kid of its chore.
+- A `reference_id` that is not a link from a `chore` row to an exported
+  completion.
