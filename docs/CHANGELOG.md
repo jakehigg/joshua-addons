@@ -31,6 +31,21 @@ releases, with the images and the packaged chart, are at
   repository, and records the caller in the frontmatter. Each caller has its
   own token (`MCP_TOKENS`), and a caller can be read-only
   (`MCP_READONLY`). The addon mounts the joshua-ai data volume.
+- `chores`, an addon that keeps the chores and an XP ledger for the members
+  of one household. It has twelve MCP tools. `list_members`, `list_chores`,
+  `get_balance`, and `complete_chore` are for each person. `award_xp`,
+  `deduct_xp`, `add_chore`, `update_chore`, `retire_chore`, `add_member`,
+  `set_member`, and `import_data` are for a manager. The addon does not know
+  who calls, so the README shows two `joshua.yaml` entries on one upstream,
+  each with its own `allow` and `tools` filter. The web UI at `/` is a
+  manager view that needs `MANAGER_PIN`, and `/<slug>` is the kiosk screen
+  of one member. `/` and `/api` are open, as in `pantry`. `/mcp` takes the
+  bearer token. The data is in SQLite on a volume by default. Set
+  `DATABASE_URL` to use Postgres. `CHORES_TZ` sets the date of the
+  household, `COOLDOWN_SECONDS` stops a second completion that comes too
+  soon, and `XP_PER_DOLLAR` shows a balance in dollars.
+  `scripts/export_legacy_chores.py` reads the database of the old chores
+  app, and `scripts/chores_import.py` loads that file through `import_data`.
 - The chart gains `persistence.existingClaim`, to mount a claim that another
   release owns.
 - `vinyl` gains the tools that answer a question about the collection, and

@@ -70,9 +70,9 @@ order. `addons/hello/` is a worked example of every step.
    exercises yet.
 
 7. **Match the version.** One version string covers the chart, the chart
-   `appVersion`, and every addon image tag, current release `0.0.1`. Set the
+   `appVersion`, and every addon image tag, current release `0.1.3`. Set the
    default in your `docker-compose.yml` to match:
-   `${JOSHUA_ADDONS_VERSION:-0.0.1}`. `scripts/check_chart_version.py`, run
+   `${JOSHUA_ADDONS_VERSION:-0.1.3}`. `scripts/check_chart_version.py`, run
    by `make lint`, fails the build when a `docker-compose.yml` disagrees
    with `charts/joshua-addon/Chart.yaml`.
 

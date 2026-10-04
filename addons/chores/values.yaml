@@ -11,12 +11,23 @@ persistence:
   mountPath: /data
   size: 1Gi
 
-# Optional settings. The README of the addon tells what each one does.
-# Put MANAGER_PIN in a Secret (existingSecret), not here. Without it, each
-# manager route under /api gets 503.
+# The secrets. Put MANAGER_PIN, ADDON_TOKEN, and a DATABASE_URL that holds a
+# password in a Secret that you make, and give its name here. Each key of the
+# Secret becomes an environment variable. Without MANAGER_PIN, each manager
+# route under /api gets 503. Without ADDON_TOKEN, /mcp checks no token.
+# existingSecret: <secret-name>
+
+# The other settings, each with its default. The README of the addon tells
+# what each one does and what a bad value does. The chart does not set
+# JOSHUA_ADDONS_VERSION. Set it to the image tag, so that a kiosk screen
+# loads the page again after an upgrade.
 # env:
-#   JOSHUA_ADDONS_VERSION: "0.1.3"
 #   XP_PER_DOLLAR: "100"
 #   COOLDOWN_SECONDS: "60"
 #   MANAGER_LABEL: "Parent"
 #   CHORES_TZ: "UTC"
+#   CHORES_DB: "/data/chores.db"
+#   DATABASE_URL: ""
+#   CHORES_STATIC_DIR: "/app/addons/chores/static"
+#   JOSHUA_ADDONS_VERSION: "dev"
+#   LOG_LEVEL: "INFO"
