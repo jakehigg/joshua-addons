@@ -14,6 +14,7 @@ async def test_lists_every_tool(app_factory) -> None:
     assert names == {
         "record_purchase",
         "get_inventory",
+        "check_items",
         "get_item_history",
         "get_item_cost",
         "consume_items",

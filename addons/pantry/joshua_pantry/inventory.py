@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Category, ConsumptionEvent, Inventory, Item, Product, PurchaseRecord
 from .products import product_dict
-from .resolution import get_aliases_by_item
+from .resolution import get_aliases_by_item, match_kind
 
 # Bump this when the live algorithm changes so inventory rows are stamped.
 ALGO_VERSION = "v2"
@@ -200,6 +200,40 @@ async def get_all_inventory_status(
     stable = [i for i in out if i["status"] not in action_statuses]
     by_freq = sorted([i for i in out if i["status"] in action_statuses], key=_freq_key)
     return stable + by_freq
+
+
+# The order of statuses from the most likely to be on hand to the least.
+STATUS_RANK = ("in_stock", "likely_depleted", "unknown", "out_of_stock")
+
+
+async def check_items(session: AsyncSession, names: list[str]) -> list[dict]:
+    """For each name, every tracked item that matches it, and one verdict.
+
+    The statuses come from ``get_all_inventory_status``, so they agree with
+    ``get_inventory``. The verdict is the best status among the matches, in
+    ``STATUS_RANK`` order, or "no_match" when no item matches.
+    """
+    rows = await get_all_inventory_status(session)
+    out = []
+    for name in names:
+        matches = []
+        for row in rows:
+            kind = match_kind(name, row["name"], row["aliases"])
+            if kind is None:
+                continue
+            matches.append(
+                {
+                    "item": row["name"],
+                    "matched_via": kind,
+                    "status": row["status"],
+                    "last_purchased_at": row["last_purchased_at"],
+                }
+            )
+        matches.sort(key=lambda m: m["last_purchased_at"] or "", reverse=True)
+        matches.sort(key=lambda m: STATUS_RANK.index(m["status"]))
+        verdict = matches[0]["status"] if matches else "no_match"
+        out.append({"name": name, "verdict": verdict, "matches": matches})
+    return out
 
 
 async def get_purchase_analytics(session: AsyncSession) -> list[dict]:

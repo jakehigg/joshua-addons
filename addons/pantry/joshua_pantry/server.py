@@ -307,6 +307,9 @@ async def record_purchase(
 async def get_inventory(status_filter: str | None = None) -> list[dict[str, Any]]:
     """List every tracked item's inventory status.
 
+    For a question about a specific food ("do we have spinach?"), use
+    check_items instead. It finds every item for that food.
+
     Each item carries its status, category, last_purchased_at, estimated
     depletion, and avg_cycle_days. Aliases, when the item has any, show
     alternate names (e.g. receipt names) that resolve to it — check these
@@ -318,6 +321,32 @@ async def get_inventory(status_filter: str | None = None) -> list[dict[str, Any]
     """
     async with _session_factory()() as session:
         return await inv_service.get_all_inventory_status(session, status_filter)
+
+
+@mcp.tool()
+async def check_items(names: list[str]) -> dict[str, Any]:
+    """Answer "do we have X?" for one or more foods.
+
+    Use this, not get_inventory, for a question about a specific food. One
+    food often has several tracked items, for example "baby spinach" and
+    "frozen chopped spinach". This tool finds all of them, so you do not
+    read the full inventory and pick one item by its name.
+
+    For each name, matches lists every tracked item whose name or alias is
+    the name, or holds every word of the name. Each match has its status
+    and last_purchased_at. verdict is "in_stock" when one or more matches
+    are in stock. Otherwise it is the best status of the matches, in this
+    order: likely_depleted, unknown, out_of_stock. It is "no_match" when no
+    item matches. Answer from the verdict, and name the matching items when
+    they disagree.
+
+    Args:
+        names: The foods to check, for example ["spinach", "oat milk"].
+    """
+    if not names:
+        raise ToolError("names is empty; check_items needs at least one name.")
+    async with _session_factory()() as session:
+        return {"results": await inv_service.check_items(session, names)}
 
 
 @mcp.tool()

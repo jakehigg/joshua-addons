@@ -46,6 +46,29 @@ def normalize(name: str) -> str:
     return _WS_RE.sub(" ", _PUNCT_RE.sub(" ", name.lower())).strip()
 
 
+def match_kind(query: str, name: str, aliases: list[str]) -> str | None:
+    """Say how a free-text query matches one item, or return None.
+
+    Returns "name" for an exact name, "alias" for an exact alias, and
+    "words" when the name or an alias holds every word of the query. All
+    three compare normalized text. "spinach" matches "baby spinach" by
+    words, but "baby spinach" does not match "spinach".
+    """
+    query_norm = normalize(query)
+    if not query_norm:
+        return None
+    alias_norms = [normalize(a) for a in aliases]
+    if normalize(name) == query_norm:
+        return "name"
+    if query_norm in alias_norms:
+        return "alias"
+    words = set(query_norm.split())
+    for candidate in [normalize(name), *alias_norms]:
+        if words <= set(candidate.split()):
+            return "words"
+    return None
+
+
 async def resolve_item(
     session: AsyncSession,
     name: str,

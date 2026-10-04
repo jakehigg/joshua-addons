@@ -70,7 +70,6 @@ releases, with the images and the packaged chart, are at
   the target. The source name becomes an alias of the target.
 - `add_alias` now tells the agent to use `merge_items` when the alias is
   already a tracked item.
-
 - `pantry`: `record_purchase` returns `possible_matches` for each item that
   it creates. These are up to three tracked items that share a significant
   word with the new name. Filler words such as "organic" and "fresh", and
@@ -78,6 +77,13 @@ releases, with the images and the packaged chart, are at
   milk" stays a new item and does not merge into "milk". The tool text tells
   the agent to merge each duplicate with `merge_items`, or to keep the new
   item and tell the person.
+- `pantry` gains `check_items(names)`. It answers "do we have X?" For each
+  name, it lists every tracked item that matches: the same name, an alias,
+  or a name that holds every word of the query. Each match has its status
+  and its last purchase date. One verdict for each name is `in_stock` when
+  one match is in stock. Otherwise the verdict is the best status of the
+  matches, or `no_match`. The agent uses it in place of `get_inventory` for
+  a question about one food.
 
 ### Changed
 

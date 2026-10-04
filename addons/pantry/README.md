@@ -40,12 +40,17 @@ depletion estimates stay honest. For a first-time load from another system,
 use `import_data` (see "Bulk import" below) instead of replaying old
 receipts through `record_purchase`.
 
+To answer a question about one food ("do we have spinach?"), use
+`check_items`, not `get_inventory`. One food often has several tracked
+items, and `check_items` finds all of them.
+
 ## Tools
 
 | Tool | What it does |
 |---|---|
 | `record_purchase` | Record one receipt: every item bought, on one purchase date. |
 | `get_inventory` | List every tracked item's status, category, and estimated depletion. |
+| `check_items` | Answer "do we have X?": every tracked item that matches each name, its status, and one verdict per name. |
 | `get_item_history` | Purchase history and frequency for one item. |
 | `resolve_product` | The exact product an item resolves to, if the household has settled on one. |
 | `set_preferred_product` | Pin, or clear, the exact product an item resolves to. |
