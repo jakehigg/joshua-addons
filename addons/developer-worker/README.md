@@ -63,7 +63,8 @@ data, and it refuses a report with an unknown field.
 
 ## Environment
 
-The manager sets these four variables. The worker takes no other setting.
+The manager sets these four variables. The worker takes no other setting,
+except the test aid `JOSHUA_WORKER_FAKE_SESSION` below.
 
 | Variable | What it is |
 |---|---|
@@ -99,6 +100,20 @@ that CLI only when the bundled CLI is missing. Node stays in the image for
 that CLI, and because the model runs the formatter and the tests of a
 JavaScript project with Bash.
 
+## Test aid: the scripted session
+
+Not for production. When `JOSHUA_WORKER_FAKE_SESSION` is `1`, the worker
+does not start the Claude Agent SDK. It writes `hello-from-worker.txt`
+with the task id, commits it with the person's git identity from the
+brief, and returns a structured result with `blocked` empty. When the
+value is `ask`, it first calls `ask` one time with a fixed question and
+writes the reply into the file. If nobody gets the question, the result
+has the question in `blocked`, and the task ends `blocked`. All other
+steps, the clone, the push, and the report, are the same as for a real
+session. The scripted session needs no Claude token. Any other value, or
+no value, runs the real session. The manager sets this variable only when
+its own `WORKER_FAKE_SESSION` is set, on the Docker runtime.
+
 ## What is verified, and what is not
 
 A live run on Kubernetes (2026-10-04) verified the Claude forwarder with a
@@ -107,7 +122,9 @@ subscription token, and an `ask` that Joshua answered.
 These are not verified:
 
 - The arm64 image. The release workflow builds it, but no task ran on it.
-- A worker that the Docker runtime starts on a real Docker daemon.
+- A real Claude session in a worker that the Docker runtime starts. The
+  compose end-to-end job of the manager starts workers on a real Docker
+  daemon with the scripted session.
 - `network: on`. The four `DISABLE_*` names occur in the bundled CLI
   binary. With `network: off`, a call of the CLI to a host that is not
   `ANTHROPIC_BASE_URL` fails. With `network: on`, these switches are the

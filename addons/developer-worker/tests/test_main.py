@@ -515,12 +515,85 @@ async def test_a_missing_environment_exits_1(tmp_path: Path) -> None:
     assert await main.run_task({"TASK_ID": TASK_ID}, workdir=tmp_path) == 1
 
 
+def _no_sdk(**_: Any) -> Any:
+    raise AssertionError("the SDK client was built")
+
+
+async def scripted(
+    tmp_path: Path, home: Path, manager: FakeManager, mode: str
+) -> tuple[int, dict[str, Any]]:
+    code = await main.run_task(
+        {**environ(home), "JOSHUA_WORKER_FAKE_SESSION": mode},
+        workdir=tmp_path / "work",
+        manager=manager.client(),
+        client_factory=_no_sdk,
+    )
+    assert len(manager.reports) == 1
+    return code, manager.reports[0]
+
+
+async def test_the_scripted_session_commits_as_the_person_and_succeeds(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
+) -> None:
+    manager.brief = make_brief(bare_repo)
+    code, report = await scripted(tmp_path, home, manager, "1")
+    assert code == 0
+    assert report["status"] == "success"
+    assert report["pushed"] is True
+    assert report["files_changed"] == [session.FAKE_FILE]
+    assert report["open_question"] is None
+    assert manager.questions == []
+    # One commit on the branch, by the person, with the file.
+    log = run_git("log", "--format=%an <%ae>", f"main..{BRANCH}", cwd=bare_repo)
+    assert log.splitlines() == ["Alex Example <alex@example.test>"]
+    text = run_git("show", f"{BRANCH}:{session.FAKE_FILE}", cwd=bare_repo)
+    assert text == f"task {TASK_ID}\n"
+
+
+async def test_the_scripted_ask_session_writes_the_answer(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
+) -> None:
+    manager.brief = make_brief(bare_repo)
+    code, report = await scripted(tmp_path, home, manager, "ask")
+    assert code == 0
+    assert manager.questions == [session.FAKE_QUESTION]
+    assert report["status"] == "success"
+    text = run_git("show", f"{BRANCH}:{session.FAKE_FILE}", cwd=bare_repo)
+    assert text == f"task {TASK_ID}\nanswer: Use port 8080.\n"
+    assert "mcp__manager__ask" in report["log"]
+
+
+async def test_the_scripted_ask_session_with_nobody_to_ask_is_blocked(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
+) -> None:
+    manager.brief = make_brief(bare_repo)
+    manager.ask_reply = {"asked": True, "sent": False, "reason": "no_destination"}
+    code, report = await scripted(tmp_path, home, manager, "ask")
+    assert code == 0
+    assert report["status"] == "blocked"
+    assert report["open_question"] == session.FAKE_QUESTION
+    assert report["pushed"] is True
+    text = run_git("show", f"{BRANCH}:{session.FAKE_FILE}", cwd=bare_repo)
+    assert "Nobody can be reached" in text
+
+
+async def test_without_the_switch_the_sdk_session_runs(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager
+) -> None:
+    manager.brief = make_brief(bare_repo)
+    code, made = await run(tmp_path, home, manager, [result({"summary": "Done."})])
+    assert code == 0
+    assert len(made) == 1 and made[0].connected
+    assert not (tmp_path / "work" / "repo" / session.FAKE_FILE).exists()
+
+
 def test_read_env_defaults() -> None:
     env = main.read_env({"TASK_ID": "t", "MANAGER_URL": "http://manager.test", "TASK_TOKEN": "k"})
     assert env is not None
     assert env.home == Path("/work/home")
     assert env.config_dir == Path("/work/home/.claude")
     assert env.proxy_url is None
+    assert env.fake_session is None
 
 
 def test_read_claude_md_ignores_a_symlink(tmp_path: Path) -> None:

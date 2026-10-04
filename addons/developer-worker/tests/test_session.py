@@ -441,3 +441,62 @@ async def test_the_watchdog_waits_while_the_clock_is_paused(
     assert result.timed_out is False
     assert result.structured == STRUCTURED
     assert not made[0].interrupted
+
+
+# --- the scripted session (the JOSHUA_WORKER_FAKE_SESSION test aid) ---------
+
+
+def test_fake_mode_reads_only_1_and_ask() -> None:
+    assert session.fake_mode({}) is None
+    assert session.fake_mode({"JOSHUA_WORKER_FAKE_SESSION": ""}) is None
+    assert session.fake_mode({"JOSHUA_WORKER_FAKE_SESSION": "1"}) == "1"
+    assert session.fake_mode({"JOSHUA_WORKER_FAKE_SESSION": " ask "}) == "ask"
+    # Any other value runs the real session.
+    assert session.fake_mode({"JOSHUA_WORKER_FAKE_SESSION": "yes"}) is None
+
+
+async def test_by_default_run_takes_the_sdk_path(tmp_path: Path, manager: FakeManager) -> None:
+    made: list[FakeSDKClient] = []
+    options = options_for(tmp_path, manager, Clock(60))
+    got = await session.run(
+        options,
+        "go",
+        Clock(30),
+        log=session.SessionLog(None),
+        client_factory=fake_factory([result_message()], made),
+    )
+    assert len(made) == 1 and made[0].connected
+    assert got.structured == STRUCTURED
+
+
+async def test_the_fake_switch_skips_the_sdk(tmp_path: Path, manager: FakeManager) -> None:
+    def refuse(**_: Any) -> Any:
+        raise AssertionError("the SDK client was built")
+
+    repo = tmp_path / "repo"
+    git._run(["init", "--quiet", "-b", "main", str(repo)])
+    git._run(["config", "user.name", "Alex Example"], cwd=repo)
+    git._run(["config", "user.email", "alex@example.test"], cwd=repo)
+    options = options_for(repo, manager, Clock(60))
+    got = await session.run(
+        options, "go", Clock(30), log=session.SessionLog(None), client_factory=refuse, fake="1"
+    )
+    assert not got.is_error
+    assert got.structured is not None and got.structured["blocked"] is None
+    assert got.structured["files_changed"] == [session.FAKE_FILE]
+    assert (repo / session.FAKE_FILE).read_text() == "task unknown\n"
+
+
+async def test_the_scripted_ask_mode_needs_the_asker(tmp_path: Path) -> None:
+    got = await session.run_scripted("ask", tmp_path, None, session.SessionLog(None))
+    assert got.is_error
+    assert "ask tool" in (got.error or "")
+
+
+async def test_a_scripted_commit_that_fails_is_a_failed_session(tmp_path: Path) -> None:
+    # tmp_path is not a repository, so git add fails.
+    log = session.SessionLog(None)
+    got = await session.run_scripted("1", tmp_path, None, log)
+    assert got.is_error
+    assert "git add failed" in (got.error or "")
+    assert "session failed" in log.text()

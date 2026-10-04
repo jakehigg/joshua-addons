@@ -10,6 +10,10 @@ A worker container gets four variables and nothing else:
     GIT_PROXY_URL    http://task:<TASK_TOKEN>@<MANAGER_HOST>:8002
     TASK_TOKEN       the task token
 
+The one exception is a test aid: when ``WORKER_FAKE_SESSION`` is set, the
+worker also gets ``JOSHUA_WORKER_FAKE_SESSION`` with the same value, and runs
+a scripted session instead of Claude Code.
+
 It joins ``WORKER_NETWORK``, where the manager is the only other member. With
 ``network: on`` in developer.yaml it also joins ``PUBLIC_NETWORK``. The
 container has the ``worker`` memory and CPU limits, at most ``PIDS_LIMIT``
@@ -83,12 +87,15 @@ def worker_environment(settings: Settings, task: dict[str, Any]) -> dict[str, st
     """The environment of the worker for ``task`` (the full row)."""
     token = task["worker_token"]
     host = settings.manager_host
-    return {
+    env = {
         "TASK_ID": task["task_id"],
         "MANAGER_URL": f"http://{host}:{WORKER_API_PORT}",
         "GIT_PROXY_URL": f"http://task:{token}@{host}:{GIT_PROXY_PORT}",
         "TASK_TOKEN": token,
     }
+    if settings.worker_fake_session:
+        env["JOSHUA_WORKER_FAKE_SESSION"] = settings.worker_fake_session
+    return env
 
 
 class DockerRuntime:
@@ -105,6 +112,14 @@ class DockerRuntime:
     ) -> None:
         if not settings.worker_image:
             raise ValueError("WORKER_IMAGE is required for the docker runtime")
+        if settings.worker_fake_session:
+            logger.warning(
+                {
+                    "message": "WORKER_FAKE_SESSION is set: workers run a scripted session, "
+                    "not Claude Code. This is a test aid.",
+                    "mode": settings.worker_fake_session,
+                }
+            )
         self.reporter = reporter
         self.settings = settings
         self.client = client if client is not None else make_client(settings)

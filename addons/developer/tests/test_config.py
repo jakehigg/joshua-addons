@@ -281,6 +281,25 @@ def test_the_worker_start_grace_comes_from_the_environment(tmp_path: Path) -> No
             settings_from_env({**base, "WORKER_START_GRACE_S": bad})
 
 
+def test_the_fake_session_switch_comes_from_the_environment(tmp_path: Path) -> None:
+    base = {
+        "DEVELOPER_CONFIG": str(tmp_path / "x.yaml"),
+        "WORKER_RUNTIME": "docker",
+        "WORKER_IMAGE": "example/worker:1",
+    }
+    assert settings_from_env(base).worker_fake_session == ""
+    for mode in ("1", "ask"):
+        assert settings_from_env({**base, "WORKER_FAKE_SESSION": mode}).worker_fake_session == mode
+    with pytest.raises(ConfigError, match="WORKER_FAKE_SESSION must be empty, 1, or ask"):
+        settings_from_env({**base, "WORKER_FAKE_SESSION": "yes"})
+    with pytest.raises(ConfigError, match="only when WORKER_RUNTIME is docker"):
+        settings_from_env({**base, "WORKER_RUNTIME": "kubernetes", "WORKER_FAKE_SESSION": "1"})
+    with pytest.raises(ConfigError, match="only when WORKER_RUNTIME is docker"):
+        settings_from_env(
+            {"DEVELOPER_CONFIG": base["DEVELOPER_CONFIG"], "WORKER_FAKE_SESSION": "1"}
+        )
+
+
 def test_the_kubernetes_settings_come_from_the_environment(tmp_path: Path) -> None:
     base = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml")}
     defaults = settings_from_env(base)

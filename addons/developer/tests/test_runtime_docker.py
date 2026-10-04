@@ -420,6 +420,25 @@ def test_worker_environment_uses_the_manager_host(tmp_path) -> None:
     env = worker_environment(settings, TASK)
     assert env["MANAGER_URL"] == "http://mgr:8001"
     assert env["GIT_PROXY_URL"] == "http://task:tok-value@mgr:8002"
+    # No test aid reaches a worker unless WORKER_FAKE_SESSION is set.
+    assert set(env) == {"TASK_ID", "MANAGER_URL", "GIT_PROXY_URL", "TASK_TOKEN"}
+
+
+@pytest.mark.parametrize("mode", ["1", "ask"])
+def test_worker_environment_forwards_the_fake_session_switch(tmp_path, mode: str) -> None:
+    settings = make_settings(tmp_path, worker_fake_session=mode)
+    env = worker_environment(settings, TASK)
+    assert env["JOSHUA_WORKER_FAKE_SESSION"] == mode
+
+
+def test_the_runtime_warns_when_the_fake_session_switch_is_set(tmp_path, caplog) -> None:
+    settings = make_settings(
+        tmp_path, worker_runtime="docker", worker_image="example/worker:1", worker_fake_session="1"
+    )
+    with caplog.at_level(logging.WARNING):
+        DockerRuntime(Recorder(), settings, client=FakeClient())
+    text = " ".join(str(record.msg) for record in caplog.records)
+    assert "WORKER_FAKE_SESSION is set" in text
 
 
 def test_server_start_builds_the_docker_runtime(tmp_path, monkeypatch) -> None:

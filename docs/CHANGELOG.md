@@ -40,7 +40,9 @@ releases, with the images and the packaged chart, are at
   2 MiB. A worker has a read-only root file system and a process limit on
   Docker, and a disk limit (`worker.disk`) on Kubernetes. The worker gets
   the `GIT_CA_BUNDLE` of the manager for git. The compose file pins the
-  socket proxy to `tecnativa/docker-socket-proxy:0.3.0`.
+  socket proxy to `tecnativa/docker-socket-proxy:0.3.0`. A CI job runs the
+  compose file on a real Docker daemon with a scripted worker session
+  (`WORKER_FAKE_SESSION`, a test aid), and calls no Claude API.
 
   **Questions and the clock.** A worker asks with `ask`. The question
   arrives in the person's chat as an event, and Joshua answers with

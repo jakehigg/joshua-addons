@@ -133,3 +133,37 @@ jobs:
             helm template addon-ci charts/joshua-addon -f "$f" > /tmp/rendered.yaml
             kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered.yaml
           done
+
+  # Proves the Docker runtime of the developer addon on a real Docker daemon:
+  # the manager starts a worker container, the worker clones through the git
+  # tunnel, pushes, and reports. The worker runs its scripted session
+  # (WORKER_FAKE_SESSION), so the job calls no Claude API and needs no
+  # secret. It runs only when the developer addon, its worker, or the script
+  # changed.
+  developer-compose-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find the changed files
+        id: changed
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BASE" HEAD | grep -qE '^addons/developer(-worker)?/'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: astral-sh/setup-uv@v5
+        if: steps.changed.outputs.run == 'true'
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Compose end-to-end test
+        if: steps.changed.outputs.run == 'true'
+        run: addons/developer/scripts/e2e_compose.sh

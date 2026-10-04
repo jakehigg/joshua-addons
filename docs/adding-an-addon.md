@@ -33,7 +33,9 @@ order. `addons/hello/` is a worked example of every step.
      both `linux/amd64` and `linux/arm64`, on every `v*` tag.
 
    No workflow file needs an edit. `scripts/list_addons.py` finds the addon
-   from the tree at each run.
+   from the tree at each run. An addon that starts containers can also add
+   a compose end-to-end job to `ci.yml`, as `developer-compose-e2e` does
+   with `addons/developer/scripts/e2e_compose.sh`.
 
    An addon can ship a second image, such as the worker of `developer`. Put
    it in its own directory, `addons/<name>-<part>/`, with a Dockerfile, a

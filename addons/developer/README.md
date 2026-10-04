@@ -376,6 +376,27 @@ release of both images. `JOSHUA_NETWORK` names the joshua-ai network when
 its compose project is not `joshua-ai`. To mount a CA bundle for
 `GIT_CA_BUNDLE`, add a volume to the `developer` service.
 
+### Proved in CI
+
+The CI job `developer-compose-e2e` runs `scripts/e2e_compose.sh` on a real
+Docker daemon when a file under `addons/developer/` or
+`addons/developer-worker/` changes. The script builds both images, and
+starts this compose file with a throwaway `developer.yaml`, a git server
+over HTTPS with a test CA, and `WORKER_FAKE_SESSION`. It sends one
+`develop` through MCP and expects `success`: one commit by the person on
+the branch, and no worker container or volume left. Then it sends one
+`develop` in the `ask` mode with no chat, and expects `blocked` with the
+open question. The job calls no Claude API and needs no secret. You can
+run the script on any host with Docker, `uv`, `curl`, and `python3`.
+
+### Test aids
+
+Not for production. These settings replace the work of a real worker.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `WORKER_FAKE_SESSION` | empty | `1` or `ask`, with `WORKER_RUNTIME=docker` only. The Docker runtime gives the value to each worker as `JOSHUA_WORKER_FAKE_SESSION`, and the worker runs a scripted session, not Claude Code. See the worker README. The manager logs a warning at start when it is set. |
+
 ## Run it on Kubernetes
 
 ```
@@ -523,8 +544,9 @@ A live run on Kubernetes (2026-10-04) verified these:
 
 These are not verified:
 
-- **The Docker runtime against a real Docker daemon.** The tests use a fake
-  Docker client.
+- **A real Claude session in a worker that the Docker runtime starts.** The
+  unit tests use a fake Docker client. The compose end-to-end job uses a
+  real Docker daemon and a scripted session.
 - **The arm64 worker image.** The release workflow builds it, but no task
   ran on it.
 - **`network: on`.** The worker sets `DISABLE_TELEMETRY`,

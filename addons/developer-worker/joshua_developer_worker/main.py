@@ -55,6 +55,8 @@ class WorkerEnv:
     proxy_url: str | None
     home: Path
     config_dir: Path
+    # A test aid: "1" or "ask" runs the scripted session, not Claude Code.
+    fake_session: str | None = None
 
 
 def read_env(environ: Mapping[str, str]) -> WorkerEnv | None:
@@ -72,6 +74,7 @@ def read_env(environ: Mapping[str, str]) -> WorkerEnv | None:
         proxy_url=environ.get("GIT_PROXY_URL") or None,
         home=home,
         config_dir=Path(environ.get("CLAUDE_CONFIG_DIR") or home / ".claude"),
+        fake_session=session.fake_mode(environ),
     )
 
 
@@ -307,7 +310,7 @@ async def _work(
         env=session.cli_env(env.manager_url, env.token, env.home, env.config_dir),
         stderr=lambda line: log_.add(f"cli: {line}"),
     )
-    kwargs: dict[str, Any] = {"log": log_}
+    kwargs: dict[str, Any] = {"log": log_, "asker": asker, "fake": env.fake_session}
     if client_factory is not None:
         kwargs["client_factory"] = client_factory
     with step("session", task_id):

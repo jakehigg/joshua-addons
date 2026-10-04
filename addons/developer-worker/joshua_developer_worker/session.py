@@ -7,6 +7,14 @@ holds WebSearch or WebFetch; ``check_options`` refuses options that do.
 
 The session runs on a ``Clock``. A watchdog interrupts the session when the
 clock has no time left. The clock pauses while ``ask`` waits for an answer.
+
+A test aid, not for production: ``JOSHUA_WORKER_FAKE_SESSION=1`` makes
+``run`` skip the SDK and run a scripted session. The scripted session writes
+``hello-from-worker.txt`` with the task id, commits it as the person, and
+returns a structured result. With ``JOSHUA_WORKER_FAKE_SESSION=ask`` it first
+calls ``ask`` once with ``FAKE_QUESTION`` and writes the reply into the file.
+It needs no Claude token. A compose end-to-end test uses it to prove the
+Docker runtime without a call to Claude.
 """
 
 from __future__ import annotations
@@ -15,7 +23,7 @@ import asyncio
 import contextlib
 import json
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -33,6 +41,7 @@ from claude_agent_sdk import (
     tool,
 )
 
+from joshua_developer_worker import git
 from joshua_developer_worker.clock import Clock
 from joshua_developer_worker.git import scrub
 from joshua_developer_worker.log import get_logger
@@ -76,6 +85,12 @@ MAX_TOOL_INPUT = 200
 MAX_LOG_LINE = 1000
 STOP_TIMEOUT_S = 15.0
 MAX_BUFFER_SIZE = 32 * 1024 * 1024
+
+# The scripted session, a test aid. See the module docstring.
+FAKE_SESSION_ENV = "JOSHUA_WORKER_FAKE_SESSION"
+FAKE_SESSION_MODES = ("1", "ask")
+FAKE_FILE = "hello-from-worker.txt"
+FAKE_QUESTION = "Which greeting goes in hello-from-worker.txt?"
 
 # Switches that turn off what the Claude CLI sends to other hosts than
 # ANTHROPIC_BASE_URL. With `network: off`, such a call fails anyway.
@@ -388,6 +403,56 @@ async def _watchdog(work: Awaitable[None], clock: Clock, watch_s: float) -> None
                 await task
 
 
+def fake_mode(environ: Mapping[str, str]) -> str | None:
+    """The scripted session mode in ``environ``: ``1``, ``ask``, or None for a real session."""
+    value = (environ.get(FAKE_SESSION_ENV) or "").strip()
+    if value and value not in FAKE_SESSION_MODES:
+        logger.warning({"message": f"{FAKE_SESSION_ENV} is not 1 or ask; a real session runs"})
+        return None
+    return value or None
+
+
+async def run_scripted(mode: str, cwd: Path, asker: Asker | None, log: SessionLog) -> SessionResult:
+    """The scripted session of the test aid. It never calls Claude.
+
+    It writes ``FAKE_FILE`` and commits it with the identity in git's global
+    config, which the worker set from the brief. The commit is the
+    session's own, as a model's commit is, so the worker still makes none.
+    """
+    task_id = asker.client.task_id if asker is not None else "unknown"
+    logger.warning({"message": "scripted session: a test aid, not Claude", "task_id": task_id})
+    lines = [f"task {task_id}"]
+    blocked: str | None = None
+    if mode == "ask":
+        if asker is None:
+            return SessionResult(is_error=True, error="the scripted ask session needs the ask tool")
+        reply = await asker({"question": FAKE_QUESTION})
+        log.add(f"tool {ASK_TOOL} {json.dumps({'question': FAKE_QUESTION})}")
+        lines.append(f"answer: {reply['content'][0]['text']}")
+        blocked = asker.open_question
+    (cwd / FAKE_FILE).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    log.add(f"tool Write {json.dumps({'file_path': FAKE_FILE})}")
+    try:
+        git._run(["add", FAKE_FILE], cwd=cwd)
+        git._run(["commit", "--quiet", "-m", f"test: add {FAKE_FILE}"], cwd=cwd)
+    except git.GitError as exc:
+        log.add(f"session failed: {exc}")
+        await log.flush()
+        return SessionResult(is_error=True, error=str(exc)[:500])
+    summary = f"Scripted session: wrote {FAKE_FILE} for task {task_id}."
+    log.add("result success turns=1")
+    await log.flush()
+    return SessionResult(
+        text=summary,
+        structured={
+            "summary": summary,
+            "files_changed": [FAKE_FILE],
+            "tests_run": "none: scripted session",
+            "blocked": blocked,
+        },
+    )
+
+
 async def run(
     options: ClaudeAgentOptions,
     prompt: str,
@@ -397,9 +462,17 @@ async def run(
     client_factory: Callable[..., Any] = ClaudeSDKClient,
     flush_s: float = LOG_FLUSH_S,
     watch_s: float = WATCH_S,
+    asker: Asker | None = None,
+    fake: str | None = None,
 ) -> SessionResult:
-    """Run one session until it ends or ``clock`` has no time left."""
+    """Run one session until it ends or ``clock`` has no time left.
+
+    ``fake`` (``1`` or ``ask``) runs ``run_scripted`` instead of the SDK. It
+    is a test aid. When it is None, the SDK session runs.
+    """
     check_options(options)
+    if fake:
+        return await run_scripted(fake, Path(str(options.cwd)), asker, log)
     result = SessionResult()
     client = client_factory(options=options)
     flusher = asyncio.create_task(_flush_every(log, flush_s))

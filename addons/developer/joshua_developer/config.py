@@ -33,6 +33,8 @@ DEFAULT_WORKER_START_GRACE_S = 600
 DEFAULT_MANAGER_HOST = "developer"
 DEFAULT_WORKER_NETWORK = "developer_workers"
 DEFAULT_PUBLIC_NETWORK = "bridge"
+# The values of WORKER_FAKE_SESSION, a test aid of the Docker runtime.
+FAKE_SESSION_MODES = ("1", "ask")
 # The worker API (brief, report, ask, the Claude forwarder) and the git host tunnel.
 WORKER_API_PORT = 8001
 GIT_PROXY_PORT = 8002
@@ -310,6 +312,9 @@ class Settings:
     worker_image_pull_secret: str = ""
     # The longest time a started worker takes to call GET /worker/brief.
     worker_start_grace_s: int = DEFAULT_WORKER_START_GRACE_S
+    # A test aid, not for production: the Docker runtime gives this value to
+    # each worker as JOSHUA_WORKER_FAKE_SESSION. Empty means a real session.
+    worker_fake_session: str = ""
 
     @property
     def open(self) -> bool:
@@ -404,6 +409,12 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError("WORKER_START_GRACE_S must be a positive whole number of seconds")
         start_grace = int(raw_grace)
 
+    fake_session = env.get("WORKER_FAKE_SESSION", "").strip()
+    if fake_session and fake_session not in FAKE_SESSION_MODES:
+        raise ConfigError("WORKER_FAKE_SESSION must be empty, 1, or ask")
+    if fake_session and runtime != "docker":
+        raise ConfigError("WORKER_FAKE_SESSION works only when WORKER_RUNTIME is docker")
+
     return Settings(
         config=config,
         data_dir=Path(env.get("DEVELOPER_DATA_DIR", "").strip() or DEFAULT_DATA_DIR),
@@ -421,4 +432,5 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         pod_namespace=env.get("POD_NAMESPACE", "").strip(),
         worker_image_pull_secret=env.get("WORKER_IMAGE_PULL_SECRET", "").strip(),
         worker_start_grace_s=start_grace,
+        worker_fake_session=fake_session,
     )
