@@ -72,6 +72,16 @@ releases, with the images and the packaged chart, are at
   the house owns the same album in another pressing, and it fills at the next
   sync.
 
+### Fixed
+
+- `pantry`: a purchase on the same day as a consumption is in stock. A
+  receipt with a bare date records the purchase at 00:00 UTC, and
+  `consume_items` records the current time. The status now compares the
+  dates for such a purchase, so a purchase on the date of the consumption,
+  or later, wins. A consumption on a later date still makes the item out of
+  stock. `get_item_history` also reads the latest consumption, so its status
+  agrees with `get_inventory` and the web page.
+
 ## 0.1.3 - 2026-09-11
 
 ### Added

@@ -9,7 +9,7 @@ scans, and manual entries, and ``recalculate_inventory`` derives status from
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from statistics import mean, median
 
 from sqlalchemy import func, select
@@ -58,11 +58,27 @@ def _compute_cycle(
     return avg, depletion
 
 
+def consumed_after_purchase(consumed_at: datetime, purchased_at: datetime | None) -> bool:
+    """Return True when a consumption empties the stock of the last purchase.
+
+    A purchase recorded from a bare receipt date is stored at 00:00 UTC, but
+    the real time of the purchase is not known. For such a purchase, compare
+    the UTC dates: a purchase on the same date as the consumption, or later,
+    wins. For a purchase with a real time, compare the two times.
+    """
+    if purchased_at is None:
+        return True
+    purchased_utc = purchased_at.astimezone(UTC)
+    if purchased_utc.time() == time(0):
+        return consumed_at.astimezone(UTC).date() > purchased_utc.date()
+    return consumed_at > purchased_at
+
+
 def get_item_status(inv: Inventory | None, last_consumed_at: datetime | None = None) -> str:
     now = datetime.now(UTC)
     last_purchase = inv.last_purchased_at if inv else None
 
-    if last_consumed_at and (last_purchase is None or last_consumed_at > last_purchase):
+    if last_consumed_at and consumed_after_purchase(last_consumed_at, last_purchase):
         return "out_of_stock"
 
     if last_purchase is None:
@@ -92,15 +108,12 @@ async def recalculate_inventory(session: AsyncSession, item_id: int) -> None:
     # If manually consumed after last purchase, pull depletion forward.
     result = await session.execute(
         select(ConsumptionEvent)
-        .where(
-            ConsumptionEvent.item_id == item_id,
-            ConsumptionEvent.occurred_at > last_purchased_at,
-        )
+        .where(ConsumptionEvent.item_id == item_id)
         .order_by(ConsumptionEvent.occurred_at.desc())
         .limit(1)
     )
     consumed = result.scalar_one_or_none()
-    if consumed:
+    if consumed and consumed_after_purchase(consumed.occurred_at, last_purchased_at):
         estimated_depletion = consumed.occurred_at
 
     result = await session.execute(select(Inventory).where(Inventory.item_id == item_id))

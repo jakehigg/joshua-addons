@@ -315,6 +315,11 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
 
         inv_result = await session.execute(select(Inventory).where(Inventory.item_id == match.id))
         inv = inv_result.scalar_one_or_none()
+        last_consumed_at = await session.scalar(
+            select(func.max(ConsumptionEvent.occurred_at)).where(
+                ConsumptionEvent.item_id == match.id
+            )
+        )
 
         preferred_product = (
             await session.get(Product, match.preferred_product_id)
@@ -343,7 +348,7 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
             "matched_via": matched_via,
             "preferred_store": match.preferred_store,
             "preferred_product": product_dict(preferred_product),
-            "status": inv_service.get_item_status(inv),
+            "status": inv_service.get_item_status(inv, last_consumed_at),
             "avg_cycle_days": inv.avg_cycle_days if inv else None,
             "last_purchased_at": (
                 inv.last_purchased_at.isoformat() if inv and inv.last_purchased_at else None
