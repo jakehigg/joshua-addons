@@ -83,7 +83,7 @@ async def test_import_keeps_the_dates_and_timestamps(session) -> None:
 
     spent = await session.scalar(select(Transaction).where(Transaction.import_id == "tx-3"))
     assert spent.created_at == datetime(2026, 2, 3, 17, 0, tzinfo=UTC)
-    assert spent.actor == "mcp"
+    assert spent.actor == "import"
     rows = await service.ledger(session, spent.member_id)
     assert [row.import_id for row in rows] == ["tx-3", "tx-2", "tx-1"]
 

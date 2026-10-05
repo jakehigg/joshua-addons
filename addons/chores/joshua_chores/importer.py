@@ -38,7 +38,7 @@ from .service import SLUG_PATTERN, InvalidArgument, balance
 FORMAT_VERSION = 1
 
 # The value of ``transactions.actor`` on each imported ledger row.
-IMPORT_ACTOR = "mcp"
+IMPORT_ACTOR = "import"
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Slug = Annotated[str, StringConstraints(pattern=f"^{SLUG_PATTERN.pattern}$")]
