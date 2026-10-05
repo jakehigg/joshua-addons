@@ -99,9 +99,6 @@ class Chore(Base):
     last_completed_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=_now)
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
-    # The ``external_id`` of the row in an import file. NULL for a
-    # row that the addon wrote itself.
-    import_id: Mapped[str | None] = mapped_column(Text, default=None, unique=True)
 
     member: Mapped[Member] = relationship(back_populates="chores")
     # The database deletes the completions of a deleted chore (ON DELETE
@@ -122,9 +119,6 @@ class Completion(Base):
     completed_at: Mapped[datetime] = mapped_column(default=_now)
     points_awarded: Mapped[int]
     note: Mapped[str | None] = mapped_column(Text, default=None)
-    # The ``external_id`` of the row in an import file. NULL for a
-    # row that the addon wrote itself.
-    import_id: Mapped[str | None] = mapped_column(Text, default=None, unique=True)
 
     chore: Mapped[Chore] = relationship(back_populates="completions")
 
@@ -148,6 +142,3 @@ class Transaction(Base):
     # The caller that wrote the row, when the caller gives one.
     actor: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(default=_now)
-    # The ``external_id`` of the row in an import file. NULL for a
-    # row that the addon wrote itself.
-    import_id: Mapped[str | None] = mapped_column(Text, default=None, unique=True)

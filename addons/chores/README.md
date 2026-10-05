@@ -173,22 +173,6 @@ out, as you back up any other single-file database. Set `DATABASE_URL` to a
 Postgres database to use no volume. The addon then keeps no data of its own,
 and the backup of that database is your job, not the job of this addon.
 
-## Import
-
-The `import` command loads members, chores, completions, and ledger rows
-from an export, with their original timestamps. It is an operator action:
-run it inside the container. It is not an MCP tool. The import is one
-transaction, and a second import of the same data changes nothing.
-
-```sh
-docker compose -f addons/chores/docker-compose.yml exec -T chores python -m joshua_chores import - < chores_export.json
-kubectl -n <ns> exec -i deploy/<release> -- python -m joshua_chores import - < chores_export.json
-```
-
-`scripts/export_legacy_chores.py` reads the database of the old chores app
-and writes the file. [`docs/import.md`](docs/import.md) gives the format,
-the exit codes, and the procedure.
-
 ## Add it to joshua.yaml
 
 Use two entries on the same upstream. This is the view pattern in

@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-import sys
+import uvicorn
 
-from joshua_chores.cli import main
+from joshua_chores.log import configure_from_env
+from joshua_chores.server import build_app
+
+
+def main() -> None:
+    configure_from_env("joshua-chores")
+    uvicorn.run(build_app(), host="0.0.0.0", port=8000, log_config=None)
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

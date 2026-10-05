@@ -44,10 +44,6 @@ releases, with the images and the packaged chart, are at
   `DATABASE_URL` to use Postgres. `CHORES_TZ` sets the date of the
   household, `COOLDOWN_SECONDS` stops a second completion that comes too
   soon, and `XP_PER_DOLLAR` shows a balance in dollars.
-  `scripts/export_legacy_chores.py` reads the database of the old chores
-  app and writes an import file. `python -m joshua_chores import` loads
-  that file. It is a command that an operator runs inside the container,
-  not an MCP tool.
 - The chart gains `persistence.existingClaim`, to mount a claim that another
   release owns.
 - `vinyl` gains the tools that answer a question about the collection, and
