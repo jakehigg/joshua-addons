@@ -34,12 +34,15 @@ Each addon has a `README.md` that says what it does and which settings it takes.
   and for Kubernetes.
 - [docs/adding-an-addon.md](docs/adding-an-addon.md): the contract for a new
   addon.
+- [docs/releasing.md](docs/releasing.md): how to change the version and cut a
+  release.
 
 ## Versions
 
 One version covers the whole repository. The chart version, the chart
 `appVersion`, and every release image tag are the same string, and one tag releases all
-of them.
+of them. [docs/releasing.md](docs/releasing.md) lists the files that a
+version change touches, and the release steps.
 
 Each push to a branch also publishes the image of every addon, amd64 only,
 tagged with the commit SHA and with `branch-<name>`. Use one to test a branch

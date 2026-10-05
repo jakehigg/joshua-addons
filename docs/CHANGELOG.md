@@ -8,6 +8,83 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- The chart sets `strategy: Recreate` for a Deployment that mounts the claim
+  the chart makes. That claim is ReadWriteOnce, and a rolling update waited
+  forever on a Multi-Attach error. The chart also takes
+  `deploymentAnnotations` and `podAnnotations`, and adds a `checksum/config`
+  annotation when `configFile` is on, so a changed config file restarts the
+  pod.
+- `developer`, an addon that gives a coding task to a worker.
+  `addons/developer/README.md` has the full detail and the install steps.
+
+  **What it does.** Joshua calls `develop` or `rework` with a repository and
+  a brief. The manager, image `joshua-addons-developer`, starts one worker
+  for each task, image `joshua-addons-developer-worker`: a container through
+  a Docker socket proxy on compose, or a Job on Kubernetes. The worker
+  clones the repository, runs one Claude Code session, pushes one branch,
+  and reports. The manager scans the diff of the worker's commits for
+  credentials, and then opens the pull request on GitHub or GitLab. A plain
+  git host ends at the branch. On a GitHub diff of more than 300 files, the
+  scan is `partial`.
+
+  **Security.** The worker holds no Joshua secret and no Claude token. The
+  Claude forwarder on the manager sends on only the API paths that the
+  Claude CLI uses. With `network: off`, the default, a worker connects to
+  the manager only, so it cannot install dependencies. With `network: on`
+  on compose, a worker joins the default bridge, so it can also reach the
+  host LAN and the ports that the host publishes. A scan hit fails the task,
+  and deletes the branch only when the task made it. A task never works on
+  its base branch, `main`, or `master`. The branch and the pull request come
+  from the manager's data, never from the worker's report. The worker's text
+  in a chat event is in a fenced block. The worker API refuses a body over
+  2 MiB. A worker has a read-only root file system and a process limit on
+  Docker, and a disk limit (`worker.disk`) on Kubernetes. The worker gets
+  the `GIT_CA_BUNDLE` of the manager for git. The compose file pins the
+  socket proxy to `tecnativa/docker-socket-proxy:0.3.0`. A CI job runs the
+  compose file on a real Docker daemon with a scripted worker session
+  (`WORKER_FAKE_SESSION`, a test aid), and calls no Claude API.
+
+  **Questions and the clock.** A worker asks with `ask`. The question
+  arrives in the person's chat as an event, and Joshua answers with
+  `answer`. A worker can ask more than one question. A task is `dispatched`
+  until its worker reads its brief, and its clock starts then, so an image
+  pull is not on it. A worker that does not read its brief in
+  `WORKER_START_GRACE_S` seconds (600 by default) fails its task. The clock
+  pauses while a question waits, for up to `ask_wait_s` seconds in total
+  for the task (2 hours by default, and a persona can set its own). An
+  `answer` that comes after the worker stopped waiting gets `not_waiting`.
+  A task ends `blocked` only when the model sets `blocked`, or when the
+  clock runs out while a question is open. An `answer` to a task that
+  stopped `blocked` or `timed_out` after a push starts a new worker on the
+  same branch. On Docker and on Kubernetes, the hard cap on a worker is
+  `timeout_s + ask_wait_s + 120` seconds after it reads its brief.
+
+  **Capacity.** Each `dispatched` or `running` task holds a `max_workers`
+  slot, a waiting one too. A `develop` and a `rework` on the same branch
+  never run together.
+
+  **Logs.** The access line of a `GET /healthz` shows at `DEBUG` only. A log
+  record above `DEBUG` names a chat destination by a hash prefix
+  (`destination_ref`), never by its text.
+
+  **To run it.** Mint `JOSHUA_TOKEN_DEVELOPER`, and give it to the manager
+  and to channels. On compose, add it to the `x-fleet-tokens` block of the
+  joshua-ai compose file. Add `developer` to
+  `channels.webhooks.allowed_callers`, and add the `developer` entry, with
+  one `identities` entry for each person, to `joshua.yaml`. On Kubernetes,
+  restart the manager pod after a change to its Secret, or run a Reloader
+  with the chart value `deploymentAnnotations`.
+
+  **Not verified yet.** The Docker runtime against a real Docker daemon, the
+  arm64 worker image, and `network: on`.
+- The chart gains `extraEnv` (raw `env` entries, such as a `fieldRef`),
+  `serviceAccount`, `rbac` (a ServiceAccount, a Role, and a RoleBinding in
+  the release namespace), and `networkPolicy` (egress limits for worker pods
+  and ingress limits for the addon). All are off by default. A worker pod
+  can use DNS only on the cluster resolver (`networkPolicy.dns`). With
+  `workersInternetEgress`, it cannot connect to link-local (cloud metadata)
+  or carrier-grade NAT addresses.
+
 - A push to any branch, `main` included, builds the image of every addon for
   amd64 and publishes it tagged with the commit SHA and `branch-<name>`, so
   `branch-main` always names the newest commit on `main`. To test a branch
@@ -87,6 +164,14 @@ releases, with the images and the packaged chart, are at
 
 ### Changed
 
+- `scripts/check_test_policy.py` and the CI test job change a dash in an
+  addon directory name to an underscore in the package name, so an addon
+  such as `developer-worker` gets its test policy and its coverage.
+  `scripts/check_chart_version.py` also checks that a pinned `WORKER_IMAGE`
+  tag in an addon's `values.yaml` or `docker-compose.yml`, or in a chart
+  `ci` values file, is the chart version, and that each `.env.example`
+  names the chart version. `docs/releasing.md` lists every file that a
+  version change touches, and the release steps.
 - The `vinyl` database gains `master_id`, `sort_artist` and `traits` on the
   albums table, and an `overrides` table. A database from an earlier version
   gains the columns when it is opened. `master_id` is what lets the addon say

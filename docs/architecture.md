@@ -33,6 +33,23 @@ name of the addon, so two addons in one namespace never collide. The gateway
 reaches an addon at the cluster Service DNS name, such as
 `http://hello.joshua.svc.cluster.local:8000/mcp`.
 
+## An addon that runs a model
+
+The `developer` addon is the only addon with two images, and the only addon
+that starts a second container. The manager, `addons/developer/`, is the MCP
+server that the gateway calls. For each task, it starts one worker, from
+`addons/developer-worker/`. The worker runs a model with Bash over code from
+a git host.
+
+The addon treats the worker as hostile. The worker holds no Joshua secret:
+no Claude token, no fleet token, and no memory access. By default, it can
+connect to the manager and to no other address, except the cluster DNS
+resolver on Kubernetes. The manager forwards its
+Claude requests and its git traffic, and scans each diff before it opens a
+pull request. `addons/developer/README.md` has the full security model.
+
+Every other addon stays one container.
+
 ## One version for the chart and every image
 
 The chart version, the chart `appVersion`, and every addon image tag in this

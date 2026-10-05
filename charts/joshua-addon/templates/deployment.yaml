@@ -7,9 +7,23 @@ metadata:
   name: {{ include "joshua-addon.fullname" . }}
   labels:
     {{- include "joshua-addon.labels" . | nindent 4 }}
+  {{- with .Values.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   revisionHistoryLimit: 5
+  {{- /* A claim the chart makes is ReadWriteOnce, so the new pod cannot mount it
+       while the old pod runs: a rolling update waits forever on a Multi-Attach
+       error. Recreate stops the old pod first. An existing claim may be
+       ReadWriteMany, so it keeps the Kubernetes default unless `strategy` says. */}}
+  {{- $auto := and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+  {{- $strategy := .Values.strategy | default (ternary "Recreate" "" $auto) }}
+  {{- if $strategy }}
+  strategy:
+    type: {{ $strategy }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "joshua-addon.selectorLabels" . | nindent 6 }}
@@ -17,7 +31,20 @@ spec:
     metadata:
       labels:
         {{- include "joshua-addon.labels" . | nindent 8 }}
+      {{- if or .Values.podAnnotations .Values.configFile.enabled }}
+      annotations:
+        {{- if .Values.configFile.enabled }}
+        # A changed config file changes this hash, so the pod restarts and reads it.
+        checksum/config: {{ .Values.configFile.content | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
     spec:
+      {{- with include "joshua-addon.serviceAccountName" . }}
+      serviceAccountName: {{ . }}
+      {{- end }}
       {{- with .Values.podSecurityContext }}
       # fsGroup makes a mounted volume group-writable for the app user. A
       # PersistentVolumeClaim mounts root-owned without it, and every addon
@@ -33,11 +60,14 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.port }}
-          {{- if or .Values.env .Values.existingSecret .Values.envFrom }}
+          {{- if or .Values.env .Values.extraEnv .Values.existingSecret .Values.envFrom }}
           env:
             {{- range $name, $value := .Values.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
           {{- if or .Values.envFrom .Values.existingSecret }}
