@@ -64,6 +64,27 @@ releases, with the images and the packaged chart, are at
   shelf is right with no sync.
 - A record added, removed, lent or corrected is on the browse page at once.
 
+- `pantry` gains `merge_items(source, target)`. It combines two tracked
+  items that are the same food, for example a duplicate from a receipt. The
+  purchases, consumption events, products, and aliases of the source move to
+  the target. The source name becomes an alias of the target.
+- `add_alias` now tells the agent to use `merge_items` when the alias is
+  already a tracked item.
+- `pantry`: `record_purchase` returns `possible_matches` for each item that
+  it creates. These are up to three tracked items that share a significant
+  word with the new name. Filler words such as "organic" and "fresh", and
+  sizes, do not count. The automatic match does not change, so "almond
+  milk" stays a new item and does not merge into "milk". The tool text tells
+  the agent to merge each duplicate with `merge_items`, or to keep the new
+  item and tell the person.
+- `pantry` gains `check_items(names)`. It answers "do we have X?" For each
+  name, it lists every tracked item that matches: the same name, an alias,
+  or a name that holds every word of the query. Each match has its status
+  and its last purchase date. One verdict for each name is `in_stock` when
+  one match is in stock. Otherwise the verdict is the best status of the
+  matches, or `no_match`. The agent uses it in place of `get_inventory` for
+  a question about one food.
+
 ### Changed
 
 - The `vinyl` database gains `master_id`, `sort_artist` and `traits` on the
@@ -71,6 +92,23 @@ releases, with the images and the packaged chart, are at
   gains the columns when it is opened. `master_id` is what lets the addon say
   the house owns the same album in another pressing, and it fills at the next
   sync.
+
+### Fixed
+
+- `pantry`: a purchase on the same day as a consumption is in stock. A
+  receipt with a bare date records the purchase at 00:00 UTC, and
+  `consume_items` records the current time. The status now compares the
+  dates for such a purchase, so a purchase on the date of the consumption,
+  or later, wins. A consumption on a later date still makes the item out of
+  stock. `get_item_history` also reads the latest consumption, so its status
+  agrees with `get_inventory` and the web page.
+- `pantry`: a merge keeps the data of two purchases on the same date. The
+  purchase of the target takes each blank field (cost, store, SKU, UPC,
+  quantity) from the purchase of the source. When the two purchases hold
+  different values for one field, the target keeps its value. `merge_items`
+  reports the other value in `purchase_conflicts`.
+- `pantry`: a merge moves the products of the source to the target. Before,
+  the merge deleted them. These two fixes apply to the web page too.
 
 ## 0.1.3 - 2026-09-11
 

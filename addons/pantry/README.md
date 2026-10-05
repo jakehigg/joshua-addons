@@ -13,13 +13,36 @@ Recording the same item again on the same date merges into the one purchase
 record for that day, and a later call can still fill in a SKU or UPC the
 first call left out.
 
+The automatic match is careful on purpose: "almond milk" never matches
+"milk". So a new receipt wording can create a duplicate of a tracked item.
+
+For each new item, `record_purchase` returns up to three `possible_matches`.
+These are tracked items that share a significant word with the new name.
+Words such as "organic", "fresh", and "large", and sizes such as "16oz", do
+not count. After each receipt, the agent does these steps:
+
+1. Read `possible_matches` in the result.
+2. If a new item is the same food as a possible match, call
+   `merge_items(source=<new item>, target=<tracked item>)`. The purchase
+   moves, and the receipt name becomes an alias of the tracked item.
+3. If a new item is a different food, keep it. Tell the person that it is
+   new, and name the possible match.
+4. If the agent is not sure, ask the person.
+
+`add_alias` refuses a name that is already an item. Use it only for a
+wording that is not an item yet.
+
 Everything else reads that state back (`get_inventory`, `get_item_history`,
 `get_price_stats`, `resolve_product`) or makes a small manual correction to
-it (`add_alias`, `set_preferred_product`, `delete_purchase`). Use
+it (`add_alias`, `merge_items`, `set_preferred_product`, `delete_purchase`). Use
 `consume_items` when something runs out between shopping trips, so
 depletion estimates stay honest. For a first-time load from another system,
 use `import_data` (see "Bulk import" below) instead of replaying old
 receipts through `record_purchase`.
+
+To answer a question about one food ("do we have spinach?"), use
+`check_items`, not `get_inventory`. One food often has several tracked
+items, and `check_items` finds all of them.
 
 ## Tools
 
@@ -27,6 +50,7 @@ receipts through `record_purchase`.
 |---|---|
 | `record_purchase` | Record one receipt: every item bought, on one purchase date. |
 | `get_inventory` | List every tracked item's status, category, and estimated depletion. |
+| `check_items` | Answer "do we have X?": every tracked item that matches each name, its status, and one verdict per name. |
 | `get_item_history` | Purchase history and frequency for one item. |
 | `resolve_product` | The exact product an item resolves to, if the household has settled on one. |
 | `set_preferred_product` | Pin, or clear, the exact product an item resolves to. |
@@ -39,6 +63,7 @@ receipts through `record_purchase`.
 | `delete_purchase` | Delete a single purchase record without removing the item. |
 | `delete_item` | Permanently delete a tracked item and all its history. Needs `confirm=true`. |
 | `add_alias` | Teach the pantry that one name refers to an existing item. |
+| `merge_items` | Combine two tracked items that are the same food. The source becomes an alias of the target. |
 | `list_aliases` | List alternate names on file for one item, or for every item. |
 | `import_data` | Load pantry history in bulk: items, purchases, and consumption events. |
 

@@ -9,7 +9,7 @@ scans, and manual entries, and ``recalculate_inventory`` derives status from
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from statistics import mean, median
 
 from sqlalchemy import func, select
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Category, ConsumptionEvent, Inventory, Item, Product, PurchaseRecord
 from .products import product_dict
-from .resolution import get_aliases_by_item
+from .resolution import get_aliases_by_item, match_kind
 
 # Bump this when the live algorithm changes so inventory rows are stamped.
 ALGO_VERSION = "v2"
@@ -58,11 +58,27 @@ def _compute_cycle(
     return avg, depletion
 
 
+def consumed_after_purchase(consumed_at: datetime, purchased_at: datetime | None) -> bool:
+    """Return True when a consumption empties the stock of the last purchase.
+
+    A purchase recorded from a bare receipt date is stored at 00:00 UTC, but
+    the real time of the purchase is not known. For such a purchase, compare
+    the UTC dates: a purchase on the same date as the consumption, or later,
+    wins. For a purchase with a real time, compare the two times.
+    """
+    if purchased_at is None:
+        return True
+    purchased_utc = purchased_at.astimezone(UTC)
+    if purchased_utc.time() == time(0):
+        return consumed_at.astimezone(UTC).date() > purchased_utc.date()
+    return consumed_at > purchased_at
+
+
 def get_item_status(inv: Inventory | None, last_consumed_at: datetime | None = None) -> str:
     now = datetime.now(UTC)
     last_purchase = inv.last_purchased_at if inv else None
 
-    if last_consumed_at and (last_purchase is None or last_consumed_at > last_purchase):
+    if last_consumed_at and consumed_after_purchase(last_consumed_at, last_purchase):
         return "out_of_stock"
 
     if last_purchase is None:
@@ -92,15 +108,12 @@ async def recalculate_inventory(session: AsyncSession, item_id: int) -> None:
     # If manually consumed after last purchase, pull depletion forward.
     result = await session.execute(
         select(ConsumptionEvent)
-        .where(
-            ConsumptionEvent.item_id == item_id,
-            ConsumptionEvent.occurred_at > last_purchased_at,
-        )
+        .where(ConsumptionEvent.item_id == item_id)
         .order_by(ConsumptionEvent.occurred_at.desc())
         .limit(1)
     )
     consumed = result.scalar_one_or_none()
-    if consumed:
+    if consumed and consumed_after_purchase(consumed.occurred_at, last_purchased_at):
         estimated_depletion = consumed.occurred_at
 
     result = await session.execute(select(Inventory).where(Inventory.item_id == item_id))
@@ -187,6 +200,40 @@ async def get_all_inventory_status(
     stable = [i for i in out if i["status"] not in action_statuses]
     by_freq = sorted([i for i in out if i["status"] in action_statuses], key=_freq_key)
     return stable + by_freq
+
+
+# The order of statuses from the most likely to be on hand to the least.
+STATUS_RANK = ("in_stock", "likely_depleted", "unknown", "out_of_stock")
+
+
+async def check_items(session: AsyncSession, names: list[str]) -> list[dict]:
+    """For each name, every tracked item that matches it, and one verdict.
+
+    The statuses come from ``get_all_inventory_status``, so they agree with
+    ``get_inventory``. The verdict is the best status among the matches, in
+    ``STATUS_RANK`` order, or "no_match" when no item matches.
+    """
+    rows = await get_all_inventory_status(session)
+    out = []
+    for name in names:
+        matches = []
+        for row in rows:
+            kind = match_kind(name, row["name"], row["aliases"])
+            if kind is None:
+                continue
+            matches.append(
+                {
+                    "item": row["name"],
+                    "matched_via": kind,
+                    "status": row["status"],
+                    "last_purchased_at": row["last_purchased_at"],
+                }
+            )
+        matches.sort(key=lambda m: m["last_purchased_at"] or "", reverse=True)
+        matches.sort(key=lambda m: STATUS_RANK.index(m["status"]))
+        verdict = matches[0]["status"] if matches else "no_match"
+        out.append({"name": name, "verdict": verdict, "matches": matches})
+    return out
 
 
 async def get_purchase_analytics(session: AsyncSession) -> list[dict]:
