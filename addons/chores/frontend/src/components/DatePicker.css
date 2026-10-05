@@ -1,8 +1,10 @@
+/* Inline calendar. The tokens are in index.css. */
+
 .datepicker {
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
   user-select: none;
 }
 
@@ -10,52 +12,51 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .dp-month {
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text);
 }
 
 .dp-nav {
-  width: 30px;
-  height: 30px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 1.3rem;
+  font-size: var(--fs-lg);
   line-height: 1;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .dp-nav:hover {
-  background: var(--border);
+  background: var(--surface-2);
   color: var(--text);
 }
 
 .dp-dow {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .dp-dow span {
   text-align: center;
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-muted);
-  letter-spacing: 0.04em;
-  padding: 3px 0;
+  padding: var(--space-1) 0;
 }
 
 .dp-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .dp-day {
@@ -63,24 +64,28 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
   color: var(--text);
-  transition: background 0.12s;
+  transition: background var(--dur-fast);
   min-width: 0;
 }
 
 .dp-day:hover {
-  background: var(--border);
+  background: var(--surface-2);
 }
 
+/* Today gets a ring. The ring is outside the cell, so it also shows on a
+   selected (filled) cell. */
 .dp-day.today {
   color: var(--green);
   font-weight: 700;
+  outline: var(--ring-w) solid var(--green);
+  outline-offset: var(--ring-w);
 }
 
 .dp-day.selected {
   background: var(--green);
-  color: #000;
+  color: var(--green-ink);
   font-weight: 700;
 }

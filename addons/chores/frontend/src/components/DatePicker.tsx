@@ -62,7 +62,7 @@ export default function DatePicker({ value, onChange }: Props) {
               className={[
                 'dp-day',
                 iso === value ? 'selected' : '',
-                iso === todayStr && iso !== value ? 'today' : '',
+                iso === todayStr ? 'today' : '',
               ].filter(Boolean).join(' ')}
               onClick={() => onChange(iso)}
             >

@@ -1,13 +1,17 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { api, ApiError, ChoreRow, Member, Transaction, formatDate, formatDateTime } from '../api'
+import { api, ApiError, ChoreRow, Member, Transaction, formatDate } from '../api'
+import LedgerRow from './LedgerRow'
 import './MemberScreen.css'
 
 // The minimum time that the Done button stays off after a tap. The server's
 // cooldown_seconds makes it longer when the server sends a larger value.
 const CLIENT_COOLDOWN_MS = 5000
-// How long a server message (for example a cooldown refusal) stays on a chore.
-const NOTICE_MS = 3000
+// How long a toast stays on the screen: a completion, and an error (for
+// example a cooldown refusal from the server).
+const TOAST_OK_MS = 1500
+const TOAST_ERROR_MS = 3000
+const FLASH_MS = 1200
 const VERSION_POLL_MS = 60_000
 
 // The time, by chore id, when the cooldown of the chore ends.
@@ -15,8 +19,10 @@ interface CooldownState {
   [choreId: number]: number
 }
 
-interface Notice {
-  choreId: number
+interface Toast {
+  // A new id for each toast restarts the slide-in animation.
+  id: number
+  kind: 'ok' | 'error'
   text: string
 }
 
@@ -29,11 +35,15 @@ export default function MemberScreen() {
   const [cooldownMs, setCooldownMs] = useState(CLIENT_COOLDOWN_MS)
   const [cooldowns, setCooldowns] = useState<CooldownState>({})
   const [flash, setFlash] = useState<number | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
+  const [toast, setToast] = useState<Toast | null>(null)
+  // Increments each time the balance changes. The balance element uses it as
+  // its key, so that the bump animation starts again.
+  const [bump, setBump] = useState(0)
   const [error, setError] = useState('')
   const [, setTick] = useState(0)
   const versionRef = useRef<string | null>(null)
-  const noticeTimer = useRef<number | undefined>(undefined)
+  const toastTimer = useRef<number | undefined>(undefined)
+  const toastId = useRef(0)
 
   const loadLists = useCallback(async (memberSlug: string) => {
     const [choreList, ledgerList] = await Promise.all([
@@ -85,12 +95,16 @@ export default function MemberScreen() {
     return () => clearInterval(t)
   }, [])
 
-  useEffect(() => () => window.clearTimeout(noticeTimer.current), [])
+  useEffect(() => () => window.clearTimeout(toastTimer.current), [])
 
-  function showNotice(choreId: number, text: string) {
-    window.clearTimeout(noticeTimer.current)
-    setNotice({ choreId, text })
-    noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS)
+  function showToast(kind: Toast['kind'], text: string) {
+    window.clearTimeout(toastTimer.current)
+    toastId.current += 1
+    setToast({ id: toastId.current, kind, text })
+    toastTimer.current = window.setTimeout(
+      () => setToast(null),
+      kind === 'ok' ? TOAST_OK_MS : TOAST_ERROR_MS,
+    )
   }
 
   async function handleComplete(chore: ChoreRow) {
@@ -99,11 +113,13 @@ export default function MemberScreen() {
 
     try {
       const result = await api.completeChore(chore.id)
+      if (result.balance !== member?.balance) setBump(n => n + 1)
       setMember(prev => prev && {
         ...prev, balance: result.balance, balance_dollars: result.balance_dollars,
       })
+      showToast('ok', `+${result.points_awarded} XP · ${result.chore_name}`)
       setFlash(chore.id)
-      setTimeout(() => setFlash(null), 1200)
+      setTimeout(() => setFlash(null), FLASH_MS)
       setCooldowns(prev => ({ ...prev, [chore.id]: Date.now() + cooldownMs }))
       await loadLists(slug)
     } catch (e) {
@@ -111,7 +127,7 @@ export default function MemberScreen() {
         const until = Date.now() + e.retryAfter * 1000
         setCooldowns(prev => ({ ...prev, [chore.id]: until }))
       }
-      showNotice(chore.id, e instanceof Error ? e.message : String(e))
+      showToast('error', e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -129,76 +145,76 @@ export default function MemberScreen() {
 
   return (
     <div className="kiosk screen-root">
-      <header className="screen-header">
-        <h1 className="screen-name">{member.name}</h1>
-        <div className="screen-balance">{member.balance} XP</div>
-        {member.balance_dollars !== null && (
-          <div className="screen-dollars">{member.balance_dollars}</div>
-        )}
-      </header>
-
-      <ul className="screen-list">
-        {chores.length === 0 && (
-          <li className="screen-empty">All done! Great work.</li>
-        )}
-        {chores.map(chore => {
-          const overdue = chore.overdue
-          const dueLabel = chore.next_due_date === today ? 'Due today · ' : 'Overdue · '
-          const wait = remainingSeconds(chore.id)
-          const cooling = wait > 0
-          const isFlashing = flash === chore.id
-          const message = notice?.choreId === chore.id ? notice.text : null
-
-          return (
-            <li
-              key={chore.id}
-              className={[
-                'screen-chore',
-                overdue ? 'overdue' : '',
-                isFlashing ? 'flash' : '',
-              ].join(' ')}
-            >
-              <div className="chore-info">
-                <span className="chore-name">{chore.name}</span>
-                {message ? (
-                  <span className="chore-due overdue-text" role="status">{message}</span>
-                ) : (
-                  <span className={`chore-due ${overdue ? 'overdue-text' : ''}`}>
-                    {overdue ? dueLabel : ''}{formatDate(chore.next_due_date)}
-                  </span>
-                )}
-              </div>
-              <div className="chore-right">
-                <span className="chore-pts">+{chore.points}</span>
-                <button
-                  className={`done-btn ${cooling ? 'cooldown' : ''}`}
-                  onClick={() => handleComplete(chore)}
-                  disabled={cooling}
-                >
-                  {cooling && wait > CLIENT_COOLDOWN_MS / 1000 ? `${wait}s` : 'Done'}
-                </button>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-
-      {ledger.length > 0 && (
-        <section className="screen-ledger">
-          <h2 className="ledger-title">History</h2>
-          <ul className="ledger-list">
-            {ledger.map(tx => (
-              <li key={tx.id} className="ledger-row">
-                <span className="ledger-desc">{tx.description}</span>
-                <span className="ledger-date">{formatDateTime(tx.created_at)}</span>
-                <span className={`ledger-amount ${tx.amount < 0 ? 'negative' : 'positive'}`}>
-                  {tx.amount > 0 ? '+' : ''}{tx.amount} XP
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {toast && (
+        <div
+          key={toast.id}
+          className={`toast toast-${toast.kind}`}
+          role={toast.kind === 'error' ? 'alert' : 'status'}
+        >
+          {toast.text}
+        </div>
       )}
+
+      <div className="screen-inner">
+        <header className="screen-header">
+          <h1 className="screen-name">{member.name}</h1>
+          <div key={bump} className={`screen-balance ${bump > 0 ? 'bump' : ''}`}>{member.balance} XP</div>
+          {member.balance_dollars !== null && (
+            <div className="screen-dollars">{member.balance_dollars}</div>
+          )}
+        </header>
+
+        <ul className="screen-list">
+          {chores.length === 0 && (
+            <li className="screen-empty">All done! Great work.</li>
+          )}
+          {chores.map(chore => {
+            const late = chore.next_due_date < today
+            const dueToday = chore.next_due_date === today
+            const wait = remainingSeconds(chore.id)
+            const cooling = wait > 0
+
+            return (
+              <li
+                key={chore.id}
+                className={[
+                  'screen-chore',
+                  late ? 'overdue' : '',
+                  flash === chore.id ? 'flash' : '',
+                ].join(' ')}
+              >
+                <div className="chore-info">
+                  <span className="chore-name">{chore.name}</span>
+                  <div className="chore-due-line">
+                    {late && <span className="chip chip-amber">Overdue</span>}
+                    {dueToday && <span className="chip chip-green">Due today</span>}
+                    <span className="chore-due">{formatDate(chore.next_due_date)}</span>
+                  </div>
+                </div>
+                <div className="chore-right">
+                  <span className="chore-pts">+{chore.points}</span>
+                  <button
+                    className={`done-btn ${cooling ? 'cooldown' : ''}`}
+                    onClick={() => handleComplete(chore)}
+                    disabled={cooling}
+                  >
+                    {cooling ? `Wait ${wait} s` : 'Done'}
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+
+        {ledger.length > 0 && (
+          <section className="screen-ledger" aria-label="History">
+            <h2 className="ledger-title">History</h2>
+            <ul className="ledger-list ledger-scroll" tabIndex={0}>
+              {ledger.map(tx => <LedgerRow key={tx.id} tx={tx} />)}
+            </ul>
+          </section>
+        )}
+      </div>
     </div>
   )
 }

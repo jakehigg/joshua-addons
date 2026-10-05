@@ -1,29 +1,160 @@
-/* ── Manager view theme ── */
+/*
+ * Design tokens and shared classes for the chores UI.
+ *
+ * This file is the only place that holds a literal colour, size, radius,
+ * spacing, or breakpoint. The component stylesheets use the tokens only.
+ *
+ * Token groups:
+ *   Colour      --bg --surface --surface-2 --border --text --text-muted
+ *               --green --green-ink --amber --amber-ink --red --red-ink --blue
+ *               --scrim --shadow, and the derived tints --green-tint --amber-tint
+ *               --red-tint.
+ *               An "-ink" token is the text colour to use on that hue:
+ *               --green-ink goes on a solid green fill, --amber-ink and
+ *               --red-ink go on their tints.
+ *   Radius      --radius-sm --radius --radius-lg --radius-pill
+ *   Spacing     --space-1 to --space-8
+ *   Type        --font --fs-xs --fs-sm --fs-md --fs-lg --fs-xl --fs-hero
+ *               --tracking-wide --tracking-pin
+ *   Sizes       --tap --done-min-w --icon-btn --toggle-w --pin-form-w
+ *               --manager-max-w --kiosk-max-w --modal-max-w --history-max
+ *               --screen-min-h
+ *               --border-w --ring-w
+ *   State       --disabled-opacity --inactive-opacity
+ *   Motion      --dur-fast --dur-bump --dur-flash --dur-toast-in
+ *
+ * Palettes:
+ *   :root       manager palette, dark.
+ *   light query manager palette, light. It applies to :root only.
+ *   .kiosk      kiosk palette, dark. This rule comes after the light query.
+ *               Both selectors have the same specificity, so the later rule
+ *               wins and the kiosk stays dark when the system is light.
+ *
+ * Breakpoints: a media query cannot read a custom property, so each rule
+ * that changes with the viewport width is at the end of this file.
+ */
+
+/* ── Tokens: manager palette (dark) and the scales ── */
 :root {
+  color-scheme: dark;
+
   --bg: #0d0d0d;
   --surface: #161616;
-  --border: #262626;
-  --text: #e8e8e8;
-  --text-muted: #777;
+  --surface-2: #202020;
+  --border: #2c2c2c;
+  --text: #ececec;
+  --text-muted: #8f8f8f;
   --green: #4ade80;
+  --green-ink: #052e16;
   --amber: #fbbf24;
+  --amber-ink: #fcd34d;
   --red: #f87171;
+  --red-ink: #fca5a5;
   --blue: #60a5fa;
-  --gray: #6b7280;
-  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --scrim: rgb(0 0 0 / 0.7);
+  --shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 2rem;
+  --fs-hero: 4rem;
+  --tracking-wide: 0.08em;
+  --tracking-pin: 0.3em;
+
+  /* The minimum height of a kiosk control. */
+  --tap: 56px;
+  --done-min-w: 112px;
+  --icon-btn: 32px;
+  --toggle-w: 96px;
+  --pin-form-w: 280px;
+  --manager-max-w: 600px;
+  --kiosk-max-w: 760px;
+  --modal-max-w: 440px;
+  --history-max: 30vh;
+  --screen-min-h: 100vh;
+  --border-w: 1px;
+  --ring-w: 1px;
+
+  --disabled-opacity: 0.4;
+  --inactive-opacity: 0.6;
+
+  --dur-fast: 150ms;
+  --dur-bump: 300ms;
+  --dur-flash: 300ms;
+  --dur-toast-in: 200ms;
 }
 
-/* ── Kiosk / member screen theme ── */
+/* ── Tokens: manager palette (light) ── */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --bg: #f3f4f6;
+    --surface: #ffffff;
+    --surface-2: #eceef1;
+    --border: #d4d7dd;
+    --text: #111316;
+    --text-muted: #5b616b;
+    --green: #15803d;
+    --green-ink: #ffffff;
+    --amber: #b45309;
+    --amber-ink: #92400e;
+    --red: #b91c1c;
+    --red-ink: #991b1b;
+    --blue: #1d4ed8;
+    --scrim: rgb(0 0 0 / 0.45);
+    --shadow: 0 8px 24px rgb(0 0 0 / 0.15);
+  }
+}
+
+/* ── Tokens: kiosk palette (dark only) ──
+ * This rule must stay after the light query. See the header comment. */
 .kiosk {
+  color-scheme: dark;
+
   --bg: #090d16;
   --surface: #111827;
-  --border: #1f2937;
+  --surface-2: #1b2433;
+  --border: #243044;
   --text: #f8fafc;
   --text-muted: #94a3b8;
   --green: #34c759;
-  --amber: #ff9500;
-  --red: #ff3b30;
+  --green-ink: #03210c;
+  --amber: #ff9f0a;
+  --amber-ink: #ffc061;
+  --red: #ff453a;
+  --red-ink: #ff9b94;
+  --blue: #60a5fa;
+  --shadow: 0 8px 24px rgb(0 0 0 / 0.6);
 }
+
+/* ── Tokens: tints ──
+ * A custom property resolves var() on the element that declares it. The
+ * tints are declared on both roots, so that each root mixes its own hues. */
+:root,
+.kiosk {
+  --green-tint: color-mix(in srgb, var(--green) 16%, var(--surface));
+  --amber-tint: color-mix(in srgb, var(--amber) 16%, var(--surface));
+  --red-tint: color-mix(in srgb, var(--red) 16%, var(--surface));
+}
+
+/* ── Base ── */
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -32,14 +163,14 @@
 }
 
 html, body, #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 16px;
+  font-size: var(--fs-md);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -53,14 +184,19 @@ button {
   color: inherit;
 }
 
+button:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: not-allowed;
+}
+
 input, select, textarea {
   font-family: inherit;
-  font-size: inherit;
+  font-size: var(--fs-md);
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 12px;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
   outline: none;
   width: 100%;
 }
@@ -72,4 +208,235 @@ input:focus, select:focus, textarea:focus {
 a {
   color: var(--blue);
   text-decoration: none;
+}
+
+/* ── Buttons ── */
+
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: var(--border-w) solid transparent;
+  white-space: nowrap;
+  transition: border-color var(--dur-fast), filter var(--dur-fast);
+}
+
+.btn-primary {
+  background: var(--green);
+  color: var(--green-ink);
+}
+
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.btn-danger {
+  background: var(--red-tint);
+  color: var(--red-ink);
+  border-color: color-mix(in srgb, var(--red) 35%, var(--border));
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+/* Two labels in one button. The short label shows on a narrow screen. */
+.label-short {
+  display: none;
+}
+
+/* ── Chips ── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.chip-amber {
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+}
+
+.chip-green {
+  background: var(--green-tint);
+  color: var(--green);
+}
+
+.chip-muted {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+/* ── Chore text ── */
+
+.chore-name {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ── Ledger ── */
+
+.ledger-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  margin-bottom: var(--space-2);
+}
+
+.ledger-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ledger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ledger-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ledger-desc {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ledger-date {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ledger-amount {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ledger-amount.positive { color: var(--green); }
+.ledger-amount.negative { color: var(--red); }
+
+/* ── Toast ── */
+
+.toast {
+  position: fixed;
+  top: var(--space-4);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--space-4));
+  z-index: 200;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-pill);
+  border: var(--border-w) solid transparent;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+  box-shadow: var(--shadow);
+  animation: toast-in var(--dur-toast-in) ease-out;
+}
+
+.toast-ok {
+  background: var(--green-tint);
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.toast-error {
+  background: var(--red-tint);
+  color: var(--red-ink);
+  border-color: var(--red);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(calc(-1 * var(--space-6))); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bump {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .bump {
+    animation: none;
+  }
+}
+
+/* ── Breakpoints ──
+ * Each rule that changes with the viewport width. The component
+ * stylesheets load after this file, so a rule here that overrides a
+ * component rule starts with a parent class to add specificity. */
+
+/* Phones: short button labels, and the kiosk card stacks. */
+@media (max-width: 399px) {
+  .label-long { display: none; }
+  .label-short { display: inline; }
+}
+
+@media (max-width: 599px) {
+  .kiosk .screen-chore {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .kiosk .screen-chore .chore-right {
+    justify-content: space-between;
+  }
+
+  .kiosk .screen-chore .done-btn {
+    flex: 1;
+  }
+}
+
+/* Wider than a phone: the modal is centred, not a bottom sheet. */
+@media (min-width: 480px) {
+  .manager-root .modal-overlay {
+    align-items: center;
+  }
 }

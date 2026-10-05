@@ -1,59 +1,87 @@
-.screen-root {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+/* Kiosk layout. The tokens, the kiosk palette, the shared classes, and the
+   phone layout of the chore card are in index.css. */
+
+.kiosk {
+  min-height: var(--screen-min-h);
   background: var(--bg);
   color: var(--text);
-  padding: 24px 20px;
-  max-width: 700px;
-  margin: 0 auto;
 }
+
+.screen-root {
+  display: flex;
+  justify-content: center;
+}
+
+.screen-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: var(--kiosk-max-w);
+  padding: var(--space-6) var(--space-4);
+}
+
+/* ── Header: name, XP, dollars ── */
 
 .screen-header {
   text-align: center;
-  padding: 32px 0 28px;
+  padding: var(--space-2) 0;
 }
 
 .screen-name {
-  font-size: 2rem;
+  font-size: var(--fs-xl);
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  overflow-wrap: anywhere;
 }
 
 .screen-balance {
-  font-size: 4rem;
+  display: inline-block;
+  font-size: var(--fs-hero);
   font-weight: 800;
   color: var(--green);
-  line-height: 1;
+  line-height: 1.1;
 }
+
+.screen-balance.bump {
+  animation: bump var(--dur-bump) ease-out;
+}
+
+.screen-dollars {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ── Chore cards ── */
 
 .screen-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  flex: 1;
+  gap: var(--space-3);
 }
 
 .screen-empty {
   text-align: center;
   color: var(--green);
-  font-size: 1.5rem;
-  padding: 60px 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  padding: var(--space-8) 0;
 }
 
 .screen-chore {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-4);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 18px 20px;
-  transition: border-color 0.2s, background 0.3s;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  transition: border-color var(--dur-flash), background var(--dur-flash);
 }
 
 .screen-chore.overdue {
@@ -61,140 +89,104 @@
 }
 
 .screen-chore.flash {
-  background: color-mix(in srgb, var(--green) 15%, var(--surface));
+  background: var(--green-tint);
   border-color: var(--green);
 }
 
 .chore-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
-.chore-name {
-  font-size: 1.25rem;
-  font-weight: 600;
+.kiosk .chore-name {
+  font-size: var(--fs-lg);
+}
+
+.chore-due-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .chore-due {
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
-}
-
-.chore-due.overdue-text {
-  color: var(--amber);
 }
 
 .chore-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   flex-shrink: 0;
 }
 
 .chore-pts {
-  font-size: 1rem;
+  font-size: var(--fs-lg);
   color: var(--green);
-  font-weight: 600;
-  min-width: 40px;
+  font-weight: 700;
   text-align: right;
 }
 
 .done-btn {
+  min-height: var(--tap);
+  min-width: var(--done-min-w);
+  padding: 0 var(--space-5);
+  border-radius: var(--radius);
   background: var(--green);
-  color: #000;
+  color: var(--green-ink);
+  font-size: var(--fs-lg);
   font-weight: 700;
-  font-size: 1rem;
-  padding: 10px 22px;
-  border-radius: 8px;
-  min-width: 80px;
-  transition: opacity 0.2s, background 0.2s;
+  white-space: nowrap;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  transition: filter var(--dur-fast);
 }
 
-.done-btn:active {
-  opacity: 0.8;
+.done-btn:active:not(:disabled) {
+  filter: brightness(0.9);
 }
 
-.done-btn.cooldown {
-  background: var(--border);
+/* The cooldown pill is muted by colour, so it keeps full opacity to stay
+   readable. The cursor still shows that it is off. */
+.done-btn.cooldown,
+.done-btn.cooldown:disabled {
+  opacity: 1;
+  background: var(--surface-2);
   color: var(--text-muted);
-  cursor: not-allowed;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
 }
 
-/* ── Ledger ── */
+/* ── History: scrolls inside, so the chore list stays on the screen ── */
 
 .screen-ledger {
-  margin-top: 32px;
-  border-top: 1px solid var(--border);
-  padding-top: 20px;
+  border-top: var(--border-w) solid var(--border);
+  padding-top: var(--space-4);
 }
 
-.ledger-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 12px;
+.ledger-scroll {
+  max-height: var(--history-max);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.ledger-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ledger-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 14px;
-  background: var(--surface);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-}
-
-.ledger-desc {
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.ledger-date {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.ledger-amount {
-  font-size: 0.95rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.ledger-amount.positive { color: var(--green); }
-.ledger-amount.negative { color: var(--red); }
+/* ── Loading and error ── */
 
 .screen-error,
 .screen-loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
-  font-size: 1.2rem;
+  font-size: var(--fs-lg);
   color: var(--text-muted);
+  padding: var(--space-4);
+  text-align: center;
 }
 
 .screen-error {
-  color: var(--red);
-}
-
-.screen-dollars {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-top: 8px;
+  color: var(--red-ink);
 }

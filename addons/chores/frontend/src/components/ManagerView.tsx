@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   api, ApiError, Chore, ChoreRow, Frequency, Member, Transaction,
-  choreOverdue, formatDate, formatDateTime, localToday,
+  formatDate, localToday,
 } from '../api'
 import DatePicker from './DatePicker'
+import LedgerRow from './LedgerRow'
 import './ManagerView.css'
 
 const PIN_KEY = 'chores_manager_pin'
@@ -53,6 +54,7 @@ export default function ManagerView() {
   const [members, setMembers] = useState<Member[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [chores, setChores] = useState<ChoreRow[]>([])
+  const [today, setToday] = useState('')
   const [ledger, setLedger] = useState<Transaction[]>([])
   const [modal, setModal] = useState<Modal>(null)
   const [error, setError] = useState('')
@@ -97,6 +99,7 @@ export default function ManagerView() {
       api.getTransactions(pin, slug),
     ])
     setChores(choreList.chores)
+    setToday(choreList.today)
     setLedger(txList)
   }, [pin])
 
@@ -199,48 +202,29 @@ export default function ManagerView() {
     )
   }
 
+  const dayToday = today || localToday()
+
   return (
     <div className="manager-root">
       <header className="manager-header">
-        <h1>Chores</h1>
-        {tab === 'chores' && activeMembers.length > 0 && (
-          <select
-            value={selectedSlug ?? ''}
-            onChange={e => setSelectedSlug(e.target.value)}
-            className="member-select"
-            aria-label="Member"
-          >
-            {activeMembers.map(m => (
-              <option key={m.slug} value={m.slug}>{m.name}</option>
-            ))}
-          </select>
-        )}
-      </header>
-
-      <div className="view-switch" role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === 'chores'}
-          className={tab === 'chores' ? 'active' : ''}
-          onClick={() => setTab('chores')}
-        >
-          Chores
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === 'members'}
-          className={tab === 'members' ? 'active' : ''}
-          onClick={() => setTab('members')}
-        >
-          Members
-        </button>
-      </div>
-
-      {error && <div className="manager-error">{error}</div>}
-
-      {tab === 'chores' && (
-        <>
-          {selected && (
+        <div className="manager-inner">
+          <h1>Chores</h1>
+          {tab === 'chores' && activeMembers.length > 0 && (
+            <div className="member-chips" aria-label="Member">
+              {activeMembers.map(m => (
+                <button
+                  key={m.slug}
+                  type="button"
+                  className={`member-chip ${m.slug === selectedSlug ? 'active' : ''}`}
+                  aria-pressed={m.slug === selectedSlug}
+                  onClick={() => setSelectedSlug(m.slug)}
+                >
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {tab === 'chores' && selected && (
             <div className="balance-bar">
               {selected.balance_dollars !== null ? (
                 <>
@@ -252,88 +236,117 @@ export default function ManagerView() {
               )}
             </div>
           )}
+        </div>
+      </header>
 
-          <div className="action-row">
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })} disabled={!selected}>
-              + Add Chore
-            </button>
-            <button className="btn-secondary" onClick={() => setModal({ type: 'award' })} disabled={!selected}>
-              Award XP
-            </button>
-            <button className="btn-danger" onClick={() => setModal({ type: 'deduct' })} disabled={!selected}>
-              Deduct XP
-            </button>
-          </div>
+      <main className="manager-inner manager-main">
+        <div className="view-switch" role="tablist">
+          <button
+            role="tab"
+            aria-selected={tab === 'chores'}
+            className={tab === 'chores' ? 'active' : ''}
+            onClick={() => setTab('chores')}
+          >
+            Chores
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'members'}
+            className={tab === 'members' ? 'active' : ''}
+            onClick={() => setTab('members')}
+          >
+            Members
+          </button>
+        </div>
 
-          <ul className="manager-list">
-            {members.length === 0 && <li className="empty-msg">Add a member first</li>}
-            {members.length > 0 && !selected && <li className="empty-msg">No active members</li>}
-            {selected && chores.length === 0 && <li className="empty-msg">No chores yet</li>}
-            {chores.map(chore => (
-              <li key={chore.id} className={`manager-chore ${choreOverdue(chore) ? 'overdue' : ''}`}>
-                <div className="chore-meta">
-                  <span className="chore-name">{chore.name}</span>
-                  <span className="chore-sub">
-                    {chore.frequency} · {chore.points} XP · due {formatDate(chore.next_due_date)}
-                  </span>
-                </div>
-                <div className="chore-actions">
-                  <button className="icon-btn" onClick={() => setModal({ type: 'edit', chore })} title="Edit">✎</button>
-                  <button className="icon-btn danger" onClick={() => handleRetire(chore)} title="Delete">✕</button>
-                </div>
-              </li>
-            ))}
-          </ul>
+        {error && <div className="manager-error">{error}</div>}
 
-          {ledger.length > 0 && (
-            <section className="manager-ledger">
-              <h2 className="ledger-title">History</h2>
-              <ul className="ledger-list">
-                {ledger.map(tx => (
-                  <li key={tx.id} className="ledger-row">
-                    <div className="ledger-left">
-                      <span className="ledger-desc">{tx.description}</span>
-                      <span className="ledger-date">{formatDateTime(tx.created_at)}</span>
+        {tab === 'chores' && (
+          <>
+            <div className="action-row">
+              <button className="btn-primary" onClick={() => setModal({ type: 'add' })} disabled={!selected}>
+                <span className="label-long">+ Add chore</span>
+                <span className="label-short">Add</span>
+              </button>
+              <button className="btn-secondary" onClick={() => setModal({ type: 'award' })} disabled={!selected}>
+                <span className="label-long">Award XP</span>
+                <span className="label-short">Award</span>
+              </button>
+              <button className="btn-danger" onClick={() => setModal({ type: 'deduct' })} disabled={!selected}>
+                <span className="label-long">Deduct XP</span>
+                <span className="label-short">Deduct</span>
+              </button>
+            </div>
+
+            <ul className="manager-list">
+              {members.length === 0 && <li className="empty-msg">Add a member first</li>}
+              {members.length > 0 && !selected && <li className="empty-msg">No active members</li>}
+              {selected && chores.length === 0 && <li className="empty-msg">No chores yet</li>}
+              {chores.map(chore => {
+                const late = chore.next_due_date < dayToday
+                const dueToday = chore.next_due_date === dayToday
+                return (
+                  <li key={chore.id} className={`manager-chore ${late ? 'overdue' : ''}`}>
+                    <div className="chore-meta">
+                      <span className="chore-name">{chore.name}</span>
+                      <div className="chore-line">
+                        {late && <span className="chip chip-amber">Overdue</span>}
+                        {dueToday && <span className="chip chip-green">Due today</span>}
+                        <span className="chore-sub">
+                          {chore.frequency} · {chore.points} XP · {formatDate(chore.next_due_date)}
+                        </span>
+                      </div>
                     </div>
-                    <span className={`ledger-amount ${tx.amount < 0 ? 'negative' : 'positive'}`}>
-                      {tx.amount > 0 ? '+' : ''}{tx.amount} XP
-                    </span>
+                    <div className="chore-actions">
+                      <button className="icon-btn" onClick={() => setModal({ type: 'edit', chore })} title="Edit" aria-label="Edit">✎</button>
+                      <button className="icon-btn danger" onClick={() => handleRetire(chore)} title="Delete" aria-label="Delete">✕</button>
+                    </div>
                   </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </>
-      )}
+                )
+              })}
+            </ul>
 
-      {tab === 'members' && (
-        <>
-          <div className="action-row">
-            <button className="btn-primary" onClick={() => setModal({ type: 'add-member' })}>+ Add Member</button>
-          </div>
-          <ul className="manager-list">
-            {members.length === 0 && <li className="empty-msg">No members yet</li>}
-            {members.map((member, index) => (
-              <li key={member.slug} className={`manager-chore ${member.is_active ? '' : 'inactive'}`}>
-                <div className="chore-meta">
-                  <span className="chore-name">{member.name}</span>
-                  <span className="chore-sub">
-                    /{member.slug} · {member.balance} XP{member.is_active ? '' : ' · inactive'}
-                  </span>
-                </div>
-                <div className="chore-actions">
-                  <button className="icon-btn" onClick={() => move(index, -1)} disabled={index === 0} title="Move up">↑</button>
-                  <button className="icon-btn" onClick={() => move(index, 1)} disabled={index === members.length - 1} title="Move down">↓</button>
-                  <button className="icon-btn" onClick={() => setModal({ type: 'rename', member })} title="Rename">✎</button>
-                  <button className="btn-secondary" onClick={() => toggleActive(member)}>
-                    {member.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+            {ledger.length > 0 && (
+              <section className="manager-ledger">
+                <h2 className="ledger-title">History</h2>
+                <ul className="ledger-list">
+                  {ledger.map(tx => <LedgerRow key={tx.id} tx={tx} />)}
+                </ul>
+              </section>
+            )}
+          </>
+        )}
+
+        {tab === 'members' && (
+          <>
+            <div className="action-row">
+              <button className="btn-primary" onClick={() => setModal({ type: 'add-member' })}>+ Add member</button>
+            </div>
+            <ul className="manager-list">
+              {members.length === 0 && <li className="empty-msg">No members yet</li>}
+              {members.map((member, index) => (
+                <li key={member.slug} className={`manager-chore ${member.is_active ? '' : 'inactive'}`}>
+                  <div className="chore-meta">
+                    <div className="chore-line">
+                      <span className="chore-name">{member.name}</span>
+                      {!member.is_active && <span className="chip chip-muted">Inactive</span>}
+                    </div>
+                    <span className="chore-sub member-sub">/{member.slug} · {member.balance} XP</span>
+                  </div>
+                  <div className="chore-actions">
+                    <button className="icon-btn" onClick={() => move(index, -1)} disabled={index === 0} title="Move up" aria-label="Move up">↑</button>
+                    <button className="icon-btn" onClick={() => move(index, 1)} disabled={index === members.length - 1} title="Move down" aria-label="Move down">↓</button>
+                    <button className="icon-btn" onClick={() => setModal({ type: 'rename', member })} title="Rename" aria-label="Rename">✎</button>
+                    <button className="btn-secondary toggle-btn" onClick={() => toggleActive(member)}>
+                      {member.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </main>
 
       {modal && (
         <ModalOverlay onClose={() => setModal(null)}>
