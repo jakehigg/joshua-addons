@@ -42,7 +42,6 @@ is the date in `CHORES_TZ`.
 | `retire_chore(chore_id)` | Manager. Removes a chore from the lists. The addon keeps the chore and its history. |
 | `add_member(slug, name)` | Manager. Adds a member. The slug is 1 to 32 lowercase letters, digits, or hyphens, and it cannot change. |
 | `set_member(slug, name?, is_active?, sort_order?)` | Manager. Changes the name, the active flag, or the sort order of a member. |
-| `import_data(version, members, chores?, completions?, transactions?)` | Manager. Loads data in bulk from an export. See [Import](#import). |
 
 A list shows the due date of the current period. When a daily chore is
 overdue, the list shows it as due today. When a weekly or monthly chore is
@@ -176,12 +175,19 @@ and the backup of that database is your job, not the job of this addon.
 
 ## Import
 
-`import_data` loads members, chores, completions, and ledger rows from an
-export, with their original timestamps. The import checks the full batch
-before it writes, and a second import of the same data changes nothing.
-`scripts/export_legacy_chores.py` reads the database of the old chores app,
-and `scripts/chores_import.py` sends the file to the addon.
-[`docs/import.md`](docs/import.md) gives the format and the procedure.
+The `import` command loads members, chores, completions, and ledger rows
+from an export, with their original timestamps. It is an operator action:
+run it inside the container. It is not an MCP tool. The import is one
+transaction, and a second import of the same data changes nothing.
+
+```sh
+docker compose -f addons/chores/docker-compose.yml exec -T chores python -m joshua_chores import - < chores_export.json
+kubectl -n <ns> exec -i deploy/<release> -- python -m joshua_chores import - < chores_export.json
+```
+
+`scripts/export_legacy_chores.py` reads the database of the old chores app
+and writes the file. [`docs/import.md`](docs/import.md) gives the format,
+the exit codes, and the procedure.
 
 ## Add it to joshua.yaml
 
@@ -220,7 +226,6 @@ mcp:
         - retire_chore
         - add_member
         - set_member
-        - import_data
 ```
 
 Kubernetes: the gateway reaches the addon at the cluster Service DNS name,

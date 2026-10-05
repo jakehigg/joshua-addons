@@ -1,22 +1,26 @@
-"""Round trip: a database in the old chores schema, the exporter, then ``import_data``.
+"""Round trip: a database in the old chores schema, the exporter, then the import.
 
 A SQLite file gets the four tables of the old app (``kids``, ``chores``,
 ``completions``, ``transactions``) and a few months of rows. The exporter
 in ``scripts/export_legacy_chores.py`` builds the import document from
 those rows. The real importer then loads the document into a new addon
 database. The test checks each balance, each chore date, and each ledger
-timestamp, and it checks that a second import changes nothing.
+timestamp. Then it runs ``python -m joshua_chores import`` on the same
+file and database, and checks that the second import changes nothing.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import sqlite3
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from joshua_chores import importer, service
+from joshua_chores import cli, importer, service
 from joshua_chores.models import Chore, Completion, Member, Transaction
 from sqlalchemy import func, select
 
@@ -187,7 +191,9 @@ async def _row_counts(session) -> dict[str, int]:
     }
 
 
-async def test_old_database_round_trips_through_the_importer(tmp_path, sessionmaker_) -> None:
+async def test_old_database_round_trips_through_the_importer(
+    tmp_path, engine, sessionmaker_, monkeypatch, capsys
+) -> None:
     old_path = tmp_path / "old_chores.db"
     _old_database(old_path)
     rows = _fetch(old_path)
@@ -246,7 +252,22 @@ async def test_old_database_round_trips_through_the_importer(tmp_path, sessionma
                 assert linked.import_id == f"legacy-completion-{old['reference_id']}"
 
         counts_after_first = await _row_counts(session)
-        second = await _run(session, document)
+
+    # The second run goes through the command line entry point, on the same
+    # database. ``main`` calls ``asyncio.run``, so it runs in a thread.
+    export_path = tmp_path / "chores_export.json"
+    export_path.write_text(json.dumps(document))
+    monkeypatch.setenv("DATABASE_URL", engine.url.render_as_string(hide_password=False))
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    try:
+        code = await asyncio.to_thread(cli.main, ["import", str(export_path)])
+    finally:
+        root.handlers[:] = handlers
+        root.setLevel(level)
+    assert code == 0
+    second = json.loads(capsys.readouterr().out)
+    async with sessionmaker_() as session:
         counts_after_second = await _row_counts(session)
 
     assert second["counts"] == {

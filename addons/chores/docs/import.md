@@ -1,9 +1,41 @@
 # Bulk import
 
-The `import_data` tool loads chores data in bulk: members, chores,
+The `import` command loads chores data in bulk: members, chores,
 completions, and ledger rows. Use it to move a household from another
 system. Each row keeps its original timestamps, so the ledger history stays
 complete and each balance is the same after the import.
+
+The import is an operator action. You run it inside the container of the
+addon, and it writes to the database of the addon directly. No MCP tool
+gives the import to the agent.
+
+## Run the import
+
+The command reads the file from stdin when the path is `-`.
+
+Docker Compose, from the repository root:
+
+```sh
+docker compose -f addons/chores/docker-compose.yml exec -T chores python -m joshua_chores import - < chores_export.json
+```
+
+Kubernetes:
+
+```sh
+kubectl -n <ns> exec -i deploy/<release> -- python -m joshua_chores import - < chores_export.json
+```
+
+The command uses the same database as the server: `DATABASE_URL`, or the
+SQLite file at `CHORES_DB`. It runs the migrations first. The import is
+one transaction. It writes all the rows, or it writes nothing.
+
+The command writes the result to stdout as JSON. The exit code is:
+
+| Code | Meaning |
+|---|---|
+| `0` | The import is done. |
+| `1` | The import rejected a row, or a setting is not valid. Each problem is one line on stderr. The command wrote nothing. |
+| `2` | The file is not a version 1 file: it is not JSON, it is not one JSON object, or the top level is not correct. The command wrote nothing. |
 
 ## The format (version 1)
 
@@ -20,7 +52,8 @@ A batch is one JSON object:
 ```
 
 `version` is necessary and must be `1`. `members` is necessary, and it can
-be empty. The other sections are optional.
+be empty. The other sections are optional. A section is a list. Another
+top-level field stops the import with exit code 2.
 
 A timestamp is an ISO 8601 value, for example `2026-02-01T18:00:00Z`. A
 timestamp with an offset changes to UTC. A timestamp without an offset is
@@ -117,7 +150,8 @@ The balance of a member is the sum of the `amount` values of that member.
 }
 ```
 
-The result gives the counts and the balance of each member in the batch:
+The command writes the counts and the balance of each member in the
+batch:
 
 ```json
 {
@@ -143,22 +177,23 @@ and each count is `skipped`. The import finds an existing row as follows:
 - A completion or a ledger row: the same `external_id`.
 
 The import does not change a row that exists. To correct a row, use the
-other tools.
+tools or the web UI.
 
 ## Checks
 
 The import checks the full batch before it writes. An unknown field, a
 missing field, a bad value, an `external_id` that is in the batch two
-times, or a reference to a row that does not exist stops the call. The
-import then writes nothing. The error gives the path of each problem, for
-example `chores[2].points: Input should be greater than 0`.
+times, or a reference to a row that does not exist stops the import with
+exit code 1. The import then writes nothing. Each line on stderr gives the
+path of one problem, for example
+`- chores[2].points: Input should be greater than 0`.
 
 ## Export from the old chores app
 
 The script `scripts/export_legacy_chores.py` reads the Postgres database of
 the old chores app and writes a version 1 file. The script only reads. Each
-query is a SELECT, and the script never commits. The script
-`scripts/chores_import.py` then sends the file to `import_data`.
+query is a SELECT, and the script never commits. The `import` command
+then loads the file.
 
 ### Procedure
 
@@ -180,21 +215,14 @@ query is a SELECT, and the script never commits. The script
 
 4. If the export stops with exit code 2, read the integrity gate below.
 
-5. Run the import:
+5. Run the import inside the container. Use the command for Docker
+   Compose or for Kubernetes from [Run the import](#run-the-import).
 
-   ```sh
-   uv run python scripts/chores_import.py chores_export.json \
-     --url https://<chores-addon>/mcp --token <ADDON_TOKEN>
-   ```
-
-6. Compare the balances that the import prints with the stored balances
+6. Compare the balances that the import writes with the stored balances
    from step 3. They must be equal.
 
-The import script sends the members and the chores in the first call.
-Then it sends the completions and the ledger rows in batches of 500
-rows. Use `--batch-size` to change the batch size. If a call fails, the
-script exits with code 1. A second run of the same file changes nothing,
-so you can run the same command again.
+A second run of the same file changes nothing, so you can run the same
+command again.
 
 ### The integrity gate
 

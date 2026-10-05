@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TextIO
 
 LEVEL_ENV = "LOG_LEVEL"
 
@@ -58,20 +58,23 @@ def _parse_level(level: str) -> int:
     return resolved if isinstance(resolved, int) else logging.INFO
 
 
-def configure(level: str, service: str) -> logging.Logger:
-    """Install a JSON stdout handler on the root logger and return the service logger."""
+def configure(level: str, service: str, stream: TextIO | None = None) -> logging.Logger:
+    """Install a JSON handler on the root logger and return the service logger.
+
+    The handler writes to ``stream``, or to stdout when ``stream`` is ``None``.
+    """
     root = logging.getLogger()
     root.setLevel(_parse_level(level))
     root.handlers.clear()
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(sys.stdout if stream is None else stream)
     handler.setFormatter(JSONFormatter(service))
     root.addHandler(handler)
     return logging.getLogger(service)
 
 
-def configure_from_env(service: str) -> logging.Logger:
+def configure_from_env(service: str, stream: TextIO | None = None) -> logging.Logger:
     """Configure ``service`` logging from ``LOG_LEVEL`` (default ``INFO``)."""
-    return configure(os.environ.get(LEVEL_ENV, "INFO"), service)
+    return configure(os.environ.get(LEVEL_ENV, "INFO"), service, stream)
 
 
 def get_logger(name: str) -> logging.Logger:

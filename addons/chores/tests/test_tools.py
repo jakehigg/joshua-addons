@@ -304,15 +304,30 @@ async def test_add_member_and_set_member(app) -> None:
     assert changed == {"slug": "alpha", "name": "A", "is_active": True, "sort_order": 3}
 
 
-async def test_import_data_through_the_tool(app) -> None:
+TOOLS = {
+    "list_members",
+    "list_chores",
+    "complete_chore",
+    "get_balance",
+    "award_xp",
+    "deduct_xp",
+    "add_chore",
+    "update_chore",
+    "retire_chore",
+    "add_member",
+    "set_member",
+}
+
+
+async def test_list_tools_gives_the_eleven_tools_and_no_import(app) -> None:
     async with mcp_session(app) as session:
-        result = await call(
-            session, "import_data", version=1, members=[{"slug": "alpha", "name": "Alpha"}]
-        )
-        wrong = await fail(session, "import_data", version=2, members=[])
-    assert result["counts"]["members"] == {"created": 1, "skipped": 0}
-    assert result["balances"] == {"alpha": 0}
-    assert "version must be 1" in wrong
+        listed = await session.list_tools()
+        missing = await session.call_tool("import_data", {"version": 1, "members": []})
+    names = [tool.name for tool in listed.tools]
+    assert len(names) == 11
+    assert set(names) == TOOLS
+    assert "import_data" not in names
+    assert missing.is_error is True
 
 
 def test_settings_are_not_ready_outside_the_lifespan() -> None:

@@ -24,7 +24,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from joshua_chores import importer, service
+from joshua_chores import service
 from joshua_chores import settings as settings_module
 from joshua_chores.database import build_engine, build_sessionmaker
 from joshua_chores.log import get_logger
@@ -463,41 +463,6 @@ async def set_member(
             session, slug, name=name, is_active=is_active, sort_order=sort_order
         )
         return _member(member)
-
-    return await _run(work)
-
-
-@mcp.tool()
-async def import_data(
-    version: int,
-    members: list[dict[str, Any]],
-    chores: list[dict[str, Any]] | None = None,
-    completions: list[dict[str, Any]] | None = None,
-    transactions: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Load members, chores, completions, and ledger rows in bulk from an export.
-
-    Read ``docs/import.md`` of the addon for the format. The tool checks the
-    full batch before it writes. One bad row stops the call, and the error
-    gives the path of each problem. A second import of the same batch
-    changes nothing. The result gives the ``created`` and ``skipped`` counts
-    of each table and the balance of each member in the batch.
-
-    Args:
-        version: The format version. It must be 1.
-        members: Member rows: slug, name, is_active, sort_order.
-        chores: Chore rows: member (a slug), name, points, frequency,
-            is_active, next_due_date, last_completed_at, created_at, external_id.
-        completions: Completion rows: external_id, external_chore_id or
-            member and chore (a name), completed_at, points_awarded, note.
-        transactions: Ledger rows: external_id, member, amount, description,
-            source, created_at, completion_external_id.
-    """
-
-    async def work(session: AsyncSession) -> dict[str, Any]:
-        return await importer.import_data(
-            session, version, members, chores, completions, transactions
-        )
 
     return await _run(work)
 

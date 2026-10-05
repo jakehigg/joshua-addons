@@ -31,11 +31,12 @@ Run procedure
 
    The integrity gate can stop the export. See "Integrity gate" below.
 
-3. Import the file into the chores addon::
+3. Import the file inside the container of the chores addon::
 
-       uv run python scripts/chores_import.py chores_export.json \\
-         --url https://<chores-addon>/mcp --token <ADDON_TOKEN>
+       docker compose -f addons/chores/docker-compose.yml exec -T chores \\
+         python -m joshua_chores import - < chores_export.json
 
+   ``addons/chores/docs/import.md`` gives the command for Kubernetes.
    Compare the balances that the import prints with the stored balances
    that the export printed.
 
