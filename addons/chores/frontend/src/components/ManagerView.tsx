@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  api, ApiError, Chore, ChoreRow, Frequency, Member, Transaction,
+  api, ApiError, Chore, ChoreRow, FREQUENCY_LABEL, Frequency, Member, Transaction,
   formatDate, localToday,
 } from '../api'
 import DatePicker from './DatePicker'
@@ -293,7 +293,7 @@ export default function ManagerView() {
                         {late && <span className="chip chip-amber">Overdue</span>}
                         {dueToday && <span className="chip chip-green">Due today</span>}
                         <span className="chore-sub">
-                          {chore.frequency} · {chore.points} XP · {formatDate(chore.next_due_date)}
+                          {FREQUENCY_LABEL[chore.frequency]} · {chore.points} XP · {formatDate(chore.next_due_date)}
                         </span>
                       </div>
                     </div>
@@ -331,7 +331,7 @@ export default function ManagerView() {
                       <span className="chore-name">{member.name}</span>
                       {!member.is_active && <span className="chip chip-muted">Inactive</span>}
                     </div>
-                    <span className="chore-sub member-sub">/{member.slug} · {member.balance} XP</span>
+                    <span className="chore-sub member-sub">{member.balance} XP · /{member.slug}</span>
                   </div>
                   <div className="chore-actions">
                     <button className="icon-btn" onClick={() => move(index, -1)} disabled={index === 0} title="Move up" aria-label="Move up">↑</button>

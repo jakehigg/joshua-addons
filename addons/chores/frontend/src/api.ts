@@ -16,6 +16,13 @@ export interface Member {
 
 export type Frequency = 'daily' | 'weekly' | 'monthly' | 'one_off'
 
+export const FREQUENCY_LABEL: Record<Frequency, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  one_off: 'One-off',
+}
+
 export interface Chore {
   id: number
   name: string
