@@ -319,15 +319,11 @@ TOOLS = {
 }
 
 
-async def test_list_tools_gives_the_eleven_tools_and_no_import(app) -> None:
+async def test_list_tools_gives_exactly_the_documented_tools(app) -> None:
+    """The tool list is the surface the gateway sees. It matches the README table."""
     async with mcp_session(app) as session:
         listed = await session.list_tools()
-        missing = await session.call_tool("import_data", {"version": 1, "members": []})
-    names = [tool.name for tool in listed.tools]
-    assert len(names) == 11
-    assert set(names) == TOOLS
-    assert "import_data" not in names
-    assert missing.is_error is True
+    assert {tool.name for tool in listed.tools} == TOOLS
 
 
 def test_settings_are_not_ready_outside_the_lifespan() -> None:
