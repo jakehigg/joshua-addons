@@ -28,8 +28,10 @@ to run an addon.
 
 ## Make a change
 
-1. Open an issue first, or find the issue the change belongs to. An issue says:
-   Goal, Why, Spec, Acceptance criteria, Tests, Out of scope.
+1. Open an issue first, or find the issue the change belongs to. GitHub offers
+   the templates in `.github/ISSUE_TEMPLATE/`: a change, a bug, or a new
+   addon. A change says: Goal, Why, Spec, Acceptance criteria, Tests, Out of
+   scope, Depends on.
 2. Branch from an up-to-date `main`. Name the branch `<issue>-<slug>`:
 
 ```
@@ -57,8 +59,9 @@ make test
 git push -u origin 42-weather-addon
 ```
 
-7. In the pull request, say what changed and why, and end with `Closes #42`. CI
-   must be green before review.
+7. In the pull request, fill the template: say what changed and why, go
+   through the checks, and end with `Closes #42`. CI must be green before
+   review.
 
 One pull request closes one issue. The maintainer squash-merges it. After the
 merge, update your `main` from `upstream` and delete the branch:
@@ -115,6 +118,15 @@ python3 .claude/skills/ste-writing/scripts/ste-lint.py README.md
 The linter prints violations per 100 words. Aim for less than 2.5 on prose and
 near 0 on a procedure. The score measures form, not truth. Check the facts
 yourself.
+
+## Report a bug or a vulnerability
+
+A bug is an issue with the **Bug** template. It asks for the addon, the
+version, the shape of your settings with no secret in them, and the log lines
+around the event.
+
+A vulnerability is not an issue. `SECURITY.md` says how to report one
+privately, and what counts.
 
 ## License of a contribution
 

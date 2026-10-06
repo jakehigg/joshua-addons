@@ -21,6 +21,10 @@ releases, with the images and the packaged chart, are at
   limits which tools run, not what a tool does. Nothing in the software
   changes.
 
+- **`SECURITY.md` says how to report a vulnerability privately**, and what
+  counts as one. An issue on GitHub now starts from a template: a change, a
+  bug, or a new addon.
+
 ### Added
 
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
