@@ -15,6 +15,12 @@ releases, with the images and the packaged chart, are at
   longer marked as a pre-release on GitHub. The interfaces can still change in
   any release, so read this page before you update.
 
+- **The README and `docs/architecture.md` say what the license says.** The
+  addons come with no warranty, and the architecture page says in plain words
+  that an addon is code from outside your instance and that the gateway
+  limits which tools run, not what a tool does. Nothing in the software
+  changes.
+
 ### Added
 
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim

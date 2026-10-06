@@ -35,3 +35,8 @@ mcp:
 Read `../../docs/config.md` in `joshua-ai` for the full `mcp:` shape, including
 `allow`, `tools`, and per-person identities. See `../../docs/install.md` for
 the steps that apply this change, and for how to add a token.
+
+## License
+
+This addon is part of joshua-addons and ships under the same license, with no
+warranty. The "License" section of the root `README.md` has the notice.

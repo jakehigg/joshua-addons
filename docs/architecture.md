@@ -17,6 +17,14 @@ over MCP streamable HTTP, to the `url` given in `joshua.yaml`, verbatim. An
 optional `headers:` block on the upstream entry carries a bearer token to the
 addon on every call.
 
+An addon is code from outside your instance, also when it ships from this
+repository. The gateway limits which tools the agent can call. It does not
+limit what a tool does when it runs. `vinyl` talks to Discogs and can change
+your collection record. `developer` starts a container and runs code that
+nobody reviewed. Read an addon's README before you run it, and keep a tool
+that can do harm behind a person you trust. The addons come with no warranty.
+See `LICENSE`, sections 15 and 16.
+
 ## Compose topology
 
 On one Docker host, an addon and the joshua-ai stack join one Docker network.

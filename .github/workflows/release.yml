@@ -188,4 +188,11 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*.tgz
+          # The written entry for a release is in docs/CHANGELOG.md. GitHub
+          # puts the list of merged pull requests under this body.
+          body: |
+            The written changelog for this release is `docs/CHANGELOG.md`.
+            Read it before you update.
+
+            Joshua addons come with ABSOLUTELY NO WARRANTY. See `LICENSE`, sections 15 and 16.
           generate_release_notes: true

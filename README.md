@@ -65,3 +65,9 @@ Joshua addons are free software under the GNU Affero General Public License,
 version 3 or later. See [LICENSE](LICENSE). You may run, change, and share
 them. If you change one and let other people use it over a network, you must
 offer them the source of your version.
+
+Copyright (C) 2026 jakehigg. See [LICENSE](LICENSE).
+
+Joshua addons come with ABSOLUTELY NO WARRANTY, to the extent permitted by
+law. Sections 15 and 16 of the license say what that means. You run them at
+your own risk.
