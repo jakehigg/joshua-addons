@@ -53,6 +53,7 @@ def test_an_addon_with_no_entry_fails(tmp_path) -> None:
     addons = _tree(tmp_path)
     (addons / "other" / "joshua_other").mkdir(parents=True)
     (addons / "other" / "Dockerfile").write_text("FROM scratch\n")
+    (addons / "other" / "joshua_other" / "server.py").write_text('mcp = MCPServer(name="other")\n')
     problems = check_catalog.check(GOOD, check_catalog.addon_dirs(addons))
     assert problems == ["other: addons/other/ has no entry in catalog.yaml"]
 
