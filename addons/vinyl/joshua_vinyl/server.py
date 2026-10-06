@@ -107,7 +107,8 @@ async def lifespan(server: MCPServer) -> AsyncIterator[dict[str, Any]]:
             task.cancel()
 
 
-mcp = MCPServer(name="vinyl", lifespan=lifespan)
+# The release this image carries, from the build; `dev` for a build with none.
+mcp = MCPServer(name="vinyl", version=os.environ.get("ADDON_VERSION", "dev"), lifespan=lifespan)
 
 
 @mcp.tool()

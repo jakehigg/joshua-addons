@@ -55,8 +55,11 @@ up:
 	docker compose -f $(ADDON_COMPOSE) ps
 
 # Run one addon from a build of this checkout, tagged :dev.
+# The commit of the checkout goes in as a build argument, so the build names it
+# in its start log. The version of a build is `dev`.
 up-dev:
 	$(require_addon)
+	ADDON_REVISION=$$(git rev-parse HEAD) \
 	docker compose -f $(ADDON_COMPOSE) -f $(ADDON_DEV_COMPOSE) up -d --build
 	docker compose -f $(ADDON_COMPOSE) ps
 

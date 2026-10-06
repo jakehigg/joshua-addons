@@ -8,6 +8,7 @@ success. The scheduled nightly sync calls the same function.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from collections.abc import Sequence
 
@@ -52,6 +53,13 @@ def sync_once(settings: Settings) -> SyncResult:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command in ``argv``. Return the exit code."""
     configure_from_env("joshua-vinyl")
+    logger.info(
+        {
+            "message": "build",
+            "version": os.environ.get("ADDON_VERSION", "dev"),
+            "revision": os.environ.get("ADDON_REVISION", ""),
+        }
+    )
     # httpx logs every request URL at INFO, and the collection URL names the
     # account. The addon's own loggers say what happened without it.
     logging.getLogger("httpx").setLevel(logging.WARNING)

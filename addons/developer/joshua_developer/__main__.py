@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 import uvicorn
 
@@ -30,7 +31,14 @@ async def serve() -> None:
 
 
 def main() -> None:
-    configure_from_env("joshua-developer")
+    logger = configure_from_env("joshua-developer")
+    logger.info(
+        {
+            "message": "build",
+            "version": os.environ.get("ADDON_VERSION", "dev"),
+            "revision": os.environ.get("ADDON_REVISION", ""),
+        }
+    )
     asyncio.run(serve())
 
 

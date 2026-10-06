@@ -19,7 +19,10 @@ order. `addons/hello/` is a worked example of every step.
 
    The Dockerfile build context is the repository root, because the addon
    depends on the workspace lockfile. Copy the `Dockerfile` and both compose
-   files from `addons/hello/` and change only the addon name in them.
+   files from `addons/hello/` and change only the addon name in them. The
+   Dockerfile takes two build arguments, `ADDON_VERSION` and `ADDON_REVISION`,
+   and exports them. The workflows pass them; a plain build gets `dev` and no
+   revision.
 
 2. **Know what the Dockerfile triggers.** CI finds an addon by the presence
    of `addons/<name>/Dockerfile`, so no other file registers it. Once the
@@ -50,7 +53,11 @@ order. `addons/hello/` is a worked example of every step.
 
 3. **Meet the server contract.** The addon serves MCP at `POST /mcp`, over
    streamable HTTP, on port 8000. It answers `GET /healthz` with
-   `{"ok": true}`, open, with no token check. When the environment carries
+   `{"ok": true}`, open, with no token check. It reports `ADDON_VERSION` as
+   `serverInfo.version` at `initialize`:
+   `MCPServer(name="<name>", version=os.environ.get("ADDON_VERSION", "dev"))`.
+   The joshua-ai gateway reads it, so a person can ask Joshua which release
+   of an addon runs. The start log names the version and the revision. When the environment carries
    `ADDON_TOKEN`, every other route needs
    `Authorization: Bearer <ADDON_TOKEN>`, checked with `hmac.compare_digest`.
    A missing or wrong token gets 401. Logs are one JSON line per event.

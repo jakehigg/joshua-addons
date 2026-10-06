@@ -18,3 +18,5 @@ services:
     build:
       context: ../..
       dockerfile: addons/vinyl/Dockerfile
+      args:
+        ADDON_REVISION: ${ADDON_REVISION:-}

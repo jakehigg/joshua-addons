@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import hmac
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -42,7 +43,8 @@ OPEN_PATHS = frozenset({"/healthz"})
 _BEARER = "Bearer "
 MAX_LIST = 100
 
-mcp = MCPServer(name="developer")
+# The release this image carries, from the build; `dev` for a build with none.
+mcp = MCPServer(name="developer", version=os.environ.get("ADDON_VERSION", "dev"))
 
 _manager: Manager | None = None
 # The worker API app and the git host tunnel that start() built.

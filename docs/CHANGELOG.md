@@ -27,6 +27,12 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- **Every addon knows its release.** The image carries the version and the
+  commit it was built from, the server reports the version as
+  `serverInfo.version` when the joshua-ai gateway connects, and the start log
+  names both. A branch build reports `dev` and its commit. Joshua can then say
+  which release of an addon runs and whether a newer one exists.
+
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import uvicorn
 
 from joshua_mcp.log import configure_from_env
@@ -7,7 +9,14 @@ from joshua_mcp.server import build_app
 
 
 def main() -> None:
-    configure_from_env("joshua-mcp")
+    logger = configure_from_env("joshua-mcp")
+    logger.info(
+        {
+            "message": "build",
+            "version": os.environ.get("ADDON_VERSION", "dev"),
+            "revision": os.environ.get("ADDON_REVISION", ""),
+        }
+    )
     uvicorn.run(build_app(), host="0.0.0.0", port=8000, log_config=None)
 
 

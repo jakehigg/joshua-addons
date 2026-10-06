@@ -18,6 +18,8 @@ services:
     build:
       context: ../..
       dockerfile: addons/developer/Dockerfile
+      args:
+        ADDON_REVISION: ${ADDON_REVISION:-}
     environment:
       WORKER_IMAGE: joshua-addons-developer-worker:dev
 
@@ -30,6 +32,8 @@ services:
     build:
       context: ../..
       dockerfile: addons/developer-worker/Dockerfile
+      args:
+        ADDON_REVISION: ${ADDON_REVISION:-}
     entrypoint: ["claude", "--version"]
     restart: "no"
     network_mode: none

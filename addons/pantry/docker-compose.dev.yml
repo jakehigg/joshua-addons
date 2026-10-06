@@ -18,3 +18,5 @@ services:
     build:
       context: ../..
       dockerfile: addons/pantry/Dockerfile
+      args:
+        ADDON_REVISION: ${ADDON_REVISION:-}

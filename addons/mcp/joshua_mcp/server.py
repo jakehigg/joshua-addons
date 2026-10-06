@@ -13,6 +13,7 @@ caller gets a "403 forbidden" error from every write tool.
 from __future__ import annotations
 
 import hmac
+import os
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
@@ -35,7 +36,8 @@ logger = get_logger("joshua_mcp")
 OPEN_PATHS = frozenset({"/healthz"})
 _BEARER = "Bearer "
 
-mcp = MCPServer(name="joshua-mcp")
+# The release this image carries, from the build; `dev` for a build with none.
+mcp = MCPServer(name="joshua-mcp", version=os.environ.get("ADDON_VERSION", "dev"))
 
 
 @dataclass

@@ -23,7 +23,8 @@ logger = get_logger("hello")
 
 OPEN_PATHS = frozenset({"/healthz"})
 
-mcp = MCPServer(name="hello")
+# The release this image carries, from the build; `dev` for a build with none.
+mcp = MCPServer(name="hello", version=os.environ.get("ADDON_VERSION", "dev"))
 
 
 @mcp.tool()

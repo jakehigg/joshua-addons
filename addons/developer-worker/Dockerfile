@@ -47,5 +47,14 @@ WORKDIR /work
 ENV PATH="/app/.venv/bin:$PATH" \
     HOME=/work/home \
     CLAUDE_CONFIG_DIR=/work/home/.claude
+# What the image knows about itself. The workflows pass these; a plain build
+# has none and reports `dev`. The server reports ADDON_VERSION as
+# serverInfo.version at initialize, and the start log names both.
+ARG ADDON_VERSION=dev
+ARG ADDON_REVISION=""
+ENV ADDON_VERSION=$ADDON_VERSION \
+    ADDON_REVISION=$ADDON_REVISION
+LABEL org.opencontainers.image.version=$ADDON_VERSION \
+      org.opencontainers.image.revision=$ADDON_REVISION
 USER 1000
 ENTRYPOINT ["python", "-m", "joshua_developer_worker"]

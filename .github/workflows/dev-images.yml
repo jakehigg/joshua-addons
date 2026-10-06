@@ -73,6 +73,11 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          # A branch build has a revision and no version. The server reports
+          # `dev` as its version and the start log names the commit.
+          build-args: |
+            ADDON_VERSION=dev
+            ADDON_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

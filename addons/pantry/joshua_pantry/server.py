@@ -96,7 +96,8 @@ async def lifespan(server: MCPServer) -> AsyncIterator[dict[str, Any]]:
         await engine.dispose()
 
 
-mcp = MCPServer(name="pantry", lifespan=lifespan)
+# The release this image carries, from the build; `dev` for a build with none.
+mcp = MCPServer(name="pantry", version=os.environ.get("ADDON_VERSION", "dev"), lifespan=lifespan)
 
 
 def _parse_purchased_at(value: str) -> datetime:

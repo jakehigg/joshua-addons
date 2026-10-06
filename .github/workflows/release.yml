@@ -86,11 +86,16 @@ jobs:
           context: .
           file: addons/${{ matrix.member }}/Dockerfile
           platforms: ${{ matrix.platform.name }}
+          # The server reports the version as serverInfo.version at initialize.
+          build-args: |
+            ADDON_VERSION=${{ needs.version.outputs.version }}
+            ADDON_REVISION=${{ github.sha }}
           # The label links the package to this repository, so the package page
           # shows the source and can inherit the repository visibility.
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=AGPL-3.0-or-later
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/joshua-addons-${{ matrix.member }},push-by-digest=true,name-canonical=true,push=true
           # One cache for each addon and each architecture. A shared scope makes

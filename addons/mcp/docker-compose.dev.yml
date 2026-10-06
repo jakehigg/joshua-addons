@@ -16,3 +16,5 @@ services:
     build:
       context: ../..
       dockerfile: addons/mcp/Dockerfile
+      args:
+        ADDON_REVISION: ${ADDON_REVISION:-}
