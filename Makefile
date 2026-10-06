@@ -33,6 +33,7 @@ lint:
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run --with pyyaml python scripts/check_chart_version.py
+	uv run --with pyyaml python scripts/check_catalog.py
 
 fmt:
 	uv run ruff format .

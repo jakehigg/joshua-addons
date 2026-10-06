@@ -96,5 +96,15 @@ order. `addons/hello/` is a worked example of every step.
    `joshua.yaml`. Read `../joshua-ai/docs/config.md` for the full `mcp:`
    shape.
 
+9. **Add the catalog entry.** Add the addon to `catalog.yaml` at the root:
+   `name` (the directory), `server` when the `MCPServer` name differs from
+   it, a one-line `summary` of at most 120 characters, `image`, `docs`,
+   `since` (the release that will ship it), and `requires_joshua_ai` when the
+   addon needs a joshua-ai route that an older release lacks.
+   `scripts/check_catalog.py`, run by `make lint`, fails the build when an
+   addon has no entry, an entry has no addon, or `server` is not what the
+   package passes to `MCPServer(name=...)`. joshua-ai reads this file at the
+   latest release to tell a person which addons they can add.
+
 Run `make lint` and `make test` before you open a pull request.
 `CONTRIBUTING.md` has the fork, branch, and review steps.

@@ -25,6 +25,8 @@ Start Joshua from `joshua-ai` first. Then, for each addon you want:
   each addon, with that addon's `values.yaml`.
 
 Each addon has a `README.md` that says what it does and which settings it takes.
+`catalog.yaml` at the root lists every addon in one line each; joshua-ai reads
+it, so you can ask Joshua which addons you can add.
 
 ## Read more
 

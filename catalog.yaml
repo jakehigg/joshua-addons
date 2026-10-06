@@ -1,0 +1,49 @@
+# The addons this repository ships, for a reader on another machine.
+#
+# The joshua-ai `instance` builtin reads this file at the latest release, so
+# a person can ask Joshua which addons they can add and whether an installed
+# one has a newer release. `scripts/check_catalog.py` keeps it honest: every
+# addon with a Dockerfile has one entry, every entry has a Dockerfile, and
+# `server` is the name the addon's MCPServer reports. `make lint` runs it.
+#
+# Fields:
+#   name                the directory under addons/
+#   server              the MCPServer name, when it differs from `name`
+#   summary             one line, at most 120 characters
+#   image               the released image
+#   docs                the README
+#   since               the first release that shipped the addon
+#   requires_joshua_ai  the oldest joshua-ai release the addon needs; optional
+addons:
+  - name: hello
+    summary: The placeholder addon that proves the pipeline, with one greeting tool.
+    image: ghcr.io/jakehigg/joshua-addons-hello
+    docs: https://github.com/jakehigg/joshua-addons/blob/main/addons/hello/README.md
+    since: 2026.10.1
+
+  - name: mcp
+    server: joshua-mcp
+    summary: Joshua's wiki, journal, and knowledge folder over MCP, for a caller outside the agent.
+    image: ghcr.io/jakehigg/joshua-addons-mcp
+    docs: https://github.com/jakehigg/joshua-addons/blob/main/addons/mcp/README.md
+    since: 2026.10.1
+    requires_joshua_ai: 2026.10.1
+
+  - name: pantry
+    summary: Track the pantry from receipts, what is on hand, when it runs out, and what to reorder.
+    image: ghcr.io/jakehigg/joshua-addons-pantry
+    docs: https://github.com/jakehigg/joshua-addons/blob/main/addons/pantry/README.md
+    since: 2026.10.1
+
+  - name: vinyl
+    summary: A shelf browser for a record collection kept on Discogs, with a web page of the covers.
+    image: ghcr.io/jakehigg/joshua-addons-vinyl
+    docs: https://github.com/jakehigg/joshua-addons/blob/main/addons/vinyl/README.md
+    since: 2026.10.1
+
+  - name: developer
+    summary: Give Joshua a coding task; a manager starts a worker that writes the code and opens a pull request.
+    image: ghcr.io/jakehigg/joshua-addons-developer
+    docs: https://github.com/jakehigg/joshua-addons/blob/main/addons/developer/README.md
+    since: 2026.10.1
+    requires_joshua_ai: 2026.10.1

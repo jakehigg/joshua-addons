@@ -185,9 +185,16 @@ jobs:
         with:
           name: helm-chart
           path: dist
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: catalog.yaml
+          sparse-checkout-cone-mode: false
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.tgz
+          # The chart, and the catalog that joshua-ai reads to list the addons.
+          files: |
+            dist/*.tgz
+            catalog.yaml
           # The written entry for a release is in docs/CHANGELOG.md. GitHub
           # puts the list of merged pull requests under this body.
           body: |

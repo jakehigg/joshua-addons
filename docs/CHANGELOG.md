@@ -27,6 +27,13 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- **`catalog.yaml` lists every addon.** One entry each: the name, a one-line
+  summary, the image, the README, the first release that shipped it, and the
+  oldest joshua-ai release it needs. Each release attaches the file, and
+  joshua-ai reads it so a person can ask Joshua which addons they can add and
+  whether an installed one has a newer release. `make lint` fails when the
+  file and `addons/` disagree.
+
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes

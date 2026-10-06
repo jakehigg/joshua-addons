@@ -117,6 +117,10 @@ jobs:
       # meet an image it did not ship with.
       - name: The chart version and every addon image agree
         run: uv run --with pyyaml python scripts/check_chart_version.py
+      # The catalog is what joshua-ai reads to list the addons. It must name
+      # every addon and nothing else.
+      - name: The catalog names every addon
+        run: uv run --with pyyaml python scripts/check_catalog.py
       - uses: azure/setup-helm@v4
       - uses: yokawasa/action-setup-kube-tools@v0.11.2
         with:
