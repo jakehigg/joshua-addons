@@ -29,7 +29,7 @@
 # The addon publishes no port.
 services:
   developer:
-    image: ghcr.io/jakehigg/joshua-addons-developer:${JOSHUA_ADDONS_VERSION:-0.1.3}
+    image: ghcr.io/jakehigg/joshua-addons-developer:${JOSHUA_ADDONS_VERSION:-2026.10.1}
     restart: unless-stopped
     # `.env` also gives the manager each git token that a token_env in
     # developer.yaml names, GIT_CA_BUNDLE, and WORKER_START_GRACE_S. The
@@ -46,7 +46,7 @@ services:
       JOSHUA_TOKEN_DEVELOPER: ${JOSHUA_TOKEN_DEVELOPER:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       WORKER_RUNTIME: ${WORKER_RUNTIME:-docker}
-      WORKER_IMAGE: ${WORKER_IMAGE:-ghcr.io/jakehigg/joshua-addons-developer-worker:${JOSHUA_ADDONS_VERSION:-0.1.3}}
+      WORKER_IMAGE: ${WORKER_IMAGE:-ghcr.io/jakehigg/joshua-addons-developer-worker:${JOSHUA_ADDONS_VERSION:-2026.10.1}}
       MANAGER_HOST: developer
       WORKER_NETWORK: developer_workers
       PUBLIC_NETWORK: ${PUBLIC_NETWORK:-bridge}

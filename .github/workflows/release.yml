@@ -1,4 +1,4 @@
-# Cutting a release: push a tag such as v0.0.1. This builds every addon
+# Cutting a release: push a tag such as v2026.10.1. This builds every addon
 # image, pushes them to the GitHub container registry, packages the chart,
 # and attaches it to a GitHub release.
 #
@@ -189,5 +189,3 @@ jobs:
         with:
           files: dist/*.tgz
           generate_release_notes: true
-          # A pre-release until the interfaces settle.
-          prerelease: ${{ startsWith(needs.version.outputs.version, '0.') }}

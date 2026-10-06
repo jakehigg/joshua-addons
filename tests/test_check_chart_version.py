@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from scripts import check_chart_version
 
 
@@ -11,11 +13,11 @@ def test_the_committed_tree_agrees_on_one_version() -> None:
 
 def test_a_disagreeing_version_fails(tmp_path, monkeypatch, capsys) -> None:
     chart = tmp_path / "Chart.yaml"
-    chart.write_text("version: 0.0.1\nappVersion: '0.0.2'\n")
+    chart.write_text("version: 2026.10.1\nappVersion: '2026.10.2'\n")
     addons_dir = tmp_path / "addons"
     (addons_dir / "sample").mkdir(parents=True)
     (addons_dir / "sample" / "docker-compose.yml").write_text(
-        "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-0.0.1}\n"
+        "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-2026.10.1}\n"
     )
     monkeypatch.setattr(check_chart_version, "ROOT", tmp_path)
     monkeypatch.setattr(check_chart_version, "CHART", chart)
@@ -26,7 +28,7 @@ def test_a_disagreeing_version_fails(tmp_path, monkeypatch, capsys) -> None:
 
 def test_a_missing_value_fails(tmp_path, monkeypatch, capsys) -> None:
     chart = tmp_path / "Chart.yaml"
-    chart.write_text("version: 0.0.1\n")  # no appVersion
+    chart.write_text("version: 2026.10.1\n")  # no appVersion
     monkeypatch.setattr(check_chart_version, "CHART", chart)
     monkeypatch.setattr(check_chart_version, "ADDONS_DIR", tmp_path / "addons")
     assert check_chart_version.main() == 1
@@ -34,9 +36,9 @@ def test_a_missing_value_fails(tmp_path, monkeypatch, capsys) -> None:
 
 
 def _tree(tmp_path, monkeypatch, compose: str, values: str | None = None):
-    """A chart at 0.1.3 and one addon with ``compose`` and, if given, ``values``."""
+    """A chart at 2026.10.1 and one addon with ``compose`` and, if given, ``values``."""
     chart = tmp_path / "Chart.yaml"
-    chart.write_text("version: 0.1.3\nappVersion: '0.1.3'\n")
+    chart.write_text("version: 2026.10.1\nappVersion: '2026.10.1'\n")
     addon = tmp_path / "addons" / "sample"
     addon.mkdir(parents=True)
     (addon / "docker-compose.yml").write_text(compose)
@@ -48,21 +50,21 @@ def _tree(tmp_path, monkeypatch, compose: str, values: str | None = None):
 
 
 COMPOSE_OK = (
-    "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-0.1.3}\n"
+    "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-2026.10.1}\n"
     "    environment:\n"
-    "      WORKER_IMAGE: ${WORKER_IMAGE:-ghcr.io/o/worker:${JOSHUA_ADDONS_VERSION:-0.1.3}}\n"
+    "      WORKER_IMAGE: ${WORKER_IMAGE:-ghcr.io/o/worker:${JOSHUA_ADDONS_VERSION:-2026.10.1}}\n"
 )
 
 
 def test_a_worker_pin_that_matches_passes(tmp_path, monkeypatch, capsys) -> None:
-    values = "env:\n  WORKER_IMAGE: ghcr.io/o/worker:0.1.3\n"
+    values = "env:\n  WORKER_IMAGE: ghcr.io/o/worker:2026.10.1\n"
     _tree(tmp_path, monkeypatch, COMPOSE_OK, values)
     assert check_chart_version.main() == 0
-    assert "clean (0.1.3)" in capsys.readouterr().out
+    assert "clean (2026.10.1)" in capsys.readouterr().out
 
 
 def test_a_stale_worker_pin_in_values_fails(tmp_path, monkeypatch, capsys) -> None:
-    values = "env:\n  WORKER_IMAGE: ghcr.io/o/worker:0.1.2\n"
+    values = "env:\n  WORKER_IMAGE: ghcr.io/o/worker:2026.9.1\n"
     _tree(tmp_path, monkeypatch, COMPOSE_OK, values)
     assert check_chart_version.main() == 1
     err = capsys.readouterr().err
@@ -72,7 +74,7 @@ def test_a_stale_worker_pin_in_values_fails(tmp_path, monkeypatch, capsys) -> No
 
 def test_a_stale_worker_pin_in_compose_fails(tmp_path, monkeypatch, capsys) -> None:
     compose = COMPOSE_OK.replace(
-        "worker:${JOSHUA_ADDONS_VERSION:-0.1.3}", "worker:${JOSHUA_ADDONS_VERSION:-0.1.2}"
+        "worker:${JOSHUA_ADDONS_VERSION:-2026.10.1}", "worker:${JOSHUA_ADDONS_VERSION:-2026.9.1}"
     )
     _tree(tmp_path, monkeypatch, compose)
     assert check_chart_version.main() == 1
@@ -81,7 +83,7 @@ def test_a_stale_worker_pin_in_compose_fails(tmp_path, monkeypatch, capsys) -> N
 
 def test_the_env_list_form_in_compose_is_read(tmp_path, monkeypatch, capsys) -> None:
     compose = (
-        "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-0.1.3}\n"
+        "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-2026.10.1}\n"
         "    environment:\n"
         "      - WORKER_IMAGE=ghcr.io/o/worker:${JOSHUA_ADDONS_VERSION:-0.1.1}\n"
     )
@@ -92,7 +94,7 @@ def test_the_env_list_form_in_compose_is_read(tmp_path, monkeypatch, capsys) -> 
 
 def test_a_literal_worker_tag_in_compose_is_read(tmp_path, monkeypatch) -> None:
     compose = COMPOSE_OK.replace(
-        "${WORKER_IMAGE:-ghcr.io/o/worker:${JOSHUA_ADDONS_VERSION:-0.1.3}}",
+        "${WORKER_IMAGE:-ghcr.io/o/worker:${JOSHUA_ADDONS_VERSION:-2026.10.1}}",
         "ghcr.io/o/worker:0.0.9",
     )
     _tree(tmp_path, monkeypatch, compose)
@@ -107,7 +109,7 @@ def test_a_worker_image_without_a_tag_fails(tmp_path, monkeypatch, capsys) -> No
 
 
 def test_an_addon_without_a_worker_pin_is_not_checked(tmp_path, monkeypatch) -> None:
-    compose = "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-0.1.3}\n"
+    compose = "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-2026.10.1}\n"
     _tree(tmp_path, monkeypatch, compose, "env:\n  OTHER: value\n")
     assert check_chart_version.main() == 0
 
@@ -125,7 +127,7 @@ def test_the_committed_tree_reads_every_env_example_and_the_ci_pin(capsys) -> No
 def test_a_stale_env_example_version_fails(tmp_path, monkeypatch, capsys) -> None:
     _tree(tmp_path, monkeypatch, COMPOSE_OK)
     env = tmp_path / "addons" / "sample" / ".env.example"
-    env.write_text("# The release.\nJOSHUA_ADDONS_VERSION=0.1.2\n")
+    env.write_text("# The release.\nJOSHUA_ADDONS_VERSION=2026.9.1\n")
     assert check_chart_version.main() == 1
     assert ".env.example JOSHUA_ADDONS_VERSION" in capsys.readouterr().err
 
@@ -133,16 +135,16 @@ def test_a_stale_env_example_version_fails(tmp_path, monkeypatch, capsys) -> Non
 def test_a_commented_env_example_version_is_read(tmp_path, monkeypatch) -> None:
     _tree(tmp_path, monkeypatch, COMPOSE_OK)
     env = tmp_path / "addons" / "sample" / ".env.example"
-    env.write_text("#JOSHUA_ADDONS_VERSION=0.1.2\n")
+    env.write_text("#JOSHUA_ADDONS_VERSION=2026.9.1\n")
     assert check_chart_version.main() == 1
-    env.write_text("# JOSHUA_ADDONS_VERSION=0.1.3\n")
+    env.write_text("# JOSHUA_ADDONS_VERSION=2026.10.1\n")
     assert check_chart_version.main() == 0
 
 
 def test_a_versioned_worker_image_in_env_example_is_checked(tmp_path, monkeypatch, capsys) -> None:
     _tree(tmp_path, monkeypatch, COMPOSE_OK)
     env = tmp_path / "addons" / "sample" / ".env.example"
-    env.write_text("JOSHUA_ADDONS_VERSION=0.1.3\n#WORKER_IMAGE=ghcr.io/o/worker:0.1.1\n")
+    env.write_text("JOSHUA_ADDONS_VERSION=2026.10.1\n#WORKER_IMAGE=ghcr.io/o/worker:0.1.1\n")
     assert check_chart_version.main() == 1
     assert ".env.example WORKER_IMAGE tag" in capsys.readouterr().err
 
@@ -151,7 +153,7 @@ def test_a_placeholder_worker_image_in_env_example_is_not_checked(tmp_path, monk
     _tree(tmp_path, monkeypatch, COMPOSE_OK)
     env = tmp_path / "addons" / "sample" / ".env.example"
     env.write_text(
-        "JOSHUA_ADDONS_VERSION=0.1.3\n"
+        "JOSHUA_ADDONS_VERSION=2026.10.1\n"
         "#WORKER_IMAGE=ghcr.io/o/worker:<version>\n"
         "#WORKER_IMAGE=localhost:5000/o/worker\n"
         "OTHER=0.0.9\n"
@@ -167,14 +169,14 @@ def _ci_values(tmp_path, text: str) -> None:
 
 def test_a_stale_worker_pin_in_ci_values_fails(tmp_path, monkeypatch, capsys) -> None:
     _tree(tmp_path, monkeypatch, COMPOSE_OK)
-    _ci_values(tmp_path, "env:\n  WORKER_IMAGE: ghcr.io/o/worker:0.1.2\n")
+    _ci_values(tmp_path, "env:\n  WORKER_IMAGE: ghcr.io/o/worker:2026.9.1\n")
     assert check_chart_version.main() == 1
     assert "ci/sample-values.yaml env.WORKER_IMAGE tag" in capsys.readouterr().err
 
 
 def test_a_matching_worker_pin_in_ci_values_passes(tmp_path, monkeypatch) -> None:
     _tree(tmp_path, monkeypatch, COMPOSE_OK)
-    _ci_values(tmp_path, "env:\n  WORKER_IMAGE: ghcr.io/o/worker:0.1.3\n")
+    _ci_values(tmp_path, "env:\n  WORKER_IMAGE: ghcr.io/o/worker:2026.10.1\n")
     assert check_chart_version.main() == 0
 
 
@@ -182,3 +184,25 @@ def test_a_ci_values_file_without_a_worker_pin_is_not_checked(tmp_path, monkeypa
     _tree(tmp_path, monkeypatch, COMPOSE_OK)
     _ci_values(tmp_path, "image:\n  repository: x\n")
     assert check_chart_version.main() == 0
+
+
+@pytest.mark.parametrize("version", ["2026.10.1", "2026.1.1", "2027.12.14", "2026.10.20"])
+def test_the_date_shape_is_accepted(version: str) -> None:
+    assert check_chart_version.version_shape_ok(version)
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["2026.10.01", "2026.01.1", "2026.10", "2026.10.0", "0.1.4", "v2026.10.1", "2026.13.1", ""],
+)
+def test_another_shape_is_refused(version: str) -> None:
+    assert not check_chart_version.version_shape_ok(version)
+
+
+def test_a_tree_with_the_old_shape_fails(tmp_path, monkeypatch, capsys) -> None:
+    compose = "services:\n  sample:\n    image: x:${JOSHUA_ADDONS_VERSION:-0.1.4}\n"
+    _tree(tmp_path, monkeypatch, compose)
+    chart = tmp_path / "Chart.yaml"
+    chart.write_text("version: 0.1.4\nappVersion: '0.1.4'\n")
+    assert check_chart_version.main() == 1
+    assert "not of the date shape" in capsys.readouterr().err

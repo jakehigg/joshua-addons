@@ -1,4 +1,11 @@
-"""Refuse a tree where the version is not the same in every file that holds it.
+"""Refuse a tree where the version is not the same in every file that holds it,
+or is not of the date shape.
+
+The version is a date: ``YYYY.M.N``, the year, the month with no leading zero,
+and the sequence of the release in that month, from 1. ``2026.10.1`` is the
+first release in October 2026. Two constraints give the shape: Helm requires
+SemVer, so no part has a leading zero; and the version always has three parts,
+because an unquoted ``2026.10`` is a number in YAML.
 
 One version covers the whole repository. The chart, and every addon's image
 tag, ship together, so a chart or a compose file that meets an image it did
@@ -34,6 +41,20 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 CHART = ROOT / "charts" / "joshua-addon" / "Chart.yaml"
+
+# YYYY.M.N: a four-digit year, a month 1-12 with no leading zero, a sequence from 1.
+VERSION_SHAPE = re.compile(r"^\d{4}\.(1[0-2]|[1-9])\.[1-9]\d*$")
+SHAPE_HELP = (
+    "The version is YYYY.M.N: the year, the month with no leading zero, and the "
+    "sequence of the release in that month, from 1. Example: 2026.10.1."
+)
+
+
+def version_shape_ok(version: str) -> bool:
+    """True when ``version`` is of the ``YYYY.M.N`` shape."""
+    return VERSION_SHAPE.match(version) is not None
+
+
 ADDONS_DIR = ROOT / "addons"
 
 
@@ -137,7 +158,12 @@ def main() -> int:
             print(f"  {value:>12}  {name}", file=sys.stderr)
         print("Set all of them to the version you release.", file=sys.stderr)
         return 1
-    print(f"chart-version: clean ({next(iter(found.values()))})")
+    version = next(iter(found.values()))
+    if not version_shape_ok(version):
+        print(f"chart-version: '{version}' is not of the date shape.", file=sys.stderr)
+        print(SHAPE_HELP, file=sys.stderr)
+        return 1
+    print(f"chart-version: clean ({version})")
     return 0
 
 

@@ -6,6 +6,15 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+### Changed
+
+- **The version is a date now.** A release is `YYYY.M.N`: the year, the month
+  with no leading zero, and the sequence of the release in that month, from 1.
+  The first release in October 2026 is `2026.10.1`. An update from 0.1.3 needs
+  no other action: every tool reads `2026.10.1` as newer. A release is no
+  longer marked as a pre-release on GitHub. The interfaces can still change in
+  any release, so read this page before you update.
+
 ### Added
 
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim

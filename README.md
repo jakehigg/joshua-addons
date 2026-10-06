@@ -1,7 +1,7 @@
 # Joshua addons
 
 > **Pre-release.** The interfaces, the settings, and the addon contract can
-> change between commits. Read the release notes before you update.
+> change in any release. Read `docs/CHANGELOG.md` before you update.
 
 Joshua is a personal AI agent. Its core runs from
 [joshua-ai](https://github.com/jakehigg/joshua-ai). This repository holds the
@@ -40,8 +40,11 @@ Each addon has a `README.md` that says what it does and which settings it takes.
 ## Versions
 
 One version covers the whole repository. The chart version, the chart
-`appVersion`, and every release image tag are the same string, and one tag releases all
-of them. [docs/releasing.md](docs/releasing.md) lists the files that a
+`appVersion`, and every release image tag are the same string, and one tag
+releases all of them. The version is a date, `YYYY.M.N`: the year, the month
+with no leading zero, and the sequence of the release in that month, from 1.
+The first release in October 2026 is `2026.10.1`. joshua-ai keeps its own
+sequence. [docs/releasing.md](docs/releasing.md) lists the files that a
 version change touches, and the release steps.
 
 Each push to a branch also publishes the image of every addon, amd64 only,

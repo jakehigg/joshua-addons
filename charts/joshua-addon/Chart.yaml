@@ -7,14 +7,20 @@ type: application
 # an addon that did not change still gets the new tag. `scripts/check_chart_version.py`
 # and the `chart` CI job refuse a file where they disagree.
 #
+# The version is a date: `YYYY.M.N`, the year, the month with no leading zero,
+# and the sequence of the release in that month, from 1. The first release in
+# October 2026 is 2026.10.1. Helm requires SemVer, so a leading zero is not
+# allowed, and the version always has three parts, because an unquoted
+# `2026.10` is a number in YAML. joshua-ai keeps its own sequence.
+#
 # A `v*` tag builds every addon image at the tag version and packages the
 # chart with `--version` and `--app-version` set to it, so a release keeps
 # them the same without reading this file. Bump both here in the change that
 # needs a release, and tag the merge commit.
-version: 0.1.3
+version: 2026.10.1
 # An empty `image.tag` in an addon's values means this version, so the chart
 # pulls the image that shipped with it.
-appVersion: "0.1.3"
+appVersion: "2026.10.1"
 home: https://github.com/jakehigg/joshua-addons
 sources:
   - https://github.com/jakehigg/joshua-addons

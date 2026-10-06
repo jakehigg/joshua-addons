@@ -1,14 +1,22 @@
 # Releasing
 
 One version covers the whole repository: the chart, the chart `appVersion`,
-and every addon image. This page is the procedure for one release. The
-maintainer picks the version number. Before 1.0, a release moves the patch
-number by one, unless the maintainer says otherwise.
+and every addon image. This page is the procedure for one release.
+
+The version is a date, `YYYY.M.N`: the year, the month with no leading zero,
+and the sequence of the release in that month, from 1. The first release in
+October 2026 is `2026.10.1`, the second is `2026.10.2`, and the first in
+January 2027 is `2027.1.1`. Helm requires SemVer, so no part has a leading
+zero, and a version always has three parts. joshua-ai keeps its own sequence,
+so name the repository beside a version. The maintainer picks every version
+number and cuts every release. A coding agent proposes the next free number
+and does nothing else: it never pushes a tag, never runs the release
+workflow, and never commits to `main`.
 
 ## 1. Change the version in these files
 
 Use `<old>` for the current version and `<new>` for the new version, with no
-`v`, such as `0.1.4`.
+`v`, such as `2026.10.2`.
 
 | File | What to change |
 |---|---|
@@ -19,7 +27,7 @@ Use `<old>` for the current version and `<new>` for the new version, with no
 | `addons/*/.env.example` | `JOSHUA_ADDONS_VERSION=<new>` |
 | `docs/CHANGELOG.md` | Change `## Unreleased` to `## <new> - <date>`, and add an empty `## Unreleased` above it |
 
-No other doc names the current release. The `v0.0.1` in `docs/install.md`
+No other doc names the current release. The `v2026.10.1` in `docs/install.md`
 and in `charts/joshua-addon/README.md` is an example. Do not change it.
 
 The Docker socket proxy in `addons/developer/docker-compose.yml` is pinned
@@ -40,8 +48,9 @@ git grep -n "<old>" -- addons charts docs
 ```
 
 `make lint` runs `scripts/check_chart_version.py`. The script fails when one
-of the files in step 1 has another version, except `docs/CHANGELOG.md`. The
-`git grep` must show only the changelog.
+of the files in step 1 has another version, except `docs/CHANGELOG.md`, and
+when the version is not of the date shape. The `git grep` must show only the
+changelog.
 
 ## 3. Merge and tag
 
@@ -64,7 +73,7 @@ The tag starts `.github/workflows/release.yml`. The workflow:
    `ghcr.io/jakehigg/joshua-addons-<name>:<new>` as one multi-arch tag.
 4. Packages the chart with `--version <new>` and `--app-version <new>`.
 5. Makes a GitHub release for the tag, with the chart package and generated
-   notes. A `0.x` version is a pre-release.
+   notes.
 
 A manual run of the workflow (`workflow_dispatch`) builds the images and the
 chart for a version, and makes no GitHub release.

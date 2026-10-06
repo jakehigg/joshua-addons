@@ -134,7 +134,7 @@ Clone this repository at the release tag you want, then install the chart:
 ```
 git clone https://github.com/jakehigg/joshua-addons.git
 cd joshua-addons
-git checkout v0.0.1
+git checkout v2026.10.1
 helm install hello charts/joshua-addon -f addons/hello/values.yaml
 ```
 
@@ -171,7 +171,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/jakehigg/joshua-addons
-    targetRevision: v0.0.1
+    targetRevision: v2026.10.1
     path: charts/joshua-addon
     helm:
       valuesObject:
@@ -230,7 +230,7 @@ the newest push at each `helm upgrade`. With Docker Compose, set
 A branch build is not a release. The chart on a branch still holds the
 version of the last release, so an empty `image.tag` on a branch pulls the
 image of that release, which can be older than the templates. To go back to
-a release, set `targetRevision` to the release tag, such as `v0.0.1`, and
+a release, set `targetRevision` to the release tag, such as `v2026.10.1`, and
 remove the `image.tag` parameter. An empty `image.tag` then pulls the image
 that shipped with that chart.
 

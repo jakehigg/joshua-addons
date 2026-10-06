@@ -129,7 +129,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/jakehigg/joshua-addons
-    targetRevision: v0.0.1
+    targetRevision: v2026.10.1
     path: charts/joshua-addon
     helm:
       valuesObject:
