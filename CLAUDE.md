@@ -51,12 +51,34 @@ CI discovers, so a directory without one is not built and not published. Each
 addon ships its own tests and its own `values.yaml`, and it takes every setting
 from an environment variable that its `README.md` documents.
 
-## Versioning
+## Versioning and releases
 
 One version for the whole repository. The chart version, the chart `appVersion`,
 and every release image tag are the same string. A `v*` tag releases all of them
 together, and an addon that did not change still gets the new tag. Never version
 one addon on its own.
+
+The version is a date: `YYYY.M.N`, the year, the month with no leading zero,
+and the sequence of the release in that month, from 1. The first release in
+October 2026 is `2026.10.1`, the second is `2026.10.2`, the first in January
+2027 is `2027.1.1`. Two constraints give the shape. Helm requires SemVer, so
+no part has a leading zero. A version always has three parts, because an
+unquoted `2026.10` is a number in YAML. joshua-ai keeps its own sequence, so
+print the repository beside a version.
+
+`scripts/check_chart_version.py` refuses a tree where the pins differ or where
+the shape is wrong. It runs in `make lint` and in CI. `docs/releasing.md`
+lists every file that holds the version and the release procedure.
+
+**The maintainer sets every version number and cuts every release.** An agent
+proposes `YYYY.M.<next free N>` and changes nothing else. An agent never
+pushes a tag, never runs the release workflow, never publishes a release, and
+never commits to `main`. Its work ends at a branch with green CI and an open
+pull request.
+
+`docs/CHANGELOG.md` collects each change under `## Unreleased`. The release
+moves that section under `## <version> - <date>`, with an "Upgrading from"
+part when a person must act.
 
 ## Deployment
 
@@ -131,9 +153,35 @@ git log --format='%an <%ae> | %cn <%ce>'
 
 - One branch per issue, named `<issue>-<slug>`. One pull request per issue.
   Squash merge. CI must be green.
-- The pull request description says what changed and why, in STE, and ends with
-  `Closes #<issue>`.
+- The pull request template in `.github/` is the checklist. The description
+  says what changed and why, in STE, and ends with `Closes #<issue>`.
 - A commit message has a short subject, a body that says why, and the
   `Co-Authored-By:` trailer when an agent wrote the change.
+- An issue starts from a template in `.github/ISSUE_TEMPLATE/`: a change, a
+  bug, or a new addon. A change has: Goal · Why · Spec · Acceptance criteria ·
+  Tests · Out of scope · Depends on. Tickets live as GitHub issues in this
+  repository.
+- A vulnerability is not an issue. `SECURITY.md` says where it goes.
 
 `CONTRIBUTING.md` has the fork and upstream setup.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull
+request:
+
+- `discover`: `scripts/list_addons.py` lists every `addons/<name>/` with a
+  `Dockerfile`, so no job names an addon.
+- `lint`: `uv sync --frozen --all-packages`, `uv lock --check`,
+  `ruff check .`, `ruff format --check .`, `scripts/check_test_policy.py`, and
+  the root test suite with `pyyaml` and `asyncpg` added.
+- `test`: one job per addon, with a Postgres service, `--cov-fail-under=80`
+  over the unit and the integration suites.
+- `chart`: `scripts/check_chart_version.py`, then `helm lint`, `helm template`,
+  and `kubeconform` for every file in `charts/joshua-addon/ci/`.
+
+`.github/workflows/dev-images.yml` builds the image of every addon on each
+push to a branch, amd64, tagged with the commit SHA and `branch-<name>`.
+`release.yml` builds every image for both architectures on a `v*` tag,
+packages the chart, and publishes the release. `registry-cleanup.yml` removes
+SHA-tagged branch builds older than two weeks each Monday.

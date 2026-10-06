@@ -76,16 +76,18 @@ git branch -d 42-weather-addon
 
 ## What an addon must do
 
-An addon lives in `addons/<name>/` and holds everything it needs: a
-`pyproject.toml`, a `Dockerfile`, a `docker-compose.yml`, a `values.yaml`, the
-package, `tests/`, and a `README.md`. It serves MCP over HTTP on port 8000, it
-answers `GET /healthz` with `{"ok": true}`, and it accepts an optional
-`ADDON_TOKEN` bearer. CI finds the addon by its `Dockerfile`, so a directory
-without one is not built.
+[docs/adding-an-addon.md](docs/adding-an-addon.md) is the contract: the
+layout, the server rules, the tests, the version, and the docs. It is the one
+home of the contract, so this page does not repeat it.
 
-One version covers the whole repository. Never version one addon on its own.
-[docs/releasing.md](docs/releasing.md) has the files to change and the
-release steps.
+## Version numbers
+
+The version is a date, `YYYY.M.N`: the year, the month with no leading zero,
+and the sequence of the release in that month, from 1. One version covers the
+whole repository, and nobody versions one addon on its own. The maintainer
+sets every number and cuts every release. `CLAUDE.md`, "Versioning and
+releases", has the rule. [docs/releasing.md](docs/releasing.md) has the files
+to change and the release steps.
 
 ## Files that never reach a commit
 
