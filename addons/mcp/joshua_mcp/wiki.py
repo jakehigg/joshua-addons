@@ -1,10 +1,12 @@
 """The wiki on the joshua-ai data volume: path rules, reads, and writes.
 
-There are three sources, all inside ``<data>/wiki``:
+There are four sources, all inside ``<data>/wiki``:
 
-- ``wiki``: the pages. This is every page outside ``journal/`` and ``knowledge/``.
+- ``wiki``: the pages. This is every page outside ``journal/``, ``knowledge/``,
+  and ``insights/``.
 - ``journal``: Joshua's journal, ``journal/YYYY/MM/DD/*.md``.
 - ``knowledge``: the knowledge folder, ``knowledge/``. It can be missing.
+- ``insights``: the insights folder, ``insights/``. It can be missing.
 
 A path is always relative to the wiki. A path that goes out of the wiki
 (``..``, an absolute path, a symlink out) or into a dot directory (``.git``,
@@ -32,13 +34,19 @@ from joshua_mcp.log import get_logger
 
 logger = get_logger("joshua_mcp.wiki")
 
-SOURCES = ("wiki", "journal", "knowledge")
+SOURCES = ("wiki", "journal", "knowledge", "insights")
 JOURNAL = "journal"
 KNOWLEDGE = "knowledge"
+INSIGHTS = "insights"
+# The sources that are one top folder, which can be missing.
+FOLDER_SOURCES = (KNOWLEDGE, INSIGHTS)
 # The folders that write_page refuses. The journal has its own tool, the
-# profiles and the documentation are Joshua's, and attachments hold binary
-# files that the wiki repository ignores.
-PROTECTED = ("journal", "people", "joshua-docs", "attachments")
+# profiles and the documentation are Joshua's, attachments hold binary files
+# that the wiki repository ignores, and core's research job and insights job
+# own the knowledge and insights folders.
+PROTECTED = ("journal", "people", "joshua-docs", "attachments", KNOWLEDGE, INSIGHTS)
+# The jobs of joshua-ai core that own a protected folder.
+OWNERS = {KNOWLEDGE: "research job", INSIGHTS: "insights job"}
 # The folders that no tool lists or searches: binary files only.
 SKIPPED = ("attachments",)
 PROVENANCE = "joshua-mcp"
@@ -104,8 +112,8 @@ def source_of(rel: str) -> str:
     top = PurePosixPath(rel).parts[0] if rel else ""
     if top == JOURNAL:
         return JOURNAL
-    if top == KNOWLEDGE:
-        return KNOWLEDGE
+    if top in FOLDER_SOURCES:
+        return top
     return "wiki"
 
 
@@ -140,13 +148,10 @@ def iter_pages(wiki: Path, source: str | None = None):
                 yield rel, here / name
 
 
-def knowledge_root(wiki: Path) -> Path:
-    return wiki / KNOWLEDGE
-
-
-def require_knowledge(wiki: Path) -> None:
-    if not knowledge_root(wiki).is_dir():
-        raise WikiError("no knowledge folder")
+def require_folder(wiki: Path, source: str) -> None:
+    """Raise ``WikiError`` when the folder of a folder source is missing."""
+    if not (wiki / source).is_dir():
+        raise WikiError(f"no {source} folder")
 
 
 # --- frontmatter ---------------------------------------------------------
@@ -208,10 +213,10 @@ def list_folder(wiki: Path, rel: str | None = None, source: str | None = None) -
     source = check_source(source)
     if rel:
         folder = resolve(wiki, rel)
-    elif source in (JOURNAL, KNOWLEDGE):
+    elif source in (JOURNAL, *FOLDER_SOURCES):
         folder = wiki.resolve() / source
-        if source == KNOWLEDGE and not folder.is_dir():
-            raise WikiError("no knowledge folder")
+        if source in FOLDER_SOURCES:
+            require_folder(wiki, source)
     else:
         folder = wiki.resolve()
     if not folder.is_dir():
@@ -224,7 +229,7 @@ def list_folder(wiki: Path, rel: str | None = None, source: str | None = None) -
             continue
         if at_root and item.name in SKIPPED:
             continue
-        if at_root and source == "wiki" and item.name in (JOURNAL, KNOWLEDGE):
+        if at_root and source == "wiki" and item.name in (JOURNAL, *FOLDER_SOURCES):
             continue
         if not inside(wiki, item):
             continue
@@ -305,6 +310,11 @@ def check_page_path(wiki: Path, rel: str) -> Path:
     if top in PROTECTED:
         if top == JOURNAL:
             raise WikiError(f"{top}/ is written with write_journal_entry, not write_page")
+        if top in OWNERS:
+            raise WikiError(
+                f"{top}/ is protected: the {OWNERS[top]} of joshua-ai core owns it, "
+                "and the joshua-mcp addon does not write there"
+            )
         raise WikiError(f"{top}/ is protected: the joshua-mcp addon does not write there")
     if path.suffix != ".md":
         raise WikiError(f"a page ends in .md: {rel}")

@@ -108,7 +108,7 @@ async def test_the_call_carries_the_core_token_and_not_the_callers(app, core) ->
     assert json.loads(request.content) == {
         "query": "tomatoes",
         "limit": 3,
-        "kinds": ["wiki", "journal", "profile"],
+        "kinds": ["wiki", "journal", "profile", "knowledge", "insight"],
     }
 
 
@@ -128,9 +128,16 @@ async def test_no_token_is_refused_before_core_is_called(app, core) -> None:
 
 @pytest.mark.parametrize(
     ("source", "kinds"),
-    [("journal", ["journal"]), ("wiki", ["wiki", "profile"])],
+    [
+        ("journal", ["journal"]),
+        ("wiki", ["wiki", "profile"]),
+        ("knowledge", ["knowledge"]),
+        ("insights", ["insight"]),
+    ],
 )
-async def test_source_picks_the_kinds(app, core, source, kinds) -> None:
+async def test_source_picks_the_kinds(app, core, wiki, source, kinds) -> None:
+    (wiki / "knowledge").mkdir()
+    (wiki / "insights").mkdir()
     async with mcp_session(app) as session:
         await session.call_tool("semantic_search", {"query": "x", "source": source})
     assert json.loads(core.requests[0].content)["kinds"] == kinds
@@ -138,7 +145,7 @@ async def test_source_picks_the_kinds(app, core, source, kinds) -> None:
 
 async def test_wiki_source_leaves_out_knowledge_pages(app, core, wiki) -> None:
     (wiki / "knowledge").mkdir()
-    core.results = [_hit("wiki/knowledge/k8s.md"), _hit("wiki/garden.md")]
+    core.results = [_hit("wiki/knowledge/k8s.md", kind="knowledge"), _hit("wiki/garden.md")]
     async with mcp_session(app) as session:
         wiki_hits = _payload(
             await session.call_tool("semantic_search", {"query": "x", "source": "wiki"})
@@ -216,3 +223,53 @@ async def test_an_unknown_answer_shape_is_an_error() -> None:
     client = CoreSearch("http://core", "t", transport=httpx.MockTransport(odd))
     with pytest.raises(CoreError, match="unknown shape"):
         await client.search("x", None, 5)
+
+
+def _mixed_hits() -> list[dict]:
+    return [
+        _hit("wiki/garden.md"),
+        _hit("wiki/people/jake.md", kind="profile"),
+        _hit("wiki/journal/2026/09/25/garden-work.md", kind="journal", date="2026-09-25"),
+        _hit("wiki/knowledge/k8s.md", kind="knowledge"),
+        _hit("wiki/insights/sleep.md", kind="insight"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "paths"),
+    [
+        (
+            None,
+            [
+                "garden.md",
+                "people/jake.md",
+                "journal/2026/09/25/garden-work.md",
+                "knowledge/k8s.md",
+                "insights/sleep.md",
+            ],
+        ),
+        ("wiki", ["garden.md", "people/jake.md"]),
+        ("journal", ["journal/2026/09/25/garden-work.md"]),
+        ("knowledge", ["knowledge/k8s.md"]),
+        ("insights", ["insights/sleep.md"]),
+    ],
+)
+async def test_each_source_keeps_only_its_own_paths(app, core, wiki, source, paths) -> None:
+    # The fake core ignores the kinds, so this proves the check after the answer.
+    (wiki / "knowledge").mkdir()
+    (wiki / "insights").mkdir()
+    core.results = _mixed_hits()
+    args = {"query": "x"} if source is None else {"query": "x", "source": source}
+    async with mcp_session(app) as session:
+        result = _payload(await session.call_tool("semantic_search", args))
+    assert [hit["path"] for hit in result["results"]] == paths
+    expected = {None: None, "wiki": "wiki"}.get(source, source)
+    if expected is not None:
+        assert {hit["source"] for hit in result["results"]} == {expected}
+
+
+async def test_insights_needs_the_folder(app, core) -> None:
+    async with mcp_session(app) as session:
+        result = await session.call_tool("semantic_search", {"query": "x", "source": "insights"})
+    assert "no insights folder" in _error(result)
+    assert core.requests == []

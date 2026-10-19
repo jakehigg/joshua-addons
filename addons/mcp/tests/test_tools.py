@@ -29,6 +29,8 @@ async def test_the_tool_list_is_final(app) -> None:
     async with mcp_session(app) as session:
         tools = await session.list_tools()
     assert sorted(tool.name for tool in tools.tools) == [
+        "insights_read",
+        "insights_search",
         "knowledge_read",
         "knowledge_search",
         "list",
@@ -69,14 +71,26 @@ async def test_read_page(app) -> None:
     assert "no such page" in error(missing)
 
 
-async def test_list_the_top_of_the_wiki(app) -> None:
+async def test_list_the_top_of_the_wiki(app, wiki) -> None:
+    write(wiki / "knowledge" / "k8s.md", "# K8s\n")
+    write(wiki / "insights" / "weekly.md", "# Weekly\n")
     async with mcp_session(app) as session:
         top = payload(await session.call_tool("list", {}))
         pages = payload(await session.call_tool("list", {"source": "wiki"}))
         folder = payload(await session.call_tool("list", {"path": "recipes"}))
     names = [entry["name"] for entry in top["entries"]]
-    assert names == ["Home.md", "garden.md", "joshua-docs", "journal", "people", "recipes"]
-    assert "journal" not in [entry["name"] for entry in pages["entries"]]
+    assert names == [
+        "Home.md",
+        "garden.md",
+        "insights",
+        "joshua-docs",
+        "journal",
+        "knowledge",
+        "people",
+        "recipes",
+    ]
+    hidden = {"journal", "knowledge", "insights"}
+    assert hidden.isdisjoint(entry["name"] for entry in pages["entries"])
     assert folder == {
         "path": "recipes",
         "entries": [{"name": "bread.md", "path": "recipes/bread.md", "type": "page", "bytes": 82}],
@@ -204,3 +218,46 @@ async def test_knowledge_tools_with_the_folder(app, wiki) -> None:
 
 def is_refused(message: str) -> bool:
     return "outside" in message
+
+
+async def test_insights_tools_without_the_folder(app) -> None:
+    async with mcp_session(app) as session:
+        found = await session.call_tool("insights_search", {"query": "x"})
+        read = await session.call_tool("insights_read", {"path": "a.md"})
+        listed = await session.call_tool("list", {"source": "insights"})
+        searched = await session.call_tool("search", {"query": "x", "source": "insights"})
+    assert error(found).endswith("no insights folder")
+    assert error(read).endswith("no insights folder")
+    assert error(listed).endswith("no insights folder")
+    assert error(searched).endswith("no insights folder")
+
+
+async def test_insights_tools_with_the_folder(app, wiki) -> None:
+    write(wiki / "insights" / "sleep.md", "# Sleep\n\nJake sleeps less on a work night.\n")
+    write(wiki / "knowledge" / "tides.md", "# Tides\n\nThe bay has two tides a day.\n")
+    async with mcp_session(app) as session:
+        found = payload(await session.call_tool("insights_search", {"query": "sleeps"}))
+        page = payload(await session.call_tool("insights_read", {"path": "sleep.md"}))
+        escape = await session.call_tool("insights_read", {"path": "../knowledge/tides.md"})
+        other = payload(await session.call_tool("insights_search", {"query": "tides"}))
+        everywhere = payload(await session.call_tool("search", {"query": "sleeps"}))
+    assert [hit["path"] for hit in found["results"]] == ["insights/sleep.md"]
+    assert found["results"][0]["source"] == "insights"
+    assert page["path"] == "insights/sleep.md"
+    assert is_refused(error(escape))
+    assert other["results"] == []
+    assert [hit["path"] for hit in everywhere["results"]] == ["insights/sleep.md"]
+
+
+async def test_write_page_refuses_the_core_folders_over_mcp(app, wiki) -> None:
+    async with mcp_session(app) as session:
+        knowledge = await session.call_tool(
+            "write_page", {"path": "knowledge/k8s.md", "markdown": "x"}
+        )
+        insights = await session.call_tool(
+            "write_page", {"path": "insights/weekly.md", "markdown": "x"}
+        )
+    assert "research job" in error(knowledge)
+    assert "insights job" in error(insights)
+    assert not (wiki / "knowledge").exists()
+    assert not (wiki / "insights").exists()

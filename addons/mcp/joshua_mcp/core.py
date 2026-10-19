@@ -3,8 +3,9 @@
 Core owns Joshua's vector index and its embedding model. The addon sends a
 query to core's ``POST /v1/memory/search`` with its own fleet token, and gets
 passages back. Core searches the shared scope and returns only pages under
-``wiki/``: wiki pages, journal pages, and profiles. It never returns a person's
-own attachments.
+``wiki/``: wiki pages, journal pages, profiles, knowledge pages (kind
+``knowledge``), and insights pages (kind ``insight``). It never returns a
+person's own attachments.
 
 A result path from core is relative to the data volume (``wiki/garden.md``).
 This module turns it into a wiki-relative path (``garden.md``), the form every
@@ -31,14 +32,14 @@ SNIPPET_CHARS = 400
 
 _WIKI_PREFIX = "wiki/"
 
-# The kinds of core's index that each source of the addon asks for. A
-# knowledge page is a wiki page to core; the source of each path is checked
-# again after the answer.
+# The kinds of core's index that each source of the addon asks for. The
+# source of each path is checked again after the answer.
 KINDS: dict[str | None, list[str]] = {
-    None: ["wiki", "journal", "profile"],
+    None: ["wiki", "journal", "profile", "knowledge", "insight"],
     wikifs.JOURNAL: ["journal"],
     "wiki": ["wiki", "profile"],
-    wikifs.KNOWLEDGE: ["wiki"],
+    wikifs.KNOWLEDGE: ["knowledge"],
+    wikifs.INSIGHTS: ["insight"],
 }
 
 
@@ -57,7 +58,7 @@ class CoreSearch:
     async def search(self, query: str, source: str | None, limit: int) -> list[dict[str, Any]]:
         """The passages for ``query``, best first, at most ``limit``.
 
-        ``source`` is None, ``wiki``, ``journal``, or ``knowledge``.
+        ``source`` is None, ``wiki``, ``journal``, ``knowledge``, or ``insights``.
         """
         query = query.strip()
         if not query:

@@ -8,6 +8,14 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `mcp`: `insights` is a fourth source, for the `insights/` folder that the
+  insights job of joshua-ai core writes. `search`, `list`, and
+  `semantic_search` take `source: insights`, and the new tools
+  `insights_search` and `insights_read` work in that folder only.
+  `write_page` now refuses `knowledge/` and `insights/`, because the
+  research job and the insights job of core own them. `semantic_search`
+  asks core for the kinds `knowledge` and `insight`, so it needs a core
+  that tags these folders with those kinds.
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes

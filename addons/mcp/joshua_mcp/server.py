@@ -1,4 +1,4 @@
-"""The joshua-mcp addon: Joshua's wiki, journal, and knowledge folder over MCP.
+"""The joshua-mcp addon: Joshua's wiki, journal, knowledge, and insights over MCP.
 
 The addon serves MCP at ``/mcp`` over streamable HTTP. ``semantic_search`` asks
 joshua-ai core to search by meaning, when ``CORE_URL`` and ``CORE_TOKEN`` are
@@ -130,20 +130,21 @@ def _source(value: str | None) -> str | None:
 
 @mcp.tool()
 async def search(query: str, ctx: Context, source: str | None = None, limit: int = 10) -> dict:
-    """Search the wiki, the journal, and the knowledge folder by words.
+    """Search the wiki, the journal, and the knowledge and insights folders by words.
 
     Returns results, the best pages first.
 
-    source is one of wiki (the pages), journal (Joshua's journal), or knowledge
-    (the knowledge folder); leave it empty to search all three. Each result has
+    source is one of wiki (the pages), journal (Joshua's journal), knowledge
+    (the knowledge folder), or insights (the insights folder); leave it empty
+    to search all of them. Each result has
     the path, the title, a snippet, the source, and, for a journal page, the
     date. The search is lexical: it finds the words you give, not their meaning.
     """
     _caller(ctx)
     src = _source(source)
     state = _get_state()
-    if src == wikifs.KNOWLEDGE:
-        await _run(wikifs.require_knowledge, state.settings.wiki)
+    if src in wikifs.FOLDER_SOURCES:
+        await _run(wikifs.require_folder, state.settings.wiki, src)
     return {"results": await _run(state.index.search, query, src, limit)}
 
 
@@ -151,25 +152,25 @@ async def search(query: str, ctx: Context, source: str | None = None, limit: int
 async def semantic_search(
     query: str, ctx: Context, source: str | None = None, limit: int = 10
 ) -> dict:
-    """Search the wiki and the journal by meaning, with Joshua's own index.
+    """Search the wiki, the journal, knowledge, and insights by meaning.
 
     Returns passages, the best first. Use it for a question in your own words,
     when you do not know the words a page uses. Use search to find exact words.
 
     source is one of wiki (the pages and the profiles), journal (Joshua's
-    journal), or knowledge (the knowledge folder); leave it empty to search
-    all of them. limit is 1 to 25. Each result has the path, the title, the
-    heading of the passage, a snippet, the source, the date of a journal page,
-    and a score from 0 to 1. Joshua's core does the search, and it indexes a
-    new page within about a minute.
+    journal), knowledge (the knowledge folder), or insights (the insights
+    folder); leave it empty to search all of them. limit is 1 to 25. Each
+    result has the path, the title, the heading of the passage, a snippet,
+    the source, the date of a journal page, and a score from 0 to 1. Joshua's
+    core does the search, and it indexes a new page within about a minute.
     """
     _caller(ctx)
     src = _source(source)
     state = _get_state()
     if state.core is None:
         raise ToolError("semantic search is not configured: set CORE_URL and CORE_TOKEN")
-    if src == wikifs.KNOWLEDGE:
-        await _run(wikifs.require_knowledge, state.settings.wiki)
+    if src in wikifs.FOLDER_SOURCES:
+        await _run(wikifs.require_folder, state.settings.wiki, src)
     try:
         return {"results": await state.core.search(query, src, limit)}
     except CoreError as exc:
@@ -193,8 +194,9 @@ async def list_(ctx: Context, path: str | None = None, source: str | None = None
     """List one folder of the wiki: its folders, its pages, and its other files.
 
     Give path (relative to the wiki) for one folder. Without a path, source
-    selects the top folder: wiki (the pages, without the journal and the
-    knowledge folder), journal, or knowledge. With neither, lists the top of
+    selects the top folder: wiki (the pages, without the journal, the
+    knowledge folder, and the insights folder), journal, knowledge, or
+    insights. With neither, lists the top of
     the wiki.
     """
     _caller(ctx)
@@ -206,8 +208,10 @@ async def write_page(path: str, markdown: str, ctx: Context, message: str | None
     """Create or replace one wiki page, and commit it to the wiki repository.
 
     path is relative to the wiki and ends in .md. The journal/, people/,
-    joshua-docs/, and attachments/ folders are refused: the journal has its
-    own tool, and the profiles and the documentation are Joshua's. The page
+    joshua-docs/, attachments/, knowledge/, and insights/ folders are
+    refused: the journal has its own tool, the profiles and the documentation
+    are Joshua's, and the research job and the insights job of core own
+    knowledge/ and insights/. The page
     gets source: joshua-mcp and author: <caller> in its frontmatter; any
     other frontmatter you send is kept. message is the commit message.
     """
@@ -266,13 +270,30 @@ async def knowledge_search(query: str, ctx: Context, limit: int = 10) -> dict:
 @mcp.tool()
 async def knowledge_read(path: str, ctx: Context) -> dict:
     """Read one page of the knowledge folder. path is relative to knowledge/."""
+    return await _read_in_folder(wikifs.KNOWLEDGE, path, ctx)
+
+
+@mcp.tool()
+async def insights_search(query: str, ctx: Context, limit: int = 10) -> dict:
+    """Search the insights folder by words. The same as search with source insights."""
+    return await search(query, ctx, source=wikifs.INSIGHTS, limit=limit)
+
+
+@mcp.tool()
+async def insights_read(path: str, ctx: Context) -> dict:
+    """Read one page of the insights folder. path is relative to insights/."""
+    return await _read_in_folder(wikifs.INSIGHTS, path, ctx)
+
+
+async def _read_in_folder(source: str, path: str, ctx: Context) -> dict:
+    """Read one page of a folder source. A path out of that folder is refused."""
     _caller(ctx)
     wiki = _get_state().settings.wiki
-    await _run(wikifs.require_knowledge, wiki)
-    rel = f"{wikifs.KNOWLEDGE}/{path.lstrip('/')}"
+    await _run(wikifs.require_folder, wiki, source)
+    rel = f"{source}/{path.lstrip('/')}"
     page = await _run(wikifs.read_page, wiki, rel)
-    if wikifs.source_of(page.path) != wikifs.KNOWLEDGE:
-        raise ToolError(f"path is outside the knowledge folder: {path}")
+    if wikifs.source_of(page.path) != source:
+        raise ToolError(f"path is outside the {source} folder: {path}")
     return page.as_dict()
 
 

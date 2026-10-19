@@ -1,15 +1,16 @@
 # joshua-mcp
 
 The `mcp` addon, joshua-mcp, gives a caller outside the agent access to
-Joshua's wiki, journal, and knowledge folder. Claude Code on a laptop, Claude
-Desktop, or a script can use it. It serves one MCP server over HTTP for three
-sources, all in the joshua-ai data volume:
+Joshua's wiki, journal, knowledge folder, and insights folder. Claude Code on a
+laptop, Claude Desktop, or a script can use it. It serves one MCP server over
+HTTP for four sources, all in the joshua-ai data volume:
 
 | Source | Folder | What it holds |
 |---|---|---|
 | `wiki` | `/data/wiki/**.md` | The wiki pages, the profiles in `people/`, and the skills in `skills/` |
 | `journal` | `/data/wiki/journal/YYYY/MM/DD/*.md` | Joshua's journal: one day page and the entries for each day |
-| `knowledge` | `/data/wiki/knowledge/` | The knowledge folder. It can be missing. |
+| `knowledge` | `/data/wiki/knowledge/` | The knowledge folder: pages with sources, from the research job of core. It is optional. |
+| `insights` | `/data/wiki/insights/` | The insights folder: pages from the insights job of core. It is optional. |
 
 The addon is not a gateway consumer, and it does not start a Joshua turn. To
 talk to Joshua, use the terminal channel.
@@ -27,14 +28,16 @@ talk to Joshua, use the terminal channel.
 | `read_journal(date?, days?, people?)` | Reads the day pages and the entries for a range of up to 31 days. |
 | `knowledge_search(query, limit?)` | `search` in the knowledge folder only. |
 | `knowledge_read(path)` | `read_page` in the knowledge folder only. |
+| `insights_search(query, limit?)` | `search` in the insights folder only. |
+| `insights_read(path)` | `read_page` in the insights folder only. |
 
 A path is relative to the wiki, for example `people/alex.md`. `search` is
 lexical: it finds words, not meanings. `semantic_search` finds meanings: it
 asks joshua-ai core, which holds Joshua's vector index, through core's
 `POST /v1/memory/search`. Core indexes a page that this addon writes within 60
 seconds, so `semantic_search` finds a new page after that time. Core returns
-wiki pages, journal pages, and profiles only, never a person's own
-attachments.
+wiki pages, journal pages, profiles, knowledge pages (kind `knowledge`), and
+insights pages (kind `insight`) only, never a person's own attachments.
 
 ### Turn on `semantic_search`
 
@@ -49,15 +52,18 @@ Without these settings, `semantic_search` answers "semantic search is not
 configured". The other tools do not need core.
 
 When there is no knowledge folder, the knowledge tools, and `search` or `list`
-with `source: knowledge`, answer "no knowledge folder".
+with `source: knowledge`, answer "no knowledge folder". The insights folder
+has the same rule: the answer is "no insights folder".
 
 ### Rules for a write
 
-- `write_page` refuses a path in `journal/`, `people/`, `joshua-docs/`, or
-  `attachments/`. It refuses a path in a folder whose name starts with a dot
-  (`.git`, `.trash`), a path out of the wiki, and a file name that does not
-  end in `.md`. The journal has its own tool. The profiles and the
-  documentation are Joshua's.
+- `write_page` refuses a path in `journal/`, `people/`, `joshua-docs/`,
+  `attachments/`, `knowledge/`, or `insights/`. It refuses a path in a
+  folder whose name starts with a dot (`.git`, `.trash`), a path out of the
+  wiki, and a file name that does not end in `.md`. The journal has its own
+  tool. The profiles and the documentation are Joshua's. Only the research
+  job of core writes `knowledge/`, and only the insights job of core writes
+  `insights/`.
 - `write_journal_entry` never writes the day page `YYYY-MM-DD.md`. The
   nightly run writes it. The slug is lowercase letters, digits, and hyphens.
   An entry with the same day and slug is replaced.

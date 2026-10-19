@@ -20,6 +20,9 @@ from joshua_mcp.wiki import WikiError
         "people/new.md",
         "joshua-docs/index.md",
         "attachments/a.md",
+        "knowledge/k8s.md",
+        "knowledge/sub/new.md",
+        "insights/weekly.md",
         "../outside.md",
         "../../etc/passwd",
         "/etc/passwd.md",
@@ -162,5 +165,32 @@ def test_commit_message_is_one_prefixed_line() -> None:
 def test_source_of() -> None:
     assert wikifs.source_of("journal/2026/09/25/a.md") == "journal"
     assert wikifs.source_of("knowledge/a.md") == "knowledge"
+    assert wikifs.source_of("insights/a.md") == "insights"
+    assert wikifs.source_of("insightful.md") == "wiki"
     assert wikifs.source_of("people/jake.md") == "wiki"
     assert wikifs.check_source("") is None
+
+
+@pytest.mark.parametrize(
+    ("path", "job"),
+    [("knowledge/k8s.md", "research job"), ("insights/weekly.md", "insights job")],
+)
+def test_the_core_folders_name_the_job_that_owns_them(wiki, path, job) -> None:
+    with pytest.raises(WikiError, match=f"the {job} of joshua-ai core owns it"):
+        wikifs.write_page(wiki, path, "x", "laptop", None)
+
+
+@pytest.mark.parametrize("path", ["knowledgeable.md", "insightful.md", "notes/knowledge/a.md"])
+def test_a_name_that_only_starts_with_a_core_folder_is_written(wiki, path) -> None:
+    result = wikifs.write_page(wiki, path, "# Page\n", "laptop", None)
+    assert result["path"] == path
+    assert (wiki / path).is_file()
+
+
+def test_list_folder_insights(wiki) -> None:
+    with pytest.raises(WikiError, match="no insights folder"):
+        wikifs.list_folder(wiki, source="insights")
+    write(wiki / "insights" / "weekly.md", "# Weekly\n")
+    listed = wikifs.list_folder(wiki, source="insights")
+    assert listed["path"] == "insights"
+    assert [entry["path"] for entry in listed["entries"]] == ["insights/weekly.md"]
