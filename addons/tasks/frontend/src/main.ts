@@ -387,13 +387,17 @@ function searchTaskRow(view: SearchTaskView): HTMLElement {
   li.className = "found-task" + (view.done ? " done" : "");
   const link = document.createElement("a");
   link.href = view.href;
+  const number = document.createElement("span");
+  number.className = "task-number";
+  number.textContent = `#${view.number}`;
+  number.title = `Task ${view.number}`;
   const title = document.createElement("span");
   title.className = "found-title";
   title.textContent = view.title;
   const where = document.createElement("span");
   where.className = "found-where";
   where.textContent = view.whereLabel;
-  link.append(title, where);
+  link.append(number, title, where);
   if (view.done) {
     const badge = document.createElement("span");
     badge.className = "health done";
@@ -507,11 +511,15 @@ document.addEventListener("click", (e) => {
 
 window.addEventListener("popstate", () => applyRoute());
 
-// A task link is "/p/<slug>#task-<id>": mark the task and bring it into view.
+// A task link is "/p/<slug>#task-<number>": mark the task and bring it into
+// view. A link that holds the task id instead still finds the same task.
 function revealLinkedTask() {
-  const id = /^#task-(.+)$/.exec(location.hash)?.[1];
-  if (!id) return;
-  const li = main.querySelector(`li.task[data-id="${CSS.escape(id)}"]`);
+  const ref = /^#task-(.+)$/.exec(location.hash)?.[1];
+  if (!ref) return;
+  const escaped = CSS.escape(ref);
+  const li = main.querySelector(
+    `li.task[data-number="${escaped}"], li.task[data-id="${escaped}"]`,
+  );
   if (!li) return;
   li.scrollIntoView({ block: "center" });
   li.classList.add("linked");
@@ -654,6 +662,7 @@ function taskRow(task: Task): HTMLLIElement {
   const li = document.createElement("li");
   li.className = "task" + (task.done ? " done" : "");
   li.dataset.id = task.id;
+  li.dataset.number = String(task.number);
 
   const row = document.createElement("div");
   row.className = "task-row";
@@ -766,6 +775,13 @@ function taskRow(task: Task): HTMLLIElement {
     details.hidden = !details.hidden;
     li.classList.toggle("editing", !details.hidden);
   });
+
+  // The task number: the short name a person says ("task 24"). It is text,
+  // so it can be selected and copied, and the task's link holds it too.
+  const number = document.createElement("span");
+  number.className = "task-number";
+  number.textContent = `#${task.number}`;
+  number.title = `Task ${task.number}`;
 
   const title = document.createElement("span");
   title.className = "title";
@@ -932,7 +948,7 @@ function taskRow(task: Task): HTMLLIElement {
   tags.append(nextBadge, meta);
   const body = document.createElement("div");
   body.className = "task-body";
-  body.append(title, tags);
+  body.append(number, title, tags);
   const actions = document.createElement("span");
   actions.className = "task-actions";
   actions.append(noteBtn, detailsBtn, del);

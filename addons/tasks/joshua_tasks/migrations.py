@@ -12,17 +12,22 @@ model in ``models.py``, then append one ``Migration`` entry here naming the
 table, the column, and its SQLAlchemy type. A fresh database gets the column
 from ``create_all``; an existing database picks it up as an additive
 ``ALTER TABLE`` on its next start.
+
+``ADDITIVE_INDEXES`` does the same for an index a new column needs, because
+``create_all`` builds an index for a new table only. ``_number_tasks`` then
+gives the tasks of an existing database their numbers, before the unique
+index over them is built.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Date, String, Text, inspect
+from sqlalchemy import Date, Integer, String, Text, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from sqlalchemy.types import TypeEngine
 
-from .models import Base, UTCDateTime
+from .models import TASK_NUMBER_ID, Base, Task, TaskNumber, UTCDateTime
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,30 @@ ADDITIVE_MIGRATIONS: list[Migration] = [
     Migration("tasks", "size", String(4)),
     Migration("tasks", "due_date", Date()),
     Migration("tasks", "assignee", Text()),
+    # The short task number (issue #55). The column arrives nullable here,
+    # because SQLite refuses a NOT NULL column without a default and one
+    # default for every row would break the unique index. ``_number_tasks``
+    # fills every row in the same run.
+    Migration("tasks", "number", Integer()),
+]
+
+
+@dataclass(frozen=True)
+class UniqueIndex:
+    """One unique index, created when its table and its column exist.
+
+    ``models.py`` names the same index, so a database on the additive path
+    and a ``create_all`` one end up with the same index.
+    """
+
+    name: str
+    table: str
+    column: str
+
+
+# Ordered oldest to newest, as ``ADDITIVE_MIGRATIONS``.
+ADDITIVE_INDEXES: list[UniqueIndex] = [
+    UniqueIndex("ix_tasks_number", "tasks", "number"),
 ]
 
 
@@ -73,8 +102,43 @@ async def _existing_columns(conn: AsyncConnection, table: str) -> set[str]:
     return await conn.run_sync(_inspect)
 
 
+async def _number_tasks(conn: AsyncConnection) -> None:
+    """Give a number to every task that has none, and hold the sequence above them.
+
+    A database from before the task number has tasks and no numbers. They
+    get 1, 2, 3 ... in creation order, so the numbering says which task came
+    first. The sequence row then holds the highest number given, and
+    ``service.create_task`` goes on from there. A run with nothing to number
+    changes nothing.
+    """
+    tasks = Base.metadata.tables[Task.__tablename__]
+    numbers = Base.metadata.tables[TaskNumber.__tablename__]
+    if "number" not in await _existing_columns(conn, Task.__tablename__):
+        return
+    highest = await conn.scalar(select(func.max(tasks.c.number))) or 0
+    unnumbered = (
+        await conn.scalars(
+            select(tasks.c.id)
+            .where(tasks.c.number.is_(None))
+            .order_by(tasks.c.created_at, tasks.c.id)
+        )
+    ).all()
+    for offset, task_id in enumerate(unnumbered, start=1):
+        await conn.execute(
+            tasks.update().where(tasks.c.id == task_id).values(number=highest + offset)
+        )
+    last = highest + len(unnumbered)
+    current = await conn.scalar(select(numbers.c.last_number).where(numbers.c.id == TASK_NUMBER_ID))
+    if current is None:
+        await conn.execute(numbers.insert().values(id=TASK_NUMBER_ID, last_number=last))
+    elif current < last:
+        await conn.execute(
+            numbers.update().where(numbers.c.id == TASK_NUMBER_ID).values(last_number=last)
+        )
+
+
 async def run_migrations(engine: AsyncEngine) -> None:
-    """Create any missing table, then apply any missing additive column."""
+    """Create any missing table, add any missing column, then number the tasks."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -98,3 +162,16 @@ async def run_migrations(engine: AsyncEngine) -> None:
             # never
             # from a caller or request.
             await conn.exec_driver_sql(stmt)
+
+    async with engine.begin() as conn:
+        await _number_tasks(conn)
+
+    async with engine.begin() as conn:
+        for index in ADDITIVE_INDEXES:
+            if index.column not in await _existing_columns(conn, index.table):
+                continue
+            # index.name/table/column come only from ADDITIVE_INDEXES above.
+            await conn.exec_driver_sql(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS {index.name} "
+                f"ON {index.table} ({index.column})"
+            )

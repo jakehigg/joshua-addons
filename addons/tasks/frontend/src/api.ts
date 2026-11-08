@@ -4,6 +4,9 @@ export const TASK_SIZES: TaskSize[] = ["XS", "S", "M", "L", "XL"];
 
 export interface Task {
   id: string;
+  // The short number a person says ("task 24"), unique over every project.
+  // It is given at creation and never changes.
+  number: number;
   project_id: string;
   group_id: string | null;
   title: string;

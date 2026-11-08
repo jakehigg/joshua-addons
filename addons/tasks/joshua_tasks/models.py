@@ -87,6 +87,9 @@ FINISHED_STATUSES = ("done", "closed")
 # T-shirt sizes for a task, smallest first.
 TASK_SIZES = ("XS", "S", "M", "L", "XL")
 
+# The one row of ``TaskNumber``, the task-number sequence.
+TASK_NUMBER_ID = 1
+
 
 class Project(Base):
     __tablename__ = "projects"
@@ -144,11 +147,32 @@ class Group(Base):
     tasks: Mapped[list[Task]] = relationship(back_populates="group", passive_deletes=True)
 
 
+class TaskNumber(Base):
+    """The sequence behind ``Task.number``: one row that holds the last number given.
+
+    One sequence for the whole addon, in one row with ``id =
+    TASK_NUMBER_ID``. ``service.create_task`` raises ``last_number`` and
+    takes the result, so a number is given once and never again, not even
+    after the task is deleted.
+    """
+
+    __tablename__ = "task_numbers"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    last_number: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+
+
 class Task(Base):
     __tablename__ = "tasks"
-    __table_args__ = (Index("ix_tasks_project_position", "project_id", "position"),)
+    __table_args__ = (
+        Index("ix_tasks_project_position", "project_id", "position"),
+        Index("ix_tasks_number", "number", unique=True),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # The short number a person says out loud ("task 24"). It comes from
+    # ``TaskNumber`` at creation and never changes.
+    number: Mapped[int] = mapped_column(nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
