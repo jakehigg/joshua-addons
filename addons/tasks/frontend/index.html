@@ -3,20 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080d17" />
     <title>Joshua Tasks</title>
-    <link rel="icon" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/src/joshua-ui.css" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div class="bg"></div>
+    <header class="j-appbar">
+      <img class="j-logo" src="/logo-64.png" alt="" />
+      <a class="j-appbar-title" href="/"><small>Joshua</small><strong>Tasks</strong></a>
+      <div class="controls">
+        <select id="project-select" aria-label="Project"></select>
+        <button id="add-project" class="ghost" title="New project" aria-label="New project">+<span class="label"> Project</span></button>
+      </div>
+    </header>
     <div class="wrap">
-      <header>
-        <h1 class="logo">TASKS</h1>
-        <div class="controls">
-          <select id="project-select" aria-label="Project"></select>
-          <button id="add-project" class="ghost" title="New project">+ Project</button>
-        </div>
-      </header>
       <!-- inline (dialog-free — window.prompt is unreliable on mobile) -->
       <form id="new-project-form" autocomplete="off" hidden>
         <input
