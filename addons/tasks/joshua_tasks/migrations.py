@@ -172,6 +172,5 @@ async def run_migrations(engine: AsyncEngine) -> None:
                 continue
             # index.name/table/column come only from ADDITIVE_INDEXES above.
             await conn.exec_driver_sql(
-                f"CREATE UNIQUE INDEX IF NOT EXISTS {index.name} "
-                f"ON {index.table} ({index.column})"
+                f"CREATE UNIQUE INDEX IF NOT EXISTS {index.name} ON {index.table} ({index.column})"
             )
