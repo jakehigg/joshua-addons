@@ -18,12 +18,12 @@
 # JOSHUA_NETWORK to the network joshua-ai actually created.
 services:
   chores:
-    image: ghcr.io/jakehigg/joshua-addons-chores:${JOSHUA_ADDONS_VERSION:-0.1.3}
+    image: ghcr.io/jakehigg/joshua-addons-chores:${JOSHUA_ADDONS_VERSION:-0.2.0}
     restart: unless-stopped
     environment:
       ADDON_TOKEN: ${ADDON_TOKEN:-}
       MANAGER_PIN: ${MANAGER_PIN:-}
-      JOSHUA_ADDONS_VERSION: ${JOSHUA_ADDONS_VERSION:-0.1.3}
+      JOSHUA_ADDONS_VERSION: ${JOSHUA_ADDONS_VERSION:-0.2.0}
       DATABASE_URL: ${DATABASE_URL:-}
       CHORES_DB: ${CHORES_DB:-/data/chores.db}
       CHORES_TZ: ${CHORES_TZ:-UTC}
