@@ -17,6 +17,12 @@ Summaries: ``list_projects``, ``project_summary``, ``next_steps``, and
 ``search`` return dicts with computed fields (``percent``, ``health``,
 ``next_task``). Nothing computed is stored.
 
+Blocking: a task can wait for other tasks (``task_blockers``, which may cross
+projects). ``blocked``, ``blockers``, and ``blocking`` are computed from those
+links on every read, so a task unblocks itself the moment the last open
+blocker is done. A blocked task is never the next task and never reaches
+``next_steps``.
+
 Task numbers: every task also carries a short ``number``, from one sequence
 for the whole addon (``models.TaskNumber``). ``resolve_task`` takes the
 number or the UUID, so the two name the same task everywhere.
@@ -24,10 +30,11 @@ number or the UUID, so the two name the same task everywhere.
 
 import re
 import uuid
+from collections.abc import Collection, Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .events import broadcaster
@@ -39,6 +46,7 @@ from .models import (
     Group,
     Project,
     Task,
+    TaskBlocker,
     TaskNumber,
 )
 
@@ -104,6 +112,209 @@ def _slugify(name: str) -> str:
     return slug[:100] or "project"
 
 
+# --- blocking ---------------------------------------------------------------
+# One link is one edge: this task waits for that task. The edges live in
+# ``task_blockers`` and may cross projects. Everything a reader sees —
+# ``blocked``, ``blockers``, ``blocking`` — is computed from the edges here
+# and never stored, so the last open blocker going done unblocks a task with
+# no further work.
+
+
+def _task_ref(task: Task, project: Project | None) -> dict[str, Any]:
+    """Enough of a linked task to show it and to open it."""
+    return {
+        "id": task.id,
+        "number": task.number,
+        "title": task.title,
+        "done": task.done,
+        "project": {"name": project.name, "slug": project.slug} if project else None,
+    }
+
+
+async def _refs_by_id(
+    session: AsyncSession, task_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """One display reference for each task id given, with its project."""
+    if not task_ids:
+        return {}
+    tasks = list((await session.scalars(select(Task).where(Task.id.in_(task_ids)))).all())
+    project_ids = {t.project_id for t in tasks}
+    found = await session.scalars(select(Project).where(Project.id.in_(project_ids)))
+    projects = {p.id: p for p in found.all()}
+    return {t.id: _task_ref(t, projects.get(t.project_id)) for t in tasks}
+
+
+async def attach_blocks(session: AsyncSession, tasks: list[Task]) -> list[Task]:
+    """Set the computed ``blocked``, ``blockers``, and ``blocking`` on each task.
+
+    One pass for the whole list, whatever its length. ``blocked`` is true
+    when at least one blocker is still open.
+    """
+    ids = {t.id for t in tasks}
+    if not ids:
+        return tasks
+    edges = list(
+        (
+            await session.scalars(
+                select(TaskBlocker)
+                .where(or_(TaskBlocker.task_id.in_(ids), TaskBlocker.blocker_id.in_(ids)))
+                .order_by(TaskBlocker.created_at)
+            )
+        ).all()
+    )
+    refs = await _refs_by_id(session, {e.task_id for e in edges} | {e.blocker_id for e in edges})
+    blockers: dict[uuid.UUID, list[dict[str, Any]]] = {i: [] for i in ids}
+    blocking: dict[uuid.UUID, list[dict[str, Any]]] = {i: [] for i in ids}
+    for edge in edges:
+        if edge.task_id in blockers and edge.blocker_id in refs:
+            blockers[edge.task_id].append(refs[edge.blocker_id])
+        if edge.blocker_id in blocking and edge.task_id in refs:
+            blocking[edge.blocker_id].append(refs[edge.task_id])
+    for task in tasks:
+        task.blockers = blockers[task.id]
+        task.blocking = blocking[task.id]
+        task.blocked = any(not ref["done"] for ref in task.blockers)
+    return tasks
+
+
+async def blocked_ids(session: AsyncSession, task_ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
+    """Of the ids given, the ones that wait for at least one open blocker."""
+    if not task_ids:
+        return set()
+    rows = await session.scalars(
+        select(TaskBlocker.task_id)
+        .join(Task, Task.id == TaskBlocker.blocker_id)
+        .where(TaskBlocker.task_id.in_(task_ids), Task.done.is_(False))
+    )
+    return set(rows.all())
+
+
+async def _titles(session: AsyncSession, task_ids: list[uuid.UUID]) -> list[str]:
+    """The titles of ``task_ids``, in the order given."""
+    rows = (await session.execute(select(Task.id, Task.title).where(Task.id.in_(task_ids)))).all()
+    by_id = dict(rows)
+    return [by_id.get(task_id, str(task_id)) for task_id in task_ids]
+
+
+async def _reject_cycle(session: AsyncSession, task: Task, blocker: Task) -> None:
+    """Refuse a link whose blocker already waits for ``task``, directly or not.
+
+    Walks up the blockers of ``blocker``. A path back to ``task`` means the
+    new link closes a loop that no order of work can satisfy. The error names
+    every task in the loop.
+    """
+    blocks: dict[uuid.UUID, uuid.UUID] = {}  # a task -> the task it blocks
+    frontier = [blocker.id]
+    seen = {blocker.id}
+    while frontier and task.id not in seen:
+        rows = (
+            await session.execute(
+                select(TaskBlocker.task_id, TaskBlocker.blocker_id).where(
+                    TaskBlocker.task_id.in_(frontier)
+                )
+            )
+        ).all()
+        frontier = []
+        for waiting_id, upstream_id in rows:
+            if upstream_id in seen:
+                continue
+            seen.add(upstream_id)
+            blocks[upstream_id] = waiting_id
+            frontier.append(upstream_id)
+    if task.id not in seen:
+        return
+    loop = [task.id]
+    while loop[-1] in blocks:
+        loop.append(blocks[loop[-1]])
+    titles = await _titles(session, loop)
+    raise ConflictError("this link makes a loop: " + " blocks ".join([*titles, titles[0]]))
+
+
+async def _waiting_project_ids(session: AsyncSession, task_id: uuid.UUID) -> set[str]:
+    """The projects that hold a task which waits for ``task_id``."""
+    rows = await session.scalars(
+        select(Task.project_id)
+        .join(TaskBlocker, TaskBlocker.task_id == Task.id)
+        .where(TaskBlocker.blocker_id == task_id)
+    )
+    return {str(project_id) for project_id in rows.all()}
+
+
+def _publish_tasks(project_ids: Iterable[str]) -> None:
+    for project_id in project_ids:
+        broadcaster.publish("tasks", project_id)
+
+
+async def block_task(session: AsyncSession, task_id: TaskRef, blocker_id: TaskRef) -> Task:
+    """Make a task wait for another task. The blocker can be in another project.
+
+    Each task takes its number or its UUID. A task cannot block itself, and a
+    link that makes a loop is refused with an error that names the tasks in
+    it. The same link twice changes nothing.
+    """
+    task = await resolve_task(session, task_id)
+    blocker = await resolve_task(session, blocker_id)
+    if task.id == blocker.id:
+        raise ConflictError(f"a task cannot block itself: {task.title}")
+    await _reject_cycle(session, task, blocker)
+    existing = await session.scalar(
+        select(TaskBlocker).where(
+            TaskBlocker.task_id == task.id, TaskBlocker.blocker_id == blocker.id
+        )
+    )
+    if existing is None:
+        touched = {str(task.project_id), str(blocker.project_id)}
+        session.add(TaskBlocker(task_id=task.id, blocker_id=blocker.id))
+        await session.commit()
+        _publish_tasks(touched)
+    return (await attach_blocks(session, [task]))[0]
+
+
+async def unblock_task(session: AsyncSession, task_id: TaskRef, blocker_id: TaskRef) -> Task:
+    """Remove a blocking link. Each task takes its number or its UUID.
+
+    A link that is not there is no error.
+    """
+    task = await resolve_task(session, task_id)
+    blocker = await resolve_task(session, blocker_id)
+    existing = await session.scalar(
+        select(TaskBlocker).where(
+            TaskBlocker.task_id == task.id, TaskBlocker.blocker_id == blocker.id
+        )
+    )
+    if existing is not None:
+        touched = {str(task.project_id), str(blocker.project_id)}
+        await session.delete(existing)
+        await session.commit()
+        _publish_tasks(touched)
+    return (await attach_blocks(session, [task]))[0]
+
+
+async def set_task_done(session: AsyncSession, task_id: TaskRef, done: bool) -> dict[str, Any]:
+    """Mark a task done, or open, and say what that did to the links.
+
+    The result holds the ``task``, ``unblocked`` (the tasks that now wait for
+    nothing open, because this task was the last blocker they had), and
+    ``warning`` (set when a task goes done while a blocker of its own is
+    still open; it names those blockers). A still-blocked task is never
+    refused: the work sometimes runs ahead of the links.
+    """
+    task = await resolve_task(session, task_id)
+    await attach_blocks(session, [task])
+    open_blockers = [ref for ref in task.blockers if not ref["done"]]
+    waiting = list(task.blocking)
+    task = await update_task(session, task.id, done=done)
+    unblocked: list[dict[str, Any]] = []
+    if done and waiting:
+        still_blocked = await blocked_ids(session, [ref["id"] for ref in waiting])
+        unblocked = [ref for ref in waiting if ref["id"] not in still_blocked]
+    warning = None
+    if done and open_blockers:
+        names = ", ".join(ref["title"] for ref in open_blockers)
+        warning = f"this task went done while it still waits for: {names}"
+    return {"task": task, "unblocked": unblocked, "warning": warning}
+
+
 # --- projects ---------------------------------------------------------------
 
 
@@ -132,7 +343,12 @@ def roadmap_order(tasks: list[Task], groups: list[Group]) -> list[Task]:
 
 
 def _health(
-    project: Project, task_count: int, open_count: int, last_progress_at: datetime, today: date
+    project: Project,
+    task_count: int,
+    open_count: int,
+    last_progress_at: datetime,
+    today: date,
+    ready_count: int,
 ) -> str | None:
     """The one-word state of a project, or ``None`` when there is nothing to say."""
     if project.status != "active":
@@ -146,19 +362,33 @@ def _health(
     stalled_for = today - last_progress_at.astimezone(UTC).date()
     if project.goal and open_count and stalled_for >= timedelta(days=STALLED_AFTER_DAYS):
         return "stalled"
+    # Every open task waits for another task: the project cannot move, which
+    # is the same stall as no progress for 14 days.
+    if (project.goal or project.target_date) and open_count and not ready_count:
+        return "stalled"
     if project.goal or project.target_date:
         return "on_track"
     return None
 
 
-def summarize(project: Project, tasks: list[Task], groups: list[Group]) -> dict[str, Any]:
-    """A project with its computed fields. ``next_task`` is a ``Task`` or ``None``."""
+def summarize(
+    project: Project,
+    tasks: list[Task],
+    groups: list[Group],
+    blocked: Collection[uuid.UUID] = (),
+) -> dict[str, Any]:
+    """A project with its computed fields. ``next_task`` is a ``Task`` or ``None``.
+
+    ``blocked`` holds the ids of the tasks that wait for an open blocker (see
+    ``blocked_ids``). Such a task is never the ``next_task``, and a project
+    whose whole remaining work waits reads as ``stalled``.
+    """
     task_count = len(tasks)
     done_count = sum(1 for t in tasks if t.done)
     open_count = task_count - done_count
     done_times = [t.done_at for t in tasks if t.done and t.done_at is not None]
     last_progress_at = max(done_times, default=project.created_at)
-    open_in_order = [t for t in roadmap_order(tasks, groups) if not t.done]
+    open_in_order = [t for t in roadmap_order(tasks, groups) if not t.done and t.id not in blocked]
     return {
         "id": project.id,
         "name": project.name,
@@ -173,7 +403,9 @@ def summarize(project: Project, tasks: list[Task], groups: list[Group]) -> dict[
         "done_count": done_count,
         "open_count": open_count,
         "percent": done_count * 100 // task_count if task_count else 0,
-        "health": _health(project, task_count, open_count, last_progress_at, _today()),
+        "health": _health(
+            project, task_count, open_count, last_progress_at, _today(), len(open_in_order)
+        ),
         "last_progress_at": last_progress_at,
         "next_task": open_in_order[0] if open_in_order else None,
     }
@@ -193,6 +425,16 @@ async def _tasks_and_groups_by_project(
     return tasks, groups
 
 
+async def _blocked_in(session: AsyncSession, tasks: dict[uuid.UUID, list[Task]]) -> set[uuid.UUID]:
+    """The blocked ids among the tasks of every project given."""
+    return await blocked_ids(session, [t.id for group in tasks.values() for t in group])
+
+
+async def _attach_next_tasks(session: AsyncSession, summaries: list[dict[str, Any]]) -> None:
+    """Fill the computed block fields on each summary's ``next_task``."""
+    await attach_blocks(session, [s["next_task"] for s in summaries if s["next_task"] is not None])
+
+
 async def list_projects(
     session: AsyncSession, include_archived: bool = False, include_finished: bool = True
 ) -> list[dict]:
@@ -204,14 +446,20 @@ async def list_projects(
         query = query.where(Project.status.not_in(FINISHED_STATUSES))
     projects = list((await session.scalars(query)).all())
     tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
-    return [summarize(p, tasks[p.id], groups[p.id]) for p in projects]
+    blocked = await _blocked_in(session, tasks)
+    summaries = [summarize(p, tasks[p.id], groups[p.id], blocked) for p in projects]
+    await _attach_next_tasks(session, summaries)
+    return summaries
 
 
 async def project_summary(session: AsyncSession, ref: str | uuid.UUID) -> dict[str, Any]:
     """One project's summary, by id, slug, or name."""
     project = await get_project(session, ref)
     tasks, groups = await _tasks_and_groups_by_project(session, [project.id])
-    return summarize(project, tasks[project.id], groups[project.id])
+    blocked = await _blocked_in(session, tasks)
+    summary = summarize(project, tasks[project.id], groups[project.id], blocked)
+    await _attach_next_tasks(session, [summary])
+    return summary
 
 
 async def next_steps(
@@ -223,6 +471,10 @@ async def next_steps(
     project with nothing open. With ``ref``, that project is returned
     whatever its status. Each entry is a summary plus ``tasks``, the first
     ``limit`` open tasks in roadmap order.
+
+    A task that waits for an open blocker is not a next step and is left
+    out. A project whose whole remaining work waits keeps its place in the
+    result, with an empty ``tasks`` list and the health ``stalled``.
     """
     if ref is not None:
         projects = [await get_project(session, ref)]
@@ -237,14 +489,17 @@ async def next_steps(
             ).all()
         )
     tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
+    blocked = await _blocked_in(session, tasks)
     result = []
     for p in projects:
         open_in_order = [t for t in roadmap_order(tasks[p.id], groups[p.id]) if not t.done]
         if not open_in_order and ref is None:
             continue
-        summary = summarize(p, tasks[p.id], groups[p.id])
-        summary["tasks"] = open_in_order[: max(limit, 0)]
+        summary = summarize(p, tasks[p.id], groups[p.id], blocked)
+        summary["tasks"] = [t for t in open_in_order if t.id not in blocked][: max(limit, 0)]
         result.append(summary)
+    await attach_blocks(session, [t for s in result for t in s["tasks"]])
+    await _attach_next_tasks(session, result)
     return result
 
 
@@ -532,13 +787,14 @@ async def reorder_groups(
 async def list_tasks(
     session: AsyncSession, ref: str | uuid.UUID, include_done: bool = True
 ) -> list[Task]:
+    """A project's tasks in stored order, each with its computed block fields."""
     project = await get_project(session, ref)
     query = (
         select(Task).where(Task.project_id == project.id).order_by(Task.position, Task.created_at)
     )
     if not include_done:
         query = query.where(Task.done.is_(False))
-    return list((await session.scalars(query)).all())
+    return await attach_blocks(session, list((await session.scalars(query)).all()))
 
 
 async def get_task(session: AsyncSession, task_id: uuid.UUID) -> Task:
@@ -643,7 +899,7 @@ async def set_task_group(
     await session.commit()
     await session.refresh(task)
     broadcaster.publish("tasks", str(task.project_id))
-    return task
+    return (await attach_blocks(session, [task]))[0]
 
 
 async def update_task(
@@ -658,14 +914,18 @@ async def update_task(
 ) -> Task:
     """Edit a task. ``size``, ``due_date``, and ``assignee`` clear on ``None``.
 
-    The number of the task never changes, whatever the edit.
+    The number of the task never changes, whatever the edit. A change of
+    ``done`` also tells the projects of the tasks that wait for this one:
+    their blocked state is computed from it. Use ``set_task_done`` to get
+    that list back as well.
     """
     task = await resolve_task(session, task_id)
     if title is not None:
         task.title = title.strip()
     if notes is not None:
         task.notes = notes
-    if done is not None and done != task.done:
+    done_changed = done is not None and done != task.done
+    if done_changed:
         task.done = done
         task.done_at = datetime.now(UTC) if done else None
     if size is not UNSET:
@@ -674,10 +934,12 @@ async def update_task(
         task.due_date = due_date
     if assignee is not UNSET:
         task.assignee = _clean(assignee)
+    waiting_projects = await _waiting_project_ids(session, task.id) if done_changed else set()
     await session.commit()
     await session.refresh(task)
     broadcaster.publish("tasks", str(task.project_id))
-    return task
+    _publish_tasks(waiting_projects - {str(task.project_id)})
+    return (await attach_blocks(session, [task]))[0]
 
 
 async def delete_task(session: AsyncSession, task_id: TaskRef) -> None:
@@ -744,7 +1006,7 @@ async def reorder_tasks(
             .execution_options(populate_existing=True)
         )
     ).all()
-    return list(reordered)
+    return await attach_blocks(session, list(reordered))
 
 
 async def move_task(session: AsyncSession, task_id: TaskRef, to_project: str | uuid.UUID) -> Task:
@@ -763,7 +1025,7 @@ async def move_task(session: AsyncSession, task_id: TaskRef, to_project: str | u
     await session.refresh(task)
     broadcaster.publish("tasks", source_project_id)
     broadcaster.publish("tasks", str(task.project_id))
-    return task
+    return (await attach_blocks(session, [task]))[0]
 
 
 # --- search -------------------------------------------------------------------
@@ -789,9 +1051,10 @@ async def search(
     The result has ``projects``, project summaries oldest first, and
     ``tasks``, one entry for each task with the ``task``, the summary of
     its ``project``, and its ``group`` (``None`` for a task in the
-    backlog). The tasks come project by project, in the same project order,
-    and in roadmap order inside a project. ``limit`` caps each list. An
-    empty query matches nothing.
+    backlog). Each task carries its computed block fields. The tasks come
+    project by project, in the same project order, and in roadmap order
+    inside a project. ``limit`` caps each list. An empty query matches
+    nothing.
     """
     needle = query.strip().lower()
     if not needle or limit <= 0:
@@ -802,7 +1065,8 @@ async def search(
         searchable = searchable.where(Project.status.not_in(FINISHED_STATUSES))
     projects = list((await session.scalars(searchable)).all())
     tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
-    summaries = {p.id: summarize(p, tasks[p.id], groups[p.id]) for p in projects}
+    blocked = await _blocked_in(session, tasks)
+    summaries = {p.id: summarize(p, tasks[p.id], groups[p.id], blocked) for p in projects}
     found_projects = [
         summaries[p.id]
         for p in projects
@@ -825,4 +1089,8 @@ async def search(
                     "group": by_id.get(task.group_id) if task.group_id else None,
                 }
             )
-    return {"projects": found_projects[:limit], "tasks": found_tasks[:limit]}
+    found_projects = found_projects[:limit]
+    found_tasks = found_tasks[:limit]
+    await attach_blocks(session, [f["task"] for f in found_tasks])
+    await _attach_next_tasks(session, list(summaries.values()))
+    return {"projects": found_projects, "tasks": found_tasks}

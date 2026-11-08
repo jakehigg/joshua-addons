@@ -2,6 +2,17 @@ export type ProjectStatus = "active" | "paused" | "done" | "closed";
 export type TaskSize = "XS" | "S" | "M" | "L" | "XL";
 export const TASK_SIZES: TaskSize[] = ["XS", "S", "M", "L", "XL"];
 
+// One end of a blocking link: enough of that task to name it and open it.
+// project is null only when the linked task lost its project.
+export interface TaskRef {
+  id: string;
+  // The short number a person says ("task 24").
+  number: number;
+  title: string;
+  done: boolean;
+  project: { name: string; slug: string } | null;
+}
+
 export interface Task {
   id: string;
   // The short number a person says ("task 24"), unique over every project.
@@ -17,6 +28,12 @@ export interface Task {
   due_date: string | null;
   assignee: string | null;
   position: number;
+  // Computed by the server from the blocking links on every read. blocked is
+  // true while at least one blocker is open. A blocker can be in another
+  // project.
+  blocked: boolean;
+  blockers: TaskRef[];
+  blocking: TaskRef[];
 }
 
 // A project summary: the stored fields plus the computed ones. percent,
@@ -134,6 +151,8 @@ export const api = {
   updateTask: (taskId: string, patch: TaskPatch) =>
     request<Task>("PATCH", `/api/tasks/${taskId}`, patch),
   deleteTask: (taskId: string) => request<void>("DELETE", `/api/tasks/${taskId}`),
+  unblockTask: (taskId: string, blockerId: string) =>
+    request<Task>("DELETE", `/api/tasks/${taskId}/blockers/${blockerId}`),
   // include_done also decides whether done and closed projects are searched.
   search: (query: string, includeDone: boolean) =>
     request<SearchResult>(

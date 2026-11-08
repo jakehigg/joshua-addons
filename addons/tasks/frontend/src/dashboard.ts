@@ -5,7 +5,7 @@
 // Every number on a card (percent, open_count, health, next_task) is
 // computed by the API and only read here.
 
-import type { Project, SearchResult, SearchTask } from "./api";
+import type { Project, SearchResult, SearchTask, Task, TaskRef } from "./api";
 
 // --- the route ----------------------------------------------------------------
 // "/" is the dashboard and "/p/<slug>" is one project. The search text and
@@ -172,6 +172,52 @@ function badgeOf(project: Project): Badge | null {
   return null;
 }
 
+// --- the blocking links --------------------------------------------------------
+// What a task waits for, and what waits for it. The API computes blocked and
+// the two lists on every read; nothing is worked out here.
+
+export interface TaskLink {
+  id: string;
+  // The task number, shown on the chip and held by the link.
+  number: number;
+  title: string;
+  done: boolean;
+  // The linked task in its own project page, or null when that task lost its
+  // project and cannot be opened.
+  href: string | null;
+  // The project of the linked task, which can be another project.
+  projectName: string | null;
+}
+
+export interface TaskLinksView {
+  // True while at least one blocker is open: the task cannot start.
+  blocked: boolean;
+  // The tasks this task waits for, open or done.
+  blockers: TaskLink[];
+  // The tasks that wait for this task.
+  blocking: TaskLink[];
+}
+
+function taskLink(ref: TaskRef): TaskLink {
+  return {
+    id: ref.id,
+    number: ref.number,
+    title: ref.title,
+    done: ref.done,
+    href: ref.project ? taskHref(ref.project, ref) : null,
+    projectName: ref.project ? ref.project.name : null,
+  };
+}
+
+/** The blocking links of one task, ready to render. */
+export function taskLinksView(task: Task): TaskLinksView {
+  return {
+    blocked: task.blocked,
+    blockers: task.blockers.map(taskLink),
+    blocking: task.blocking.map(taskLink),
+  };
+}
+
 // --- the search ----------------------------------------------------------------
 
 export interface SearchTaskView {
@@ -181,6 +227,8 @@ export interface SearchTaskView {
   title: string;
   href: string;
   done: boolean;
+  // True while the task waits for an open blocker.
+  blocked: boolean;
   // The project and the group the task is in: "Kitchen · Phase 1".
   whereLabel: string;
 }
@@ -199,6 +247,7 @@ export function searchTaskView(found: SearchTask): SearchTaskView {
     title: found.task.title,
     href: taskHref(found.project, found.task),
     done: found.task.done,
+    blocked: found.task.blocked,
     whereLabel: `${found.project.name} · ${found.group ? found.group.name : "backlog"}`,
   };
 }

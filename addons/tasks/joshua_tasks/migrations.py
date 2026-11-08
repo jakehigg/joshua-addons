@@ -11,7 +11,8 @@ A release never drops a table or a column. To add a new column: add it to the
 model in ``models.py``, then append one ``Migration`` entry here naming the
 table, the column, and its SQLAlchemy type. A fresh database gets the column
 from ``create_all``; an existing database picks it up as an additive
-``ALTER TABLE`` on its next start.
+``ALTER TABLE`` on its next start. A new table needs no entry at all:
+``create_all`` makes it, on a fresh database and on an existing one.
 
 ``ADDITIVE_INDEXES`` does the same for an index a new column needs, because
 ``create_all`` builds an index for a new table only. ``_number_tasks`` then
