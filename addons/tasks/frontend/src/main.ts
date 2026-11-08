@@ -714,9 +714,15 @@ function taskRow(task: Task): HTMLLIElement {
   function linkChip(ref: TaskLink, onRemove: (() => void) | null): HTMLElement {
     const chip = document.createElement("span");
     chip.className = "task-link" + (ref.done ? " done" : "");
-    const label = document.createElement(ref.href ? "a" : "span");
+    let label: HTMLElement;
+    if (ref.href) {
+      const anchor = document.createElement("a");
+      anchor.href = ref.href;
+      label = anchor;
+    } else {
+      label = document.createElement("span");
+    }
     label.className = "task-link-title";
-    if (ref.href) (label as HTMLAnchorElement).href = ref.href;
     label.textContent = ref.title;
     chip.append(label);
     if (ref.projectName) {
