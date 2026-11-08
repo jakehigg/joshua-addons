@@ -6,6 +6,27 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-08
+
+Three new addons: `tasks` (projects, phases, goals, and blocking links, with a
+dashboard web UI), `chores` (chores and an XP ledger), and `developer` (a
+manager that gives a coding task to a worker). `mcp` gains search by meaning,
+`vinyl` answers questions about the collection, and the `tasks`, `chores`, and
+`pantry` web UIs have the shared Joshua look.
+
+### Upgrading from 0.1.3
+
+- Set `targetRevision` (ArgoCD) or `JOSHUA_ADDONS_VERSION` (compose) to
+  `0.2.0`, as [releasing.md](releasing.md#4-update-an-installation) says.
+- `tasks`: `list_tasks` returns the tasks with no group as `backlog`, in
+  place of `ungrouped`. The new columns and tables are added to an existing
+  database on start; nothing is dropped.
+- `developer`: the manager and the worker image must be of the same
+  release. Set `env.WORKER_IMAGE` to the `0.2.0` worker if your own values
+  name it.
+- The chart now uses `strategy: Recreate` for a Deployment that mounts the
+  claim of the chart, so the old pod stops before the new pod starts.
+
 ### Added
 
 - `tasks`, an addon for household task lists: projects, an ordered task
@@ -48,6 +69,20 @@ releases, with the images and the packaged chart, are at
   and keeps the two kinds apart; "Include done" adds the done tasks and the
   finished projects. A project is at `/p/<slug>`, and a found task opens its
   project page at the task.
+- `tasks`: a task can wait for other tasks. `block_task` makes one link
+  ("27 is blocked by 24") and `unblock_task` removes it; each takes the task
+  number or the task id, and the blocker can be in another project. A task
+  is `blocked` while one of its blockers is open. A blocked task is never
+  the next task and never comes back from `next_steps`. A link to the task
+  itself or a link that makes a loop is refused. `set_task_done` reports
+  the tasks it unblocked, and warns when the task still waits for an open
+  blocker. Every task in a tool result and in the REST API carries
+  `blocked`, `blockers`, and `blocking`.
+  `POST /api/tasks/<task_id>/blockers` and
+  `DELETE /api/tasks/<task_id>/blockers/<blocker_id>` make and remove a
+  link. The web UI marks a blocked task and links each blocker. The tool
+  count is now 22. An existing database gets the new `task_blockers` table
+  on start.
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes
@@ -98,6 +133,15 @@ releases, with the images and the packaged chart, are at
   stopped `blocked` or `timed_out` after a push starts a new worker on the
   same branch. On Docker and on Kubernetes, the hard cap on a worker is
   `timeout_s + ask_wait_s + 120` seconds after it reads its brief.
+
+  **Saved commits.** When the push of a worker fails, the worker sends a
+  git bundle of its commits to the manager before its report. The manager
+  keeps it in `<DEVELOPER_DATA_DIR>/bundles/` (up to 100 MiB), and deletes
+  it after a push or after 14 days. The report has `bundle_saved` and
+  `unpushed_status`. `answer` on such a `failed` task starts a new worker
+  that restores the commits on the branch. When the session of the earlier
+  worker completed, the new worker only pushes, with no session. The
+  manager and the worker image must be of the same release.
 
   **Capacity.** Each `dispatched` or `running` task holds a `max_workers`
   slot, a waiting one too. A `develop` and a `rework` on the same branch
@@ -235,6 +279,10 @@ releases, with the images and the packaged chart, are at
   gains the columns when it is opened. `master_id` is what lets the addon say
   the house owns the same album in another pressing, and it fills at the next
   sync.
+- `pantry`: the web UI uses the shared Joshua stylesheet (`joshua-ui.css`
+  1.0.0): the app bar, the tabs, the list rows, the chips, the tables, and
+  the fields. The field that records a purchase stays at the bottom of the
+  inventory tab. The API and the behavior do not change.
 - `chores`: the web UI uses the shared Joshua stylesheet (`joshua-ui.css`
   1.0.0), as `pantry` and `tasks` do. The manager view and the kiosk screen
   are dark only; the manager view has no light theme now. The manager view
