@@ -138,7 +138,7 @@ input[type="search"]:focus { border-color: var(--j-accent); box-shadow: 0 0 0 3p
 .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .card-name { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
 .card-head .health { margin-left: auto; }
-.card-goal { margin: 0; color: var(--j-muted); font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.card-goal { color: var(--j-muted); font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .card-progress { display: flex; align-items: center; gap: 10px; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--j-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .card-target { color: var(--j-faint); }
@@ -418,4 +418,6 @@ main.finished .group-add { display: none; }
 @media (max-width: 420px) {
   #add-project .label { display: none; }
   #complete-project { margin-left: 0; }
+  /* the app bar is tight on a phone: the search link keeps only its word */
+  .ghost-link { padding: 0 4px; }
 }

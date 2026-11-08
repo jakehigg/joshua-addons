@@ -343,7 +343,8 @@ function projectCard(view: CardView): HTMLElement {
 
   card.append(head);
   if (view.goal) {
-    const goal = document.createElement("p");
+    // A span, not a paragraph: the whole card is one link.
+    const goal = document.createElement("span");
     goal.className = "card-goal";
     goal.textContent = view.goal;
     card.append(goal);
