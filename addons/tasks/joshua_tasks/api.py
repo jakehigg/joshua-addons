@@ -42,6 +42,7 @@ TaskSize = Literal[TASK_SIZES]  # type: ignore[valid-type]
 KEEPALIVE_SECONDS = 25.0
 
 _UUID = TypeAdapter(uuid.UUID)
+_BOOL = TypeAdapter(bool)
 
 
 # --- schemas ---------------------------------------------------------------
@@ -166,6 +167,26 @@ class TaskOrder(BaseModel):
     group_id: uuid.UUID | None = None
 
 
+class SearchTaskOut(BaseModel):
+    """One task that matches a search: the task, its project, and its group."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    task: TaskOut
+    project: ProjectOut
+    # null when the task is in the project's backlog.
+    group: GroupOut | None = None
+
+
+class SearchOut(BaseModel):
+    """The two kinds of match, apart: the projects first, then the tasks."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    projects: list[ProjectOut] = []
+    tasks: list[SearchTaskOut] = []
+
+
 # --- plumbing ----------------------------------------------------------------
 
 
@@ -188,6 +209,17 @@ def _path_uuid(request: Request, name: str) -> uuid.UUID:
         return _UUID.validate_python(request.path_params[name])
     except ValidationError as exc:
         raise _Invalid(_errors(exc, "path", name)) from None
+
+
+def _query_bool(request: Request, name: str, default: bool) -> bool:
+    """A flag from the query string (``true``/``false``, ``1``/``0``); 422 on anything else."""
+    raw = request.query_params.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return _BOOL.validate_python(raw.strip())
+    except ValidationError as exc:
+        raise _Invalid(_errors(exc, "query", name)) from None
 
 
 async def _body[M: BaseModel](request: Request, model: type[M]) -> M:
@@ -483,6 +515,34 @@ async def delete_task(request: Request) -> Response:
     return Response(status_code=204)
 
 
+# --- search ------------------------------------------------------------------
+
+
+async def search(request: Request) -> Response:
+    """``?query=`` is the text to find.
+
+    The match is a case-insensitive substring, on a project's name or goal
+    and on a task's title or notes. ``?include_done=true`` also matches
+    done tasks and done or closed projects; an archived project is never
+    matched. ``?project=<id|slug>`` narrows the task match to one project.
+    ``?limit=`` caps each list (default 20).
+    """
+    query = request.query_params.get("query", "")
+    project = request.query_params.get("project") or None
+    include_done = _query_bool(request, "include_done", False)
+    try:
+        limit = int(request.query_params.get("limit", str(service.SEARCH_LIMIT)))
+    except ValueError:
+        raise _Invalid(
+            [{"type": "int_parsing", "loc": ["query", "limit"], "msg": "must be an integer"}]
+        ) from None
+    async with _session() as session:
+        found = await service.search(
+            session, query, include_done=include_done, project=project, limit=limit
+        )
+    return _json(SearchOut, found)
+
+
 def _routes() -> list[Route]:
     def route(path: str, handler: Handler, method: str) -> Route:
         return Route(path, _guarded(handler), methods=[method])
@@ -493,6 +553,7 @@ def _routes() -> list[Route]:
         route("/projects", list_projects, "GET"),
         route("/projects", create_project, "POST"),
         route("/next-steps", next_steps, "GET"),
+        route("/search", search, "GET"),
         route("/projects/{project_id}", update_project, "PATCH"),
         route("/projects/{project_id}", delete_project, "DELETE"),
         route("/projects/{project_id}/groups", list_groups, "GET"),

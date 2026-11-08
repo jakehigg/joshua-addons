@@ -13,9 +13,9 @@ with its tasks in order; the ungrouped list is the backlog and comes last.
 The first open task in that order is the project's next step. A project with
 no groups is one ordered list, as before.
 
-Summaries: ``list_projects``, ``project_summary``, and ``next_steps`` return
-dicts with computed fields (``percent``, ``health``, ``next_task``). Nothing
-computed is stored.
+Summaries: ``list_projects``, ``project_summary``, ``next_steps``, and
+``search`` return dicts with computed fields (``percent``, ``health``,
+``next_task``). Nothing computed is stored.
 """
 
 import re
@@ -33,6 +33,9 @@ POSITION_STEP = 1024.0
 
 # A goal project with no task done for this many days is ``stalled``.
 STALLED_AFTER_DAYS: Final = 14
+
+# How many projects, and how many tasks, a search returns by default.
+SEARCH_LIMIT: Final = 20
 
 
 class _Unset:
@@ -693,3 +696,65 @@ async def move_task(session: AsyncSession, task_id: uuid.UUID, to_project: str |
     broadcaster.publish("tasks", source_project_id)
     broadcaster.publish("tasks", str(task.project_id))
     return task
+
+
+# --- search -------------------------------------------------------------------
+
+
+async def search(
+    session: AsyncSession,
+    query: str,
+    include_done: bool = False,
+    project: str | uuid.UUID | None = None,
+    limit: int = SEARCH_LIMIT,
+) -> dict[str, Any]:
+    """Find the projects and the tasks that hold ``query``.
+
+    The match is a case-insensitive substring: a project matches on its
+    name or its goal, a task on its title or its notes. An archived project
+    is never searched, and neither are its tasks. By default only open
+    tasks match, and only the projects that ``list_projects`` shows with
+    ``include_finished=False``. With ``include_done=True`` a done task
+    matches too, and a done or closed project as well. ``project`` (an id,
+    a slug, or a name) narrows the task match to one project.
+
+    The result has ``projects``, project summaries oldest first, and
+    ``tasks``, one entry for each task with the ``task``, the summary of
+    its ``project``, and its ``group`` (``None`` for a task in the
+    backlog). The tasks come project by project, in the same project order,
+    and in roadmap order inside a project. ``limit`` caps each list. An
+    empty query matches nothing.
+    """
+    needle = query.strip().lower()
+    if not needle or limit <= 0:
+        return {"projects": [], "tasks": []}
+    only = (await get_project(session, project)).id if project is not None else None
+    searchable = select(Project).where(Project.archived_at.is_(None)).order_by(Project.created_at)
+    if not include_done:
+        searchable = searchable.where(Project.status.not_in(FINISHED_STATUSES))
+    projects = list((await session.scalars(searchable)).all())
+    tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
+    summaries = {p.id: summarize(p, tasks[p.id], groups[p.id]) for p in projects}
+    found_projects = [
+        summaries[p.id]
+        for p in projects
+        if needle in p.name.lower() or (p.goal is not None and needle in p.goal.lower())
+    ]
+    found_tasks: list[dict[str, Any]] = []
+    for p in projects:
+        if only is not None and p.id != only:
+            continue
+        by_id = {g.id: g for g in groups[p.id]}
+        for task in roadmap_order(tasks[p.id], groups[p.id]):
+            if task.done and not include_done:
+                continue
+            if needle not in task.title.lower() and needle not in task.notes.lower():
+                continue
+            found_tasks.append(
+                {
+                    "task": task,
+                    "project": summaries[p.id],
+                    "group": by_id.get(task.group_id) if task.group_id else None,
+                }
+            )
+    return {"projects": found_projects[:limit], "tasks": found_tasks[:limit]}

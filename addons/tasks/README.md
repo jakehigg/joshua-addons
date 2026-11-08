@@ -47,6 +47,7 @@ goal and no date, has no health.
 | `set_project_status` | Sets `active`, `paused`, or `closed`. |
 | `archive_project` | Hides a project. Its tasks are kept. |
 | `next_steps` | The next open tasks of every active project, or of one project, in roadmap order. |
+| `search_tasks` | Finds the projects and the tasks that hold a word. Use it before you add a task, to see whether it is there already. |
 | `list_tasks` | The tasks of one project in roadmap order: each group with its tasks, then the backlog. |
 | `create_task` | Adds a task to a project, at the end of the backlog or of a group, with an optional size, due date, and assignee. |
 | `update_task` | Changes the title, notes, size, due date, or assignee of a task. |
@@ -62,6 +63,16 @@ goal and no date, has no health.
 A project argument takes the project id, its slug, or its name. A group
 argument takes the group id or its name (case does not matter). A date
 argument is `YYYY-MM-DD`; an empty string clears a date.
+
+`search_tasks` matches a substring, and case does not matter. A project
+matches on its name or its goal, and a task on its title or its notes. The
+result keeps the two kinds apart: the projects first, then the tasks. The
+projects come oldest first, and the tasks come project by project, in
+roadmap order inside a project. Only open tasks and unfinished projects are
+searched, until `include_done` is true. An archived project is never
+searched. `project` keeps the task match in one project, and `limit` caps
+each list. The same search is at `GET /api/search`, with `query`,
+`include_done`, `project`, and `limit` as query parameters.
 
 ## Run it
 

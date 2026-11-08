@@ -471,3 +471,65 @@ async def test_task_size_due_date_and_assignee_over_rest(client) -> None:
     assert r.status_code == 422
     r = await client.patch(f"/api/tasks/{t['id']}", json={"due_date": "soon"})
     assert r.status_code == 422
+
+
+# --- search (issue #40) --------------------------------------------------------
+
+
+async def test_search_endpoint(client) -> None:
+    hall = (
+        await client.post("/api/projects", json={"name": "Hallway", "goal": "Hallway painted"})
+    ).json()
+    garden = (await client.post("/api/projects", json={"name": "Garden"})).json()
+    g = (await client.post(f"/api/projects/{hall['id']}/groups", json={"name": "Prep"})).json()
+    await client.post(
+        f"/api/projects/{hall['id']}/tasks", json={"title": "Tape edges", "notes": "no paint here"}
+    )
+    buy = (
+        await client.post(
+            f"/api/projects/{hall['id']}/tasks", json={"title": "Buy PAINT", "group_id": g["id"]}
+        )
+    ).json()
+    await client.post(f"/api/projects/{garden['id']}/tasks", json={"title": "Dig"})
+
+    r = await client.get("/api/search", params={"query": "paint"})
+    assert r.status_code == 200
+    found = r.json()
+    assert [p["slug"] for p in found["projects"]] == ["hallway"]
+    assert found["projects"][0]["open_count"] == 2
+    assert [f["task"]["title"] for f in found["tasks"]] == ["Buy PAINT", "Tape edges"]
+    first = found["tasks"][0]
+    assert first["task"]["id"] == buy["id"] and first["project"]["slug"] == "hallway"
+    assert first["group"]["name"] == "Prep" and first["group"]["id"] == g["id"]
+    assert found["tasks"][1]["group"] is None
+
+    # one project only, and the limit
+    r = await client.get("/api/search", params={"query": "paint", "project": "hallway", "limit": 1})
+    assert [f["task"]["title"] for f in r.json()["tasks"]] == ["Buy PAINT"]
+
+    # the open-only default, and include_done
+    await client.patch(f"/api/tasks/{buy['id']}", json={"done": True})
+    r = await client.get("/api/search", params={"query": "paint"})
+    assert [f["task"]["title"] for f in r.json()["tasks"]] == ["Tape edges"]
+    r = await client.get("/api/search", params={"query": "paint", "include_done": "true"})
+    assert [f["task"]["title"] for f in r.json()["tasks"]] == ["Buy PAINT", "Tape edges"]
+
+    # an archived project is never searched
+    await client.patch(f"/api/projects/{hall['id']}", json={"archived": True})
+    r = await client.get("/api/search", params={"query": "paint", "include_done": "1"})
+    assert r.json() == {"projects": [], "tasks": []}
+
+    r = await client.get("/api/search", params={"query": "zebra"})
+    assert r.json() == {"projects": [], "tasks": []}
+    assert (await client.get("/api/search")).json() == {"projects": [], "tasks": []}
+
+
+async def test_search_endpoint_bad_parameters(client) -> None:
+    r = await client.get("/api/search", params={"query": "x", "limit": "lots"})
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"] == ["query", "limit"]
+    r = await client.get("/api/search", params={"query": "x", "include_done": "maybe"})
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"] == ["query", "include_done"]
+    r = await client.get("/api/search", params={"query": "x", "project": "nope"})
+    assert r.status_code == 404

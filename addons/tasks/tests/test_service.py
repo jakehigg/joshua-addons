@@ -378,3 +378,81 @@ async def test_group_target_date(db):
     assert listed["target_date"] == date(2030, 3, 1) and listed["percent"] == 0
     g = await services.update_group(db, g.id, target_date=None)
     assert g.target_date is None
+
+
+# --- search (issue #40) -------------------------------------------------------
+
+
+async def test_search_matches_titles_notes_names_and_goals(db):
+    await services.create_project(db, "Hallway", goal="Hallway painted")
+    await services.create_project(db, "Garden", goal="Beds ready for paint")
+    await services.create_task(db, "hallway", "Buy paint")
+    await services.create_task(db, "hallway", "Tape edges", notes="no PAINT on the trim")
+    await services.create_task(db, "garden", "Dig")
+    found = await services.search(db, "paint")
+    assert [p["slug"] for p in found["projects"]] == ["hallway", "garden"]
+    assert [f["task"].title for f in found["tasks"]] == ["Buy paint", "Tape edges"]
+    assert [f["project"]["slug"] for f in found["tasks"]] == ["hallway", "hallway"]
+    assert found["projects"][0]["percent"] == 0 and found["projects"][0]["open_count"] == 2
+    assert found["tasks"][0]["group"] is None
+
+
+async def test_search_is_case_insensitive_and_follows_roadmap_order(db):
+    await services.create_project(db, "P")
+    g = await services.create_group(db, "p", "Phase 1")
+    await services.create_task(db, "p", "backlog paint")
+    await services.create_task(db, "p", "phase PAINT", group=g.id)
+    found = await services.search(db, "  PaInT  ")
+    assert [f["task"].title for f in found["tasks"]] == ["phase PAINT", "backlog paint"]
+    assert found["tasks"][0]["group"].name == "Phase 1"
+    assert found["tasks"][1]["group"] is None
+
+
+async def test_search_skips_done_tasks_and_finished_projects_by_default(db):
+    await services.create_project(db, "Paint the hallway", goal="g")
+    t = await services.create_task(db, "paint-the-hallway", "paint the wall")
+    await services.create_task(db, "paint-the-hallway", "paint the door")
+    await services.update_task(db, t.id, done=True)
+    open_only = await services.search(db, "paint")
+    assert [f["task"].title for f in open_only["tasks"]] == ["paint the door"]
+    everything = await services.search(db, "paint", include_done=True)
+    assert [f["task"].title for f in everything["tasks"]] == ["paint the wall", "paint the door"]
+
+    await services.set_project_status(db, "paint-the-hallway", "closed")
+    assert await services.search(db, "paint") == {"projects": [], "tasks": []}
+    closed = await services.search(db, "paint", include_done=True)
+    assert [p["slug"] for p in closed["projects"]] == ["paint-the-hallway"]
+    assert len(closed["tasks"]) == 2
+
+
+async def test_search_project_filter_and_archived_projects(db):
+    await services.create_project(db, "Mine")
+    await services.create_project(db, "Yours")
+    await services.create_project(db, "Old")
+    await services.create_task(db, "mine", "paint a wall")
+    await services.create_task(db, "yours", "paint a door")
+    await services.create_task(db, "old", "paint the shed")
+    await services.update_project(db, "old", archived=True)
+
+    both = await services.search(db, "paint")
+    assert [f["project"]["slug"] for f in both["tasks"]] == ["mine", "yours"]
+    one = await services.search(db, "paint", project="yours")
+    assert [f["task"].title for f in one["tasks"]] == ["paint a door"]
+    # the archived project is out, with its tasks, even by name
+    hidden = await services.search(db, "old", include_done=True)
+    assert hidden == {"projects": [], "tasks": []}
+    with pytest.raises(services.NotFoundError):
+        await services.search(db, "paint", project="nope")
+
+
+async def test_search_empty_query_no_match_and_limit(db):
+    await services.create_project(db, "Paint")
+    for n in range(3):
+        await services.create_task(db, "paint", f"paint {n}")
+    assert await services.search(db, "   ") == {"projects": [], "tasks": []}
+    assert await services.search(db, "zebra") == {"projects": [], "tasks": []}
+    assert await services.search(db, "paint", limit=0) == {"projects": [], "tasks": []}
+    limited = await services.search(db, "paint", limit=2)
+    assert [f["task"].title for f in limited["tasks"]] == ["paint 0", "paint 1"]
+    assert len(limited["projects"]) == 1
+    assert services.SEARCH_LIMIT == 20
