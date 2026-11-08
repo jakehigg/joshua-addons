@@ -6,6 +6,7 @@ import contextlib
 import os
 from collections.abc import AsyncIterator
 
+import httpx
 import httpx2
 import pytest
 import pytest_asyncio
@@ -132,3 +133,11 @@ async def mcp_session(app: ASGIApp, headers: dict[str, str] | None = None):
                     yield session
     finally:
         await client.aclose()
+
+
+@pytest_asyncio.fixture
+async def client(bound_db, app_factory) -> AsyncIterator[httpx.AsyncClient]:
+    """An HTTP client on the whole app, over the test database (SQLite, or Postgres too)."""
+    transport = httpx.ASGITransport(app=app_factory(None))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
+        yield c

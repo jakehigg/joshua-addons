@@ -20,7 +20,6 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -406,11 +405,11 @@ def build_app() -> ASGIApp:
     ``/healthz``. Starlette tries routes in registration order, so those two
     match first, then ``/api``, then the catch-all UI mount at ``/`` last.
     """
+    from joshua_tasks.api import build_api_app
     from joshua_tasks.static import build_static_app
 
     inner = mcp.streamable_http_app(streamable_http_path="/mcp", host="0.0.0.0")
-    # The REST API (P5.4) goes here. Empty until then: every /api path is a 404.
-    inner.mount("/api", Starlette())
+    inner.mount("/api", build_api_app())
     static_app = build_static_app()
     if static_app is not None:
         inner.mount("/", static_app)
