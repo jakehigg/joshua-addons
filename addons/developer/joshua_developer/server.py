@@ -171,7 +171,10 @@ async def answer(task_id: str, text: str, ctx: Context) -> dict:
     A task waits when task_status shows an open_question. The text is the
     answer, from what you know or from what the person said. When the task
     is blocked or timed_out and its worker pushed the branch, the answer
-    resumes it: a new worker continues on the branch.
+    resumes it: a new worker continues on the branch. A task that failed
+    because its push failed, and whose commits the manager saved, also
+    resumes: the new worker restores the commits. When the session of the
+    earlier worker was complete, the new worker only pushes them.
     """
     person = _person(ctx)
     task = _own_task(Caller(person=person), task_id)

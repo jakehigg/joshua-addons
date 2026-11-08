@@ -25,6 +25,8 @@ BACKOFF_S = 1.0
 # The manager holds GET /worker/answer open for up to 25 s.
 ANSWER_READ_S = 40.0
 TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+# A bundle can be large; its upload and download get more time.
+BUNDLE_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=300.0, pool=10.0)
 
 
 class Report(BaseModel):
@@ -44,6 +46,10 @@ class Report(BaseModel):
     # True when this worker made the branch: the remote did not have it.
     created_branch: bool = False
     commit_hash: str | None = None
+    # The status the session reached when the push then failed, or None.
+    unpushed_status: Literal["success", "failed", "blocked", "timed_out"] | None = None
+    # True when the manager stored a bundle of the commits that were not pushed.
+    bundle_saved: bool = False
     error: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -114,13 +120,14 @@ class ManagerClient:
         path: str,
         *,
         json: dict[str, Any] | None = None,
+        content: bytes | None = None,
         http_timeout: httpx.Timeout | None = None,
     ) -> httpx.Response:
         attempt = 0
         while True:
             try:
                 response = await self._http.request(
-                    method, path, json=json, timeout=http_timeout or TIMEOUT
+                    method, path, json=json, content=content, timeout=http_timeout or TIMEOUT
                 )
             except httpx.TransportError as exc:
                 if attempt >= self.retries:
@@ -187,6 +194,20 @@ class ManagerClient:
         """Tell the manager the worker stopped waiting. Returns the task's paused seconds."""
         response = await self._call("POST", "/worker/ask/stop")
         return int(response.json().get("paused_s") or 0)
+
+    async def save_bundle(self, data: bytes) -> None:
+        """Store a bundle of the commits that were not pushed on the manager."""
+        await self._call(
+            "PUT",
+            "/worker/bundle",
+            content=data,
+            http_timeout=BUNDLE_TIMEOUT,
+        )
+
+    async def bundle(self) -> bytes:
+        """The bundle that an earlier worker of the task stored."""
+        response = await self._call("GET", "/worker/bundle", http_timeout=BUNDLE_TIMEOUT)
+        return response.content
 
     async def report(self, report: Report) -> None:
         """Send the report. The task ends."""

@@ -22,6 +22,12 @@ task, takes a question from a worker, and wakes the worker that waits for
 the answer. An answer to a task that stopped ``blocked`` or ``timed_out``
 after a push starts a new worker for the same task, on the pushed branch.
 
+When a push fails, the worker stores a bundle of its commits on the manager
+(``<data dir>/bundles/<task id>.bundle``) before it reports. A task with a
+bundle is resumable also when it ``failed``: the new worker restores the
+commits. The bundle is deleted when a worker of the task pushes, and after
+``BUNDLE_KEEP_DAYS``.
+
 The task clock pauses while a question waits. ``asked_at`` holds the start
 of the open wait, and ``paused_s`` the seconds of the waits that ended. The
 supervisor of the runtime adds both to the deadline of the worker.
@@ -30,11 +36,14 @@ supervisor of the runtime adds both to the deadline of the worker.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import secrets
 import threading
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from joshua_developer import notify, platforms
@@ -87,6 +96,12 @@ _COMMIT_CHARS = frozenset("0123456789abcdef")
 CLOSED_PR_STATES = frozenset({"closed", "merged", "locked"})
 # The states from which an answer resumes a task.
 RESUMABLE_STATUSES = ("blocked", "timed_out")
+# The bundles of commits that a worker could not push.
+BUNDLE_DIR = "bundles"
+MAX_BUNDLE = 100 * 1024 * 1024
+BUNDLE_KEEP_DAYS = 14
+# The first line of a git bundle file, version 2 or 3.
+BUNDLE_SIGNATURES = (b"# v2 git bundle\n", b"# v3 git bundle\n")
 
 
 def rejected(reason: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -205,7 +220,42 @@ class Manager:
             )
         self.recovered = [task["task_id"] for task in failed]
         self.store.clear_ended_worker_tokens()
+        self.prune_bundles()
         return list(self.recovered)
+
+    # --- bundles -----------------------------------------------------------
+
+    @property
+    def bundle_dir(self) -> Path:
+        return self.settings.data_dir / BUNDLE_DIR
+
+    def bundle_path(self, task_id: str) -> Path:
+        """The bundle file of a task. The task id comes from the store, never from a request."""
+        return self.bundle_dir / f"{task_id}.bundle"
+
+    def has_bundle(self, task_id: str) -> bool:
+        return self.bundle_path(task_id).is_file()
+
+    def drop_bundle(self, task_id: str) -> None:
+        """Delete the bundle of a task, when it has one."""
+        with contextlib.suppress(FileNotFoundError):
+            self.bundle_path(task_id).unlink()
+            logger.info({"message": "bundle deleted", "task_id": task_id})
+
+    def prune_bundles(self, now: float | None = None) -> int:
+        """Delete each bundle older than ``BUNDLE_KEEP_DAYS``. Returns the count."""
+        if not self.bundle_dir.is_dir():
+            return 0
+        limit = (now if now is not None else time.time()) - BUNDLE_KEEP_DAYS * 86400
+        count = 0
+        for path in self.bundle_dir.iterdir():
+            with contextlib.suppress(OSError):
+                if path.stat().st_mtime < limit:
+                    path.unlink()
+                    count += 1
+        if count:
+            logger.info({"message": "old bundles deleted", "count": count})
+        return count
 
     async def send_recovered_reports(self) -> None:
         """Send the report of each task that ``recover`` failed, once."""
@@ -645,6 +695,8 @@ class Manager:
             }
             if report.pushed:
                 fields.update(await self._after_push(task, report))
+                # The commits reached the git host, so a saved bundle has no use.
+                self.drop_bundle(task_id)
             fields["completed_at"] = now_iso()
             self.store.update_task(task_id, **fields)
         finally:
@@ -823,7 +875,9 @@ class Manager:
         through the long poll of its worker, and its clock starts again. A
         task that ended ``blocked`` or
         ``timed_out`` after its worker pushed the branch is resumed: a new
-        worker starts on that branch, with the answer in its brief.
+        worker starts on that branch, with the answer in its brief. A task
+        that ended with a saved bundle (``failed`` included) is resumed from
+        the bundle.
         """
         if not text or not text.strip():
             return rejected("invalid_arguments", "text is required")
@@ -831,7 +885,9 @@ class Manager:
             return rejected("invalid_arguments", f"text is longer than {MAX_TEXT} characters")
         full = self.store.get_task_full(task["task_id"])
         assert full is not None
-        if full["status"] in RESUMABLE_STATUSES:
+        if full["status"] in RESUMABLE_STATUSES or (
+            full["status"] == "failed" and self.has_bundle(full["task_id"])
+        ):
             return await self._resume(person, full, text)
         if full["status"] != "running" or not full["open_question"]:
             return rejected(
@@ -873,11 +929,12 @@ class Manager:
         task_id = full["task_id"]
         history: list[dict[str, Any]] = list(full.get("history") or [])
         previous = full.get("report") or {}
-        if not previous.get("pushed") and not any(entry.get("pushed") for entry in history):
+        pushed = previous.get("pushed") or any(entry.get("pushed") for entry in history)
+        if not pushed and not self.has_bundle(task_id):
             return rejected(
                 "not_resumable",
-                f"the worker of task {task_id} pushed nothing, so no branch holds its work. "
-                "Call develop again with the brief and the answer.",
+                f"the worker of task {task_id} pushed nothing and saved no commits, so "
+                "nothing holds its work. Call develop again with the brief and the answer.",
             )
         history.append({**previous, "completed_at": full["completed_at"]})
         with self._admission:
@@ -918,6 +975,19 @@ class Manager:
             "resumed": True,
             "message": "A new worker continues the task on its branch, with the answer.",
         }
+
+    def push_only(self, task: dict[str, Any]) -> bool:
+        """True when a resumed worker only pushes the saved commits, with no session.
+
+        The last worker finished its session, and only its push failed.
+        """
+        history = task.get("history") or []
+        previous = history[-1] if history else {}
+        return (
+            self.has_bundle(task["task_id"])
+            and bool(previous.get("bundle_saved"))
+            and previous.get("unpushed_status") == "success"
+        )
 
     # --- the worker side ---------------------------------------------------
 

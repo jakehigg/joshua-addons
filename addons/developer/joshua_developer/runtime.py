@@ -53,6 +53,10 @@ class Report(BaseModel):
     # True when the worker made the branch, because the remote did not have it.
     created_branch: bool = False
     commit_hash: str | None = None
+    # The status the session reached when the push then failed, or None.
+    unpushed_status: Literal["success", "failed", "blocked", "timed_out"] | None = None
+    # True when the worker stored a bundle of the commits that it did not push.
+    bundle_saved: bool = False
     error: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
