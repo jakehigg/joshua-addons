@@ -19,6 +19,12 @@ directory has no compose file and no `values.yaml`.
    that is there. So does a resumed task: a brief with `resumed: true`
    comes from an `answer` to a task whose earlier worker pushed the branch.
    Its prompt starts the task with the note of that worker and the answer.
+   A brief with `bundle: true` comes from a task whose earlier worker could
+   not push. The worker gets the bundle of that worker's commits from the
+   manager (`GET /worker/bundle`) and restores them on the branch. With
+   `push_only: true`, the earlier session was complete: the worker pushes
+   the restored commits and reports with the summary, the files, and the
+   tests in `saved`. It runs no session and skips steps 3 to 5.
 3. It reads `CLAUDE.md` of the checkout as text, if there is one, and adds
    it to the prompt. It loads no other file from the checkout: no settings,
    no hooks, and no MCP config.
@@ -46,6 +52,10 @@ its result, and `blocked` when the model sets `blocked`. When the clock runs
 out, the status is `blocked` if a question is still open, else
 `timed_out`. A session error or a failed push makes it `failed`.
 
+When the push fails, the worker makes a git bundle of its commits after
+`clone_head` and sends it to the manager (`PUT /worker/bundle`) before the
+report. An `answer` to the task then resumes it from these commits.
+
 The worker exits 0 when the manager accepted the report, or when the task
 had already ended. It exits 1 only when it could not send the report.
 
@@ -54,8 +64,10 @@ had already ended. It exits 1 only when it could not send the report.
 The report has these fields: `status`, `summary`, `files_changed`,
 `tests_run`, `open_question`, `pushed`, `head` (the branch it pushed),
 `clone_head` (the commit of the branch after the checkout), `created_branch`
-(true when the remote did not have the branch), `commit_hash`, `error`, the
-token counts, the cost, and `log`. The manager scans the diff from
+(true when the remote did not have the branch), `commit_hash`,
+`unpushed_status` (the status of the session when the push then failed),
+`bundle_saved` (true when the manager has the bundle of the commits that were
+not pushed), `error`, the token counts, the cost, and `log`. The manager scans the diff from
 `clone_head` to the branch, and deletes the branch after a scan hit only
 when `created_branch` is true on a `develop`. The report has no field for
 the branch name or the pull request. The manager takes them from its own

@@ -196,3 +196,26 @@ def push(dest: Path, branch: str) -> tuple[bool, str | None]:
     except GitError as exc:
         return False, str(exc)
     return True, None
+
+
+def bundle(dest: Path, since: str, branch: str, out: Path) -> None:
+    """Write the commits of ``branch`` after ``since`` to the bundle file ``out``."""
+    _run(["bundle", "create", "--quiet", str(out), f"{since}..{branch}"], cwd=dest)
+
+
+def restore(dest: Path, path: Path, branch: str) -> str:
+    """Check out ``branch`` from the bundle at ``path``. Returns the new head commit.
+
+    The bundle must hold ``refs/heads/<branch>``, and the checkout must hold
+    the commit that the bundle starts from.
+    """
+    _run(["bundle", "verify", "--quiet", str(path)], cwd=dest)
+    _run(
+        ["fetch", "--quiet", str(path), f"+refs/heads/{branch}:refs/developer/saved"],
+        cwd=dest,
+    )
+    _run(["checkout", "--quiet", "-B", branch, "refs/developer/saved"], cwd=dest)
+    commit = head(dest)
+    if commit is None:
+        raise GitError("the bundle has no commit")
+    return commit

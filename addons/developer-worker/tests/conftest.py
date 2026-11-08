@@ -118,6 +118,10 @@ class FakeManager:
     polls: int = 0
     unauthorized: int = 0
     ask_reply: dict[str, Any] = field(default_factory=lambda: {"asked": True, "sent": True})
+    # The bundles the worker stored, and the bundle that GET /worker/bundle serves.
+    bundles: list[bytes] = field(default_factory=list)
+    bundle_status: int = 200
+    stored_bundle: bytes | None = None
 
     def _check(self, request: Request) -> Response | None:
         auth = request.headers.get("authorization")
@@ -181,8 +185,26 @@ class FakeManager:
             self.logs.append((await request.json())["text"])
             return JSONResponse({"appended": True})
 
+        async def save_bundle(request: Request) -> Response:
+            if (refused := self._check(request)) is not None:
+                return refused
+            if self.bundle_status != 200:
+                return JSONResponse({"error": "boom"}, status_code=self.bundle_status)
+            body = await request.body()
+            self.bundles.append(body)
+            return JSONResponse({"saved": True, "bytes": len(body)})
+
+        async def get_bundle(request: Request) -> Response:
+            if (refused := self._check(request)) is not None:
+                return refused
+            if self.stored_bundle is None:
+                return JSONResponse({"error": "no_bundle"}, status_code=404)
+            return Response(self.stored_bundle, media_type="application/octet-stream")
+
         return Starlette(
             routes=[
+                Route("/worker/bundle", save_bundle, methods=["PUT"]),
+                Route("/worker/bundle", get_bundle, methods=["GET"]),
                 Route("/worker/brief", brief, methods=["GET"]),
                 Route("/worker/running", running, methods=["POST"]),
                 Route("/worker/report", report, methods=["POST"]),

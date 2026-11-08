@@ -98,6 +98,8 @@ ROUTES = [
     ("POST", "/worker/ask/stop", None),
     ("GET", "/worker/answer", None),
     ("POST", "/worker/log", {"text": "line"}),
+    ("PUT", "/worker/bundle", None),
+    ("GET", "/worker/bundle", None),
     ("POST", "/worker/claude/v1/messages", {"model": "m"}),
 ]
 
@@ -167,6 +169,9 @@ async def test_the_brief_has_what_the_worker_needs(manager) -> None:
         "answer": None,
         "resumed": False,
         "note": None,
+        "bundle": False,
+        "push_only": False,
+        "saved": None,
         "git_ca_pem": None,
     }
     assert token not in response.text

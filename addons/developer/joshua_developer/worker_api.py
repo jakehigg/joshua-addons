@@ -26,6 +26,11 @@ Routes:
 - ``GET /worker/answer``: wait up to 25 s for the answer. 200 ``{"answer",
   "waited_s"}``, or 204 when no answer came in that time.
 - ``POST /worker/log`` ``{"text"}``: add text to the session log.
+- ``PUT /worker/bundle``: store a git bundle of the commits that the push did
+  not send, as the raw body. It replaces an earlier bundle of the task. 413
+  over ``MAX_BUNDLE``, and 400 when the body is not a git bundle.
+- ``GET /worker/bundle``: the bundle of the task, for a resumed worker. 404
+  when the task has none.
 - ``/worker/claude/{path}``, any method: the Claude forwarder.
 
 A body over 2 MiB on a ``/worker/`` POST route other than the forwarder gets
@@ -63,12 +68,12 @@ from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from joshua_developer import platforms
 from joshua_developer.log import get_logger
-from joshua_developer.manager import MAX_QUESTION, Manager
+from joshua_developer.manager import BUNDLE_SIGNATURES, MAX_BUNDLE, MAX_QUESTION, Manager
 from joshua_developer.platforms import PlatformConfigError
 from joshua_developer.runtime import Report
 from joshua_developer.store import TERMINAL_STATUSES
@@ -164,6 +169,7 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
     person = manager.effective_settings(task["person"])
     history = task.get("history") or []
     previous = history[-1] if history else {}
+    push_only = bool(history) and manager.push_only(task)
     return {
         "task_id": task["task_id"],
         "task_type": task["task_type"],
@@ -188,6 +194,20 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "resumed": bool(history),
         # Where the earlier worker stopped, for a resumed task.
         "note": previous.get("summary") or None,
+        # A resumed task restores the commits that an earlier worker saved.
+        "bundle": bool(history) and manager.has_bundle(task["task_id"]),
+        # The earlier session was complete: push the saved commits, with no session.
+        "push_only": push_only,
+        # The report fields of that session, for the pull request.
+        "saved": (
+            {
+                "summary": previous.get("summary") or "",
+                "files_changed": previous.get("files_changed") or [],
+                "tests_run": previous.get("tests_run") or [],
+            }
+            if push_only
+            else None
+        ),
     }
 
 
@@ -368,6 +388,48 @@ def build_worker_app(
             return _error(400, "text_too_long")
         return JSONResponse({"appended": manager.append_log(task_id, text)})
 
+    async def save_bundle(request: Request) -> Response:
+        found = authorize(request)
+        if isinstance(found, Response):
+            return found
+        task_id, _ = found
+        length = request.headers.get("content-length")
+        if length is not None and (not length.isdigit() or int(length) > MAX_BUNDLE):
+            logger.warning({"message": "bundle too large", "task_id": task_id})
+            return _error(413, "body_too_large")
+        target = manager.bundle_path(task_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        partial = target.with_name(f"{target.name}.part")
+        size = 0
+        head = b""
+        try:
+            with partial.open("wb") as handle:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_BUNDLE:
+                        logger.warning({"message": "bundle too large", "task_id": task_id})
+                        return _error(413, "body_too_large")
+                    if len(head) < 16:
+                        head += chunk[: 16 - len(head)]
+                    handle.write(chunk)
+            if not head.startswith(BUNDLE_SIGNATURES):
+                return _error(400, "not_a_bundle")
+            partial.replace(target)
+        finally:
+            partial.unlink(missing_ok=True)
+        logger.info({"message": "bundle saved", "task_id": task_id, "bytes": size})
+        return JSONResponse({"saved": True, "bytes": size})
+
+    async def get_bundle(request: Request) -> Response:
+        found = authorize(request)
+        if isinstance(found, Response):
+            return found
+        task_id, _ = found
+        path = manager.bundle_path(task_id)
+        if not path.is_file():
+            return _error(404, "no_bundle")
+        return FileResponse(path, media_type="application/octet-stream")
+
     async def claude(request: Request) -> Response:
         path = request.path_params["path"]
         if path == CLAUDE_PROBE and request.method in ("GET", "HEAD"):
@@ -449,6 +511,8 @@ def build_worker_app(
             Route("/worker/ask/stop", stop_ask, methods=["POST"]),
             Route("/worker/answer", answer, methods=["GET"]),
             Route("/worker/log", log, methods=["POST"]),
+            Route("/worker/bundle", save_bundle, methods=["PUT"]),
+            Route("/worker/bundle", get_bundle, methods=["GET"]),
             Route("/worker/claude/{path:path}", claude, methods=methods),
         ],
         lifespan=lifespan,
