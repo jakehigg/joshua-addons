@@ -1,442 +1,283 @@
 /*
- * Design tokens and shared classes for the chores UI.
+ * Chores-only styles. They load after joshua-ui.css and use its --j-*
+ * tokens. Everything that the shared stylesheet has (app bar, tabs, chips,
+ * stats, lists, badges, buttons, fields, toggles) comes from there.
  *
- * This file is the only place that holds a literal colour, size, radius,
- * spacing, or breakpoint. The component stylesheets use the tokens only.
- *
- * Token groups:
- *   Colour      --bg --surface --surface-2 --border --text --text-muted
- *               --green --green-ink --amber --amber-ink --red --red-ink --blue
- *               --scrim --shadow, and the derived tints --green-tint --amber-tint
- *               --red-tint.
- *               An "-ink" token is the text colour to use on that hue:
- *               --green-ink goes on a solid green fill, --amber-ink and
- *               --red-ink go on their tints.
- *   Radius      --radius-sm --radius --radius-lg --radius-pill
- *   Spacing     --space-1 to --space-8
- *   Type        --font --fs-xs --fs-sm --fs-md --fs-lg --fs-xl --fs-hero
- *               --tracking-wide --tracking-pin
- *   Sizes       --tap --done-min-w --icon-btn --toggle-w --pin-form-w
- *               --manager-max-w --kiosk-max-w --modal-max-w --history-max
- *               --screen-min-h
- *               --border-w --ring-w
- *   State       --disabled-opacity --inactive-opacity
- *   Motion      --dur-fast --dur-bump --dur-flash --dur-toast-in
- *
- * Palettes:
- *   :root       manager palette, dark.
- *   light query manager palette, light. It applies to :root only.
- *   .kiosk      kiosk palette, dark. This rule comes after the light query.
- *               Both selectors have the same specificity, so the later rule
- *               wins and the kiosk stays dark when the system is light.
- *
- * Breakpoints: a media query cannot read a custom property, so each rule
- * that changes with the viewport width is at the end of this file.
+ * The kiosk screen (/<slug>) runs on a wall tablet, so its controls are
+ * larger than the shared ones: --kiosk-tap is the minimum height of a
+ * control that a child taps.
  */
 
-/* ── Tokens: manager palette (dark) and the scales ── */
 :root {
-  color-scheme: dark;
-
-  --bg: #0d0d0d;
-  --surface: #161616;
-  --surface-2: #202020;
-  --border: #2c2c2c;
-  --text: #ececec;
-  --text-muted: #8f8f8f;
-  --green: #4ade80;
-  --green-ink: #052e16;
-  --amber: #fbbf24;
-  --amber-ink: #fcd34d;
-  --red: #f87171;
-  --red-ink: #fca5a5;
-  --blue: #60a5fa;
-  --scrim: rgb(0 0 0 / 0.7);
-  --shadow: 0 8px 24px rgb(0 0 0 / 0.5);
-
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-pill: 999px;
-
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  --fs-xs: 0.75rem;
-  --fs-sm: 0.875rem;
-  --fs-md: 1rem;
-  --fs-lg: 1.25rem;
-  --fs-xl: 2rem;
-  --fs-hero: 4rem;
-  --tracking-wide: 0.08em;
-  --tracking-pin: 0.3em;
-
-  /* The minimum height of a kiosk control. */
-  --tap: 56px;
-  --done-min-w: 112px;
-  --icon-btn: 32px;
-  --toggle-w: 96px;
-  --pin-form-w: 280px;
-  --manager-max-w: 600px;
-  --kiosk-max-w: 760px;
-  --modal-max-w: 440px;
-  --history-max: 30vh;
-  --screen-min-h: 100vh;
-  --border-w: 1px;
-  --ring-w: 1px;
-
-  --disabled-opacity: 0.4;
-  --inactive-opacity: 0.6;
-
-  --dur-fast: 150ms;
-  --dur-bump: 300ms;
-  --dur-flash: 300ms;
-  --dur-toast-in: 200ms;
+  --kiosk-tap: 56px;
+  --kiosk-max: 760px;
+  --dialog-max: 440px;
+  --ok-ink: #03210c;
+  --scrim: rgb(3 6 12 / 0.72);
+  --shadow: 0 12px 32px rgb(0 0 0 / 0.55);
 }
 
-/* ── Tokens: manager palette (light) ── */
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
+/* ------------------------------------------------------------- sign in */
+.pin-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--j-gap);
+}
+.pin-card {
+  width: 100%;
+  max-width: 340px;
+  align-items: stretch;
+  gap: 14px;
+  padding: 24px;
+}
+.pin-logo { width: 48px; height: 48px; border-radius: var(--j-radius-sm); align-self: center; }
+.pin-heading { text-align: center; line-height: 1.15; }
+.pin-heading small {
+  display: block;
+  font-size: var(--j-text-xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--j-muted);
+}
+.pin-heading h1 { margin: 0; font-size: var(--j-text-xl); }
+.pin-sub { margin: 0; text-align: center; font-size: var(--j-text-sm); }
+.pin-card .j-field input { text-align: center; letter-spacing: .3em; }
 
-    --bg: #f3f4f6;
-    --surface: #ffffff;
-    --surface-2: #eceef1;
-    --border: #d4d7dd;
-    --text: #111316;
-    --text-muted: #5b616b;
-    --green: #15803d;
-    --green-ink: #ffffff;
-    --amber: #b45309;
-    --amber-ink: #92400e;
-    --red: #b91c1c;
-    --red-ink: #991b1b;
-    --blue: #1d4ed8;
-    --scrim: rgb(0 0 0 / 0.45);
-    --shadow: 0 8px 24px rgb(0 0 0 / 0.15);
-  }
+/* --------------------------------------------------------------- manager */
+.manager { min-height: 100vh; min-height: 100dvh; }
+
+.alert {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 8px 8px 14px;
+  color: var(--j-bad); background: var(--j-bad-soft);
+  border: 1px solid var(--j-bad); border-radius: var(--j-radius-sm);
+  font-size: var(--j-text-sm);
+}
+.alert span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.alert .j-icon-btn { color: inherit; }
+
+.row-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.row-actions .j-toggle { margin-left: 8px; }
+.j-icon-btn:disabled { opacity: .35; cursor: not-allowed; background: none; }
+.j-icon-btn.act-danger:hover { color: var(--j-bad); background: var(--j-bad-soft); }
+
+.j-list-row.inactive .j-list-main { opacity: .55; }
+
+.history { gap: 8px; }
+
+.ledger-amount { flex: none; font-weight: 700; white-space: nowrap; }
+.ledger-amount.positive { color: var(--j-ok); }
+.ledger-amount.negative { color: var(--j-bad); }
+
+.title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.label-short { display: none; }
+
+/* A phone: the figures go two by two, and the three actions share one row
+   with short labels. */
+@media (max-width: 479px) {
+  .manager .j-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .action-row { flex-wrap: nowrap; }
+  .action-row .j-btn { flex: 1 1 0; min-width: 0; padding: 0 8px; }
+  .action-row .label-long { display: none; }
+  .action-row .label-short { display: inline; }
 }
 
-/* ── Tokens: kiosk palette (dark only) ──
- * This rule must stay after the light query. See the header comment. */
-.kiosk {
-  color-scheme: dark;
-
-  --bg: #090d16;
-  --surface: #111827;
-  --surface-2: #1b2433;
-  --border: #243044;
-  --text: #f8fafc;
-  --text-muted: #94a3b8;
-  --green: #34c759;
-  --green-ink: #03210c;
-  --amber: #ff9f0a;
-  --amber-ink: #ffc061;
-  --red: #ff453a;
-  --red-ink: #ff9b94;
-  --blue: #60a5fa;
-  --shadow: 0 8px 24px rgb(0 0 0 / 0.6);
-}
-
-/* ── Tokens: tints ──
- * A custom property resolves var() on the element that declares it. The
- * tints are declared on both roots, so that each root mixes its own hues. */
-:root,
-.kiosk {
-  --green-tint: color-mix(in srgb, var(--green) 16%, var(--surface));
-  --amber-tint: color-mix(in srgb, var(--amber) 16%, var(--surface));
-  --red-tint: color-mix(in srgb, var(--red) 16%, var(--surface));
-}
-
-/* ── Base ── */
-
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
+/* ---------------------------------------------------------------- dialog */
+/* A bottom sheet on a phone, a centered card on a wider screen. The height
+   follows the visual viewport (see ModalOverlay), so the software keyboard
+   does not hide the bottom of the dialog. */
+.dialog-scrim {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 100vh;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
   padding: 0;
+  background: var(--scrim);
 }
-
-html, body, #root {
-  min-height: 100%;
+.dialog {
+  width: 100%;
+  max-width: var(--dialog-max);
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-color: var(--j-line);
+  border-radius: var(--j-radius) var(--j-radius) 0 0;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  box-shadow: var(--shadow);
 }
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: var(--fs-md);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+@media (min-width: 480px) {
+  .dialog-scrim { align-items: center; padding: 16px; }
+  .dialog { border-radius: var(--j-radius); padding-bottom: 18px; }
 }
+.dialog-form { display: flex; flex-direction: column; gap: 14px; }
+.dialog-form h2 { margin: 0; font-size: var(--j-text-lg); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.field-hint { font-size: var(--j-text-xs); font-weight: 400; color: var(--j-faint); }
+.field-hint.invalid { color: var(--j-bad); }
 
-button {
+/* ------------------------------------------------------------ datepicker */
+.datepicker {
+  padding: 10px;
+  background: var(--j-surface-2);
+  border: 1px solid var(--j-line);
+  border-radius: var(--j-radius-sm);
+  user-select: none;
+}
+.dp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.dp-month { font-size: var(--j-text-sm); font-weight: 600; color: var(--j-text); }
+.dp-dow, .dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-dow span {
+  padding: 4px 0;
+  text-align: center;
+  font-size: var(--j-text-xs); font-weight: 600; color: var(--j-faint);
+}
+.dp-day {
+  aspect-ratio: 1;
+  min-height: 34px;
+  font: inherit; font-size: var(--j-text-sm); font-variant-numeric: tabular-nums;
+  color: var(--j-text); background: none;
+  border: 1px solid transparent; border-radius: var(--j-radius-sm);
   cursor: pointer;
-  border: none;
-  background: none;
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
+}
+.dp-day:hover { background: var(--j-surface); }
+.dp-day.today { border-color: var(--j-accent); color: var(--j-accent); }
+.dp-day.selected { background: var(--j-accent); border-color: var(--j-accent); color: var(--j-accent-ink); font-weight: 700; }
+
+/* ----------------------------------------------------------------- kiosk */
+.kiosk {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  justify-content: center;
+}
+.kiosk-inner {
+  width: 100%;
+  max-width: var(--kiosk-max);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px));
 }
 
-button:disabled {
-  opacity: var(--disabled-opacity);
+.kiosk-header { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.kiosk-brand {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  font-size: var(--j-text-xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--j-faint);
+}
+.kiosk-brand img { width: 22px; height: 22px; border-radius: 6px; }
+.kiosk-name {
+  margin: 0;
+  font-size: 1.75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--j-muted);
+  overflow-wrap: anywhere;
+}
+.kiosk-balance {
+  display: inline-block;
+  font-size: 4rem; font-weight: 800; line-height: 1.1;
+  color: var(--j-ok);
+}
+.kiosk-balance.bump { animation: bump 300ms ease-out; }
+.kiosk-dollars { font-size: var(--j-text-lg); font-weight: 600; color: var(--j-muted); }
+
+.kiosk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.kiosk-empty {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 40px 0;
+  font-size: 1.25rem; font-weight: 600; color: var(--j-ok);
+}
+.kiosk-empty .j-icon { width: 26px; height: 26px; stroke-width: 2.4; }
+
+.kiosk-chore {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 16px 18px;
+  background: var(--j-surface);
+  border: 1px solid var(--j-line-soft);
+  border-radius: var(--j-radius);
+  transition: border-color 300ms, background 300ms;
+}
+.kiosk-chore.overdue { border-color: var(--j-warn); }
+.kiosk-chore.flash { background: var(--j-ok-soft); border-color: var(--j-ok); }
+.kiosk-chore-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.kiosk-chore-name { font-size: 1.25rem; font-weight: 600; overflow-wrap: anywhere; }
+.kiosk-chore-due { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--j-text-sm); }
+.kiosk-chore-right { display: flex; align-items: center; gap: 16px; flex: none; }
+.kiosk-points { font-size: 1.25rem; font-weight: 700; color: var(--j-ok); }
+
+.done-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: var(--kiosk-tap);
+  min-width: 120px;
+  padding: 0 22px;
+  font: inherit; font-size: 1.25rem; font-weight: 700; white-space: nowrap;
+  color: var(--ok-ink); background: var(--j-ok);
+  border: 0; border-radius: var(--j-radius);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: filter .15s;
+}
+.done-btn .j-icon { width: 22px; height: 22px; stroke-width: 2.6; }
+.done-btn:active:not(:disabled) { filter: brightness(.9); }
+/* The cooldown pill is muted by color, so it keeps full opacity to stay
+   readable. The cursor shows that it is off. */
+.done-btn.cooldown {
+  color: var(--j-muted); background: var(--j-surface-2);
+  border-radius: var(--j-radius-pill);
+  font-size: 1rem; font-variant-numeric: tabular-nums;
   cursor: not-allowed;
 }
 
-input, select, textarea {
-  font-family: inherit;
-  font-size: var(--fs-md);
-  background: var(--surface);
-  color: var(--text);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  outline: none;
-  width: 100%;
-}
+/* The history scrolls inside, so the chore list stays on the screen. */
+.kiosk-history { gap: 8px; }
+.ledger-scroll { max-height: 30vh; overflow-y: auto; overscroll-behavior: contain; }
 
-input:focus, select:focus, textarea:focus {
-  border-color: var(--blue);
-}
-
-a {
-  color: var(--blue);
-  text-decoration: none;
-}
-
-/* ── Buttons ── */
-
-.btn-primary,
-.btn-secondary,
-.btn-danger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  border: var(--border-w) solid transparent;
-  white-space: nowrap;
-  transition: border-color var(--dur-fast), filter var(--dur-fast);
-}
-
-.btn-primary {
-  background: var(--green);
-  color: var(--green-ink);
-}
-
-.btn-secondary {
-  background: var(--surface-2);
-  color: var(--text);
-  border-color: var(--border);
-}
-
-.btn-danger {
-  background: var(--red-tint);
-  color: var(--red-ink);
-  border-color: color-mix(in srgb, var(--red) 35%, var(--border));
-}
-
-.btn-primary:hover:not(:disabled),
-.btn-danger:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  border-color: var(--text-muted);
-}
-
-/* Two labels in one button. The short label shows on a narrow screen. */
-.label-short {
-  display: none;
-}
-
-/* ── Chips ── */
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  line-height: 1;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-}
-
-.chip-amber {
-  background: var(--amber-tint);
-  color: var(--amber-ink);
-}
-
-.chip-green {
-  background: var(--green-tint);
-  color: var(--green);
-}
-
-.chip-muted {
-  background: var(--surface-2);
-  color: var(--text-muted);
-}
-
-/* ── Chore text ── */
-
-.chore-name {
-  font-size: var(--fs-md);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-/* ── Ledger ── */
-
-.ledger-title {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  margin-bottom: var(--space-2);
-}
-
-.ledger-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.ledger-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.ledger-left {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.ledger-desc {
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ledger-date {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.ledger-amount {
-  font-size: var(--fs-sm);
-  font-weight: 700;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.ledger-amount.positive { color: var(--green); }
-.ledger-amount.negative { color: var(--red); }
-
-/* ── Toast ── */
-
-.toast {
+.kiosk-toast {
   position: fixed;
-  top: var(--space-4);
-  left: 0;
-  right: 0;
-  margin: 0 auto;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  left: 0; right: 0;
+  z-index: 50;
   width: fit-content;
-  max-width: calc(100% - 2 * var(--space-4));
-  z-index: 200;
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-pill);
-  border: var(--border-w) solid transparent;
-  font-size: var(--fs-lg);
-  font-weight: 700;
-  text-align: center;
+  max-width: calc(100% - 32px);
+  margin: 0 auto;
+  padding: 12px 22px;
+  font-size: 1.25rem; font-weight: 700; text-align: center;
   overflow-wrap: anywhere;
+  border: 1px solid transparent;
+  border-radius: var(--j-radius-pill);
   box-shadow: var(--shadow);
-  animation: toast-in var(--dur-toast-in) ease-out;
+  animation: toast-in 200ms ease-out;
 }
+.kiosk-toast.ok { color: var(--j-ok); background: linear-gradient(var(--j-ok-soft), var(--j-ok-soft)), var(--j-surface); border-color: var(--j-ok); }
+.kiosk-toast.error { color: var(--j-bad); background: linear-gradient(var(--j-bad-soft), var(--j-bad-soft)), var(--j-surface); border-color: var(--j-bad); }
 
-.toast-ok {
-  background: var(--green-tint);
-  color: var(--green);
-  border-color: var(--green);
+.kiosk-message {
+  align-items: center; gap: 12px;
+  padding: 16px;
+  font-size: 1.25rem; color: var(--j-muted); text-align: center;
 }
+.kiosk-message.bad { color: var(--j-bad); }
 
-.toast-error {
-  background: var(--red-tint);
-  color: var(--red-ink);
-  border-color: var(--red);
+/* A phone: the chore card stacks, and the Done button takes the full width. */
+@media (max-width: 599px) {
+  .kiosk-chore { flex-direction: column; align-items: stretch; gap: 12px; }
+  .kiosk-chore-right { justify-content: space-between; }
+  .kiosk-chore-right .done-btn { flex: 1; }
 }
 
 @keyframes toast-in {
-  from { opacity: 0; transform: translateY(calc(-1 * var(--space-6))); }
+  from { opacity: 0; transform: translateY(-24px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes bump {
   0% { transform: scale(1); }
   50% { transform: scale(1.15); }
   100% { transform: scale(1); }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  .toast,
-  .bump {
-    animation: none;
-  }
-}
-
-/* ── Breakpoints ──
- * Each rule that changes with the viewport width. The component
- * stylesheets load after this file, so a rule here that overrides a
- * component rule starts with a parent class to add specificity. */
-
-/* Phones: short button labels, and the kiosk card stacks. */
-@media (max-width: 399px) {
-  .label-long { display: none; }
-  .label-short { display: inline; }
-}
-
-@media (max-width: 599px) {
-  .kiosk .screen-chore {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-3);
-  }
-
-  .kiosk .screen-chore .chore-right {
-    justify-content: space-between;
-  }
-
-  .kiosk .screen-chore .done-btn {
-    flex: 1;
-  }
-}
-
-/* Wider than a phone: the modal is centred, not a bottom sheet. */
-@media (min-width: 480px) {
-  .manager-root .modal-overlay {
-    align-items: center;
-  }
+  .kiosk-toast, .kiosk-balance.bump { animation: none; }
+  .kiosk-chore { transition: none; }
 }

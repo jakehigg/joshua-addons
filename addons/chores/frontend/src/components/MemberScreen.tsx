@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError, ChoreRow, Member, Transaction, formatDate } from '../api'
+import Icon from './Icon'
 import LedgerRow from './LedgerRow'
-import './MemberScreen.css'
 
 // The minimum time that the Done button stays off after a tap. The server's
 // cooldown_seconds makes it longer when the server sends a larger value.
@@ -140,33 +140,39 @@ export default function MemberScreen() {
     return remainingSeconds(choreId) > 0
   }
 
-  if (error) return <div className="kiosk screen-error">{error}</div>
-  if (!member) return <div className="kiosk screen-loading">Loading...</div>
+  if (error) return <div className="kiosk kiosk-message bad">{error}</div>
+  if (!member) return <div className="kiosk kiosk-message"><span className="j-spinner" />Loading…</div>
 
   return (
-    <div className="kiosk screen-root">
+    <div className="kiosk">
       {toast && (
         <div
           key={toast.id}
-          className={`toast toast-${toast.kind}`}
+          className={`kiosk-toast ${toast.kind}`}
           role={toast.kind === 'error' ? 'alert' : 'status'}
         >
           {toast.text}
         </div>
       )}
 
-      <div className="screen-inner">
-        <header className="screen-header">
-          <h1 className="screen-name">{member.name}</h1>
-          <div key={bump} className={`screen-balance ${bump > 0 ? 'bump' : ''}`}>{member.balance} XP</div>
+      <div className="kiosk-inner">
+        <header className="kiosk-header">
+          <div className="kiosk-brand">
+            <img src="/logo-64.png" alt="" />
+            <span>Joshua · Chores</span>
+          </div>
+          <h1 className="kiosk-name">{member.name}</h1>
+          <div key={bump} className={`kiosk-balance j-num ${bump > 0 ? 'bump' : ''}`}>{member.balance} XP</div>
           {member.balance_dollars !== null && (
-            <div className="screen-dollars">{member.balance_dollars}</div>
+            <div className="kiosk-dollars j-num">{member.balance_dollars}</div>
           )}
         </header>
 
-        <ul className="screen-list">
+        <ul className="kiosk-list">
           {chores.length === 0 && (
-            <li className="screen-empty">All done! Great work.</li>
+            <li className="kiosk-empty">
+              <Icon name="check" />All done! Great work.
+            </li>
           )}
           {chores.map(chore => {
             const late = chore.next_due_date < today
@@ -178,27 +184,27 @@ export default function MemberScreen() {
               <li
                 key={chore.id}
                 className={[
-                  'screen-chore',
+                  'kiosk-chore',
                   late ? 'overdue' : '',
                   flash === chore.id ? 'flash' : '',
                 ].join(' ')}
               >
-                <div className="chore-info">
-                  <span className="chore-name">{chore.name}</span>
-                  <div className="chore-due-line">
-                    {late && <span className="chip chip-amber">Overdue</span>}
-                    {dueToday && <span className="chip chip-green">Due today</span>}
-                    <span className="chore-due">{formatDate(chore.next_due_date)}</span>
+                <div className="kiosk-chore-info">
+                  <span className="kiosk-chore-name">{chore.name}</span>
+                  <div className="kiosk-chore-due">
+                    {late && <span className="j-badge warn">Overdue</span>}
+                    {dueToday && <span className="j-badge ok">Due today</span>}
+                    <span className="j-muted">{formatDate(chore.next_due_date)}</span>
                   </div>
                 </div>
-                <div className="chore-right">
-                  <span className="chore-pts">+{chore.points}</span>
+                <div className="kiosk-chore-right">
+                  <span className="kiosk-points j-num">+{chore.points}</span>
                   <button
                     className={`done-btn ${cooling ? 'cooldown' : ''}`}
                     onClick={() => handleComplete(chore)}
                     disabled={cooling}
                   >
-                    {cooling ? `Wait ${wait} s` : 'Done'}
+                    {cooling ? `Wait ${wait} s` : <><Icon name="check" />Done</>}
                   </button>
                 </div>
               </li>
@@ -207,9 +213,9 @@ export default function MemberScreen() {
         </ul>
 
         {ledger.length > 0 && (
-          <section className="screen-ledger" aria-label="History">
-            <h2 className="ledger-title">History</h2>
-            <ul className="ledger-list ledger-scroll" tabIndex={0}>
+          <section className="j-stack kiosk-history" aria-label="History">
+            <h2 className="j-label">History</h2>
+            <ul className="j-list ledger-scroll" tabIndex={0}>
               {ledger.map(tx => <LedgerRow key={tx.id} tx={tx} />)}
             </ul>
           </section>
