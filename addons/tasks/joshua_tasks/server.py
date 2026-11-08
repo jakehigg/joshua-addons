@@ -597,9 +597,9 @@ async def search_tasks(
     (see list_projects), and "tasks", the matching tasks. Each task carries
     its id, its number ("task 24"), title, done, size, due_date, assignee,
     its project (name and slug), and its group (name and id, or null when
-    the task is in the backlog). The projects come oldest first. The tasks come project by
-    project, in that same project order, and in roadmap order inside a
-    project (the phases in order, then the backlog).
+    the task is in the backlog). The projects come oldest first. The tasks
+    come project by project, in that same project order, and in roadmap
+    order inside a project (the phases in order, then the backlog).
 
     An archived project, and every task in it, is never searched. An empty
     query matches nothing.
