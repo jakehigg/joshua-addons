@@ -64,6 +64,16 @@ def test_a_root_script_with_an_importing_test_passes(tmp_path) -> None:
 _SKIP_MARKER = "pytest.mark." + "skip"
 
 
+def test_a_dashed_addon_maps_to_an_underscored_package(tmp_path) -> None:
+    package_dir = tmp_path / "addons" / "two-part" / "joshua_two_part"
+    package_dir.mkdir(parents=True)
+    (package_dir / "widget.py").write_text("VALUE = 1\n")
+    (tmp_path / "addons" / "two-part" / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    (tmp_path / "addons" / "two-part" / "tests").mkdir()
+    problems = check_test_policy.check_module_coverage(tmp_path)
+    assert any("joshua_two_part.widget" in problem for problem in problems)
+
+
 def test_skip_with_no_reason_is_a_violation(tmp_path) -> None:
     test_file = tmp_path / "test_skips.py"
     test_file.write_text(f"import pytest\n\n@{_SKIP_MARKER}()\ndef test_x(): pass\n")

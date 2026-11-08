@@ -84,10 +84,16 @@ jobs:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ env.PYTHON_VERSION }}
       - run: uv sync --frozen --all-packages
+      # The package name is the directory name with each dash as an
+      # underscore, the same rule as scripts/check_test_policy.py.
+      - id: pkg
+        run: echo "package=joshua_${MEMBER//-/_}" >> "$GITHUB_OUTPUT"
+        env:
+          MEMBER: ${{ matrix.member }}
       - name: unit tests
         run: >
           uv run --package joshua-${{ matrix.member }} pytest addons/${{ matrix.member }}/tests
-          --cov=joshua_${{ matrix.member }} --cov-report= --cov-fail-under=0
+          --cov=${{ steps.pkg.outputs.package }} --cov-report= --cov-fail-under=0
       # An addon with no integration-marked test (hello) collects zero and
       # pytest exits 5 ("no tests ran"), tolerated the same way joshua-ai's
       # core job tolerates it.
@@ -95,7 +101,7 @@ jobs:
         run: |
           rc=0
           uv run --package joshua-${{ matrix.member }} pytest addons/${{ matrix.member }}/tests -m integration \
-            --cov=joshua_${{ matrix.member }} --cov-append --cov-report= --cov-fail-under=0 || rc=$?
+            --cov=${{ steps.pkg.outputs.package }} --cov-append --cov-report= --cov-fail-under=0 || rc=$?
           if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then exit "$rc"; fi
           uv run --package joshua-${{ matrix.member }} coverage report --show-missing --fail-under=80
 
@@ -127,3 +133,37 @@ jobs:
             helm template addon-ci charts/joshua-addon -f "$f" > /tmp/rendered.yaml
             kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered.yaml
           done
+
+  # Proves the Docker runtime of the developer addon on a real Docker daemon:
+  # the manager starts a worker container, the worker clones through the git
+  # tunnel, pushes, and reports. The worker runs its scripted session
+  # (WORKER_FAKE_SESSION), so the job calls no Claude API and needs no
+  # secret. It runs only when the developer addon, its worker, or the script
+  # changed.
+  developer-compose-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find the changed files
+        id: changed
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BASE" HEAD | grep -qE '^addons/developer(-worker)?/'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: astral-sh/setup-uv@v5
+        if: steps.changed.outputs.run == 'true'
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Compose end-to-end test
+        if: steps.changed.outputs.run == 'true'
+        run: addons/developer/scripts/e2e_compose.sh

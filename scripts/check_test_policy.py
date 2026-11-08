@@ -82,7 +82,8 @@ def _imported_modules(path: Path) -> set[str]:
 def check_module_coverage(root: Path) -> list[str]:
     problems: list[str] = []
     for name in _addon_members(root):
-        package = f"joshua_{name}"
+        # A directory name may hold a dash; a Python package name cannot.
+        package = f"joshua_{name.replace('-', '_')}"
         package_dir = root / "addons" / name / package
         tests_dir = root / "addons" / name / "tests"
         if not package_dir.is_dir():

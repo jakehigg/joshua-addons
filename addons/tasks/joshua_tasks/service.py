@@ -1,0 +1,695 @@
+"""Service layer — the single source of truth for all task/project operations.
+
+Both the REST API (joshua_tasks.api) and the MCP tools (joshua_tasks.server) call these
+functions, so behavior can never drift between the two surfaces. Every
+function takes an AsyncSession and commits its own work.
+
+Ordering: tasks carry a float `position` (smaller = higher). Appends go to
+max+STEP; a reorder is authoritative and rewrites the whole project's
+positions as (index+1)*STEP, so precision never degrades.
+
+Roadmap order: a project's groups are its phases, in their own order, each
+with its tasks in order; the ungrouped list is the backlog and comes last.
+The first open task in that order is the project's next step. A project with
+no groups is one ordered list, as before.
+
+Summaries: ``list_projects``, ``project_summary``, and ``next_steps`` return
+dicts with computed fields (``percent``, ``health``, ``next_task``). Nothing
+computed is stored.
+"""
+
+import re
+import uuid
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, Final
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .events import broadcaster
+from .models import FINISHED_STATUSES, PROJECT_STATUSES, TASK_SIZES, Group, Project, Task
+
+POSITION_STEP = 1024.0
+
+# A goal project with no task done for this many days is ``stalled``.
+STALLED_AFTER_DAYS: Final = 14
+
+
+class _Unset:
+    """Marks an optional argument the caller did not pass, so ``None`` can clear a value."""
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+UNSET: Any = _Unset()
+
+
+class NotFoundError(Exception):
+    pass
+
+
+class ConflictError(Exception):
+    pass
+
+
+class InvalidError(Exception):
+    """An argument value the service refuses (a bad size or status)."""
+
+
+def _today() -> date:
+    return datetime.now(UTC).date()
+
+
+def _clean(value: str | None) -> str | None:
+    """Strip a free-text field; an empty string clears it to ``None``."""
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def normalize_size(value: str | None) -> str | None:
+    """Return the canonical T-shirt size, or ``None`` for an empty value."""
+    value = _clean(value)
+    if value is None:
+        return None
+    size = value.upper()
+    if size not in TASK_SIZES:
+        raise InvalidError(f"size must be one of {', '.join(TASK_SIZES)}: {value}")
+    return size
+
+
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug[:100] or "project"
+
+
+# --- projects ---------------------------------------------------------------
+
+
+async def _unique_slug(session: AsyncSession, name: str) -> str:
+    base = _slugify(name)
+    slug = base
+    n = 2
+    while await session.scalar(select(Project.id).where(Project.slug == slug)):
+        slug = f"{base}-{n}"
+        n += 1
+    return slug
+
+
+def roadmap_order(tasks: list[Task], groups: list[Group]) -> list[Task]:
+    """Tasks in the order they are meant to be done: each phase, then the backlog."""
+    rank = {g.id: index for index, g in enumerate(sorted(groups, key=lambda g: g.position))}
+    backlog = len(rank)
+    return sorted(
+        tasks,
+        key=lambda t: (
+            rank.get(t.group_id, backlog) if t.group_id else backlog,
+            t.position,
+            t.created_at,
+        ),
+    )
+
+
+def _health(
+    project: Project, task_count: int, open_count: int, last_progress_at: datetime, today: date
+) -> str | None:
+    """The one-word state of a project, or ``None`` when there is nothing to say."""
+    if project.status != "active":
+        return project.status
+    if not task_count:
+        return None
+    if task_count and not open_count and project.goal:
+        return "ready_to_complete"
+    if project.target_date and project.target_date < today and open_count:
+        return "overdue"
+    stalled_for = today - last_progress_at.astimezone(UTC).date()
+    if project.goal and open_count and stalled_for >= timedelta(days=STALLED_AFTER_DAYS):
+        return "stalled"
+    if project.goal or project.target_date:
+        return "on_track"
+    return None
+
+
+def summarize(project: Project, tasks: list[Task], groups: list[Group]) -> dict[str, Any]:
+    """A project with its computed fields. ``next_task`` is a ``Task`` or ``None``."""
+    task_count = len(tasks)
+    done_count = sum(1 for t in tasks if t.done)
+    open_count = task_count - done_count
+    done_times = [t.done_at for t in tasks if t.done and t.done_at is not None]
+    last_progress_at = max(done_times, default=project.created_at)
+    open_in_order = [t for t in roadmap_order(tasks, groups) if not t.done]
+    return {
+        "id": project.id,
+        "name": project.name,
+        "slug": project.slug,
+        "goal": project.goal,
+        "target_date": project.target_date,
+        "status": project.status,
+        "completed_at": project.completed_at,
+        "created_at": project.created_at,
+        "archived_at": project.archived_at,
+        "task_count": task_count,
+        "done_count": done_count,
+        "open_count": open_count,
+        "percent": done_count * 100 // task_count if task_count else 0,
+        "health": _health(project, task_count, open_count, last_progress_at, _today()),
+        "last_progress_at": last_progress_at,
+        "next_task": open_in_order[0] if open_in_order else None,
+    }
+
+
+async def _tasks_and_groups_by_project(
+    session: AsyncSession, project_ids: list[uuid.UUID]
+) -> tuple[dict[uuid.UUID, list[Task]], dict[uuid.UUID, list[Group]]]:
+    tasks: dict[uuid.UUID, list[Task]] = {pid: [] for pid in project_ids}
+    groups: dict[uuid.UUID, list[Group]] = {pid: [] for pid in project_ids}
+    if not project_ids:
+        return tasks, groups
+    for t in (await session.scalars(select(Task).where(Task.project_id.in_(project_ids)))).all():
+        tasks[t.project_id].append(t)
+    for g in (await session.scalars(select(Group).where(Group.project_id.in_(project_ids)))).all():
+        groups[g.project_id].append(g)
+    return tasks, groups
+
+
+async def list_projects(
+    session: AsyncSession, include_archived: bool = False, include_finished: bool = True
+) -> list[dict]:
+    """Project summaries, oldest first. ``include_finished=False`` drops done and closed."""
+    query = select(Project).order_by(Project.created_at)
+    if not include_archived:
+        query = query.where(Project.archived_at.is_(None))
+    if not include_finished:
+        query = query.where(Project.status.not_in(FINISHED_STATUSES))
+    projects = list((await session.scalars(query)).all())
+    tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
+    return [summarize(p, tasks[p.id], groups[p.id]) for p in projects]
+
+
+async def project_summary(session: AsyncSession, ref: str | uuid.UUID) -> dict[str, Any]:
+    """One project's summary, by id, slug, or name."""
+    project = await get_project(session, ref)
+    tasks, groups = await _tasks_and_groups_by_project(session, [project.id])
+    return summarize(project, tasks[project.id], groups[project.id])
+
+
+async def next_steps(
+    session: AsyncSession, ref: str | uuid.UUID | None = None, limit: int = 3
+) -> list[dict[str, Any]]:
+    """The next open tasks of every active project, or of one project.
+
+    Without ``ref``, a paused or finished project is left out, and so is a
+    project with nothing open. With ``ref``, that project is returned
+    whatever its status. Each entry is a summary plus ``tasks``, the first
+    ``limit`` open tasks in roadmap order.
+    """
+    if ref is not None:
+        projects = [await get_project(session, ref)]
+    else:
+        projects = list(
+            (
+                await session.scalars(
+                    select(Project)
+                    .where(Project.archived_at.is_(None), Project.status == "active")
+                    .order_by(Project.created_at)
+                )
+            ).all()
+        )
+    tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
+    result = []
+    for p in projects:
+        open_in_order = [t for t in roadmap_order(tasks[p.id], groups[p.id]) if not t.done]
+        if not open_in_order and ref is None:
+            continue
+        summary = summarize(p, tasks[p.id], groups[p.id])
+        summary["tasks"] = open_in_order[: max(limit, 0)]
+        result.append(summary)
+    return result
+
+
+async def get_project(session: AsyncSession, ref: str | uuid.UUID) -> Project:
+    """Resolve a project by UUID, slug, or (case-insensitive) name.
+
+    An id is tried first, then the slug, then the name. A name that matches
+    more than one project is a conflict: use the slug or id.
+    """
+    if isinstance(ref, uuid.UUID):
+        project = await session.get(Project, ref)
+        if project is None:
+            raise NotFoundError(f"project not found: {ref}")
+        return project
+    try:
+        project = await session.get(Project, uuid.UUID(ref))
+    except ValueError:
+        project = None
+    if project is None:
+        project = await session.scalar(select(Project).where(Project.slug == ref))
+    if project is None:
+        matches = list(
+            (
+                await session.scalars(
+                    select(Project).where(func.lower(Project.name) == ref.strip().lower())
+                )
+            ).all()
+        )
+        if len(matches) > 1:
+            raise ConflictError(f"project name is ambiguous: {ref} (use the slug or id)")
+        project = matches[0] if matches else None
+    if project is None:
+        raise NotFoundError(f"project not found: {ref}")
+    return project
+
+
+async def create_project(
+    session: AsyncSession,
+    name: str,
+    goal: str | None = None,
+    target_date: date | None = None,
+) -> Project:
+    project = Project(
+        name=name.strip(),
+        slug=await _unique_slug(session, name.strip()),
+        goal=_clean(goal),
+        target_date=target_date,
+    )
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    broadcaster.publish("projects")
+    return project
+
+
+async def update_project(
+    session: AsyncSession,
+    ref: str | uuid.UUID,
+    name: str | None = None,
+    archived: bool | None = None,
+    goal: str | None = UNSET,
+    target_date: date | None = UNSET,
+) -> Project:
+    """Change a project's name, archive flag, goal, or target date.
+
+    ``goal`` and ``target_date`` clear when passed as ``None`` (or an empty
+    goal) and stay when not passed. Use ``set_project_status`` for status.
+    """
+    project = await get_project(session, ref)
+    if name is not None:
+        project.name = name.strip()
+    if archived is not None:
+        project.archived_at = datetime.now(UTC) if archived else None
+    if goal is not UNSET:
+        project.goal = _clean(goal)
+    if target_date is not UNSET:
+        project.target_date = target_date
+    await session.commit()
+    await session.refresh(project)
+    broadcaster.publish("projects")
+    return project
+
+
+async def set_project_status(session: AsyncSession, ref: str | uuid.UUID, status: str) -> Project:
+    """Move a project to ``active``, ``paused``, ``done``, or ``closed``.
+
+    ``done`` is refused while a task is open: finish, move, or delete the
+    open tasks first, or use ``closed`` to end the project as it is.
+    """
+    if status not in PROJECT_STATUSES:
+        raise InvalidError(f"status must be one of {', '.join(PROJECT_STATUSES)}: {status}")
+    project = await get_project(session, ref)
+    if status == "done":
+        open_count = await session.scalar(
+            select(func.count(Task.id)).where(Task.project_id == project.id, Task.done.is_(False))
+        )
+        if open_count:
+            raise ConflictError(
+                f"{open_count} task(s) are still open; finish them, or close the project instead"
+            )
+    project.status = status
+    project.completed_at = datetime.now(UTC) if status in FINISHED_STATUSES else None
+    await session.commit()
+    await session.refresh(project)
+    broadcaster.publish("projects")
+    return project
+
+
+async def complete_project(session: AsyncSession, ref: str | uuid.UUID) -> Project:
+    """Mark a project ``done``. Refuses while a task is open."""
+    return await set_project_status(session, ref, "done")
+
+
+async def delete_project(session: AsyncSession, ref: str | uuid.UUID) -> None:
+    project = await get_project(session, ref)
+    await session.delete(project)
+    await session.commit()
+    broadcaster.publish("projects")
+
+
+# --- groups -------------------------------------------------------------------
+# Single-level grouping: a task is either ungrouped (project root list) or in
+# exactly one group. Ordering is per-container — root tasks among themselves,
+# a group's tasks within it, groups among themselves — so a project without
+# groups behaves exactly as before.
+
+
+async def resolve_group(
+    session: AsyncSession, project_id: uuid.UUID, ref: str | uuid.UUID
+) -> Group:
+    """Resolve a group by UUID or (case-insensitive) name within a project."""
+    if isinstance(ref, uuid.UUID):
+        group = await session.get(Group, ref)
+        if group is None or group.project_id != project_id:
+            raise NotFoundError(f"group not found: {ref}")
+        return group
+    try:
+        return await resolve_group(session, project_id, uuid.UUID(ref))
+    except ValueError:
+        pass
+    matches = list(
+        (
+            await session.scalars(
+                select(Group).where(
+                    Group.project_id == project_id,
+                    func.lower(Group.name) == ref.strip().lower(),
+                )
+            )
+        ).all()
+    )
+    if not matches:
+        raise NotFoundError(f"group not found: {ref}")
+    if len(matches) > 1:
+        raise ConflictError(f"group name is ambiguous: {ref} (use the id)")
+    return matches[0]
+
+
+async def list_groups(session: AsyncSession, ref: str | uuid.UUID) -> list[dict]:
+    """Groups in display order, each with task/done counts."""
+    project = await get_project(session, ref)
+    rows = (
+        await session.execute(
+            select(
+                Group,
+                func.count(Task.id).label("task_count"),
+                func.count(Task.id).filter(Task.done.is_(True)).label("done_count"),
+            )
+            .outerjoin(Task, Task.group_id == Group.id)
+            .where(Group.project_id == project.id)
+            .group_by(Group.id)
+            .order_by(Group.position, Group.created_at)
+        )
+    ).all()
+    return [
+        {
+            "id": g.id,
+            "project_id": g.project_id,
+            "name": g.name,
+            "position": g.position,
+            "target_date": g.target_date,
+            "created_at": g.created_at,
+            "updated_at": g.updated_at,
+            "task_count": task_count,
+            "done_count": done_count,
+            "percent": done_count * 100 // task_count if task_count else 0,
+        }
+        for g, task_count, done_count in rows
+    ]
+
+
+async def create_group(session: AsyncSession, ref: str | uuid.UUID, name: str) -> Group:
+    project = await get_project(session, ref)
+    current_max = await session.scalar(
+        select(func.max(Group.position)).where(Group.project_id == project.id)
+    )
+    group = Group(
+        project_id=project.id,
+        name=name.strip(),
+        position=(current_max or 0.0) + POSITION_STEP,
+    )
+    session.add(group)
+    await session.commit()
+    await session.refresh(group)
+    broadcaster.publish("tasks", str(group.project_id))
+    return group
+
+
+async def get_group(session: AsyncSession, group_id: uuid.UUID) -> Group:
+    group = await session.get(Group, group_id)
+    if group is None:
+        raise NotFoundError(f"group not found: {group_id}")
+    return group
+
+
+async def update_group(
+    session: AsyncSession,
+    group_id: uuid.UUID,
+    name: str | None = None,
+    target_date: date | None = UNSET,
+) -> Group:
+    """Change a group's name or target date (``None`` clears the date)."""
+    group = await get_group(session, group_id)
+    if name is not None:
+        group.name = name.strip()
+    if target_date is not UNSET:
+        group.target_date = target_date
+    await session.commit()
+    await session.refresh(group)
+    broadcaster.publish("tasks", str(group.project_id))
+    return group
+
+
+async def rename_group(session: AsyncSession, group_id: uuid.UUID, name: str) -> Group:
+    return await update_group(session, group_id, name=name)
+
+
+async def delete_group(session: AsyncSession, group_id: uuid.UUID) -> None:
+    """Delete a group; its tasks are ungrouped (appended to the root list)."""
+    group = await get_group(session, group_id)
+    members = list(
+        (
+            await session.scalars(
+                select(Task)
+                .where(Task.group_id == group_id)
+                .order_by(Task.position, Task.created_at)
+            )
+        ).all()
+    )
+    root_max = await session.scalar(
+        select(func.max(Task.position)).where(
+            Task.project_id == group.project_id, Task.group_id.is_(None)
+        )
+    )
+    base = root_max or 0.0
+    project_id = str(group.project_id)
+    for j, task in enumerate(members):
+        task.group_id = None
+        task.position = base + (j + 1) * POSITION_STEP
+    await session.delete(group)
+    await session.commit()
+    broadcaster.publish("tasks", project_id)
+
+
+async def reorder_groups(
+    session: AsyncSession, ref: str | uuid.UUID, ordered_ids: list[uuid.UUID]
+) -> list[dict]:
+    """Authoritative reorder of a project's groups."""
+    project = await get_project(session, ref)
+    groups = {
+        g.id: g
+        for g in (await session.scalars(select(Group).where(Group.project_id == project.id))).all()
+    }
+    if set(ordered_ids) != set(groups):
+        raise ConflictError("ordered_ids must contain exactly the project's group ids")
+    for index, group_id in enumerate(ordered_ids):
+        groups[group_id].position = (index + 1) * POSITION_STEP
+    await session.commit()
+    broadcaster.publish("tasks", str(project.id))
+    return await list_groups(session, project.id)
+
+
+# --- tasks ------------------------------------------------------------------
+
+
+async def list_tasks(
+    session: AsyncSession, ref: str | uuid.UUID, include_done: bool = True
+) -> list[Task]:
+    project = await get_project(session, ref)
+    query = (
+        select(Task).where(Task.project_id == project.id).order_by(Task.position, Task.created_at)
+    )
+    if not include_done:
+        query = query.where(Task.done.is_(False))
+    return list((await session.scalars(query)).all())
+
+
+async def get_task(session: AsyncSession, task_id: uuid.UUID) -> Task:
+    task = await session.get(Task, task_id)
+    if task is None:
+        raise NotFoundError(f"task not found: {task_id}")
+    return task
+
+
+async def _next_position(
+    session: AsyncSession, project_id: uuid.UUID, group_id: uuid.UUID | None = None
+) -> float:
+    """Next append position within a container (root or one group)."""
+    current_max = await session.scalar(
+        select(func.max(Task.position)).where(
+            Task.project_id == project_id,
+            Task.group_id == group_id if group_id else Task.group_id.is_(None),
+        )
+    )
+    return (current_max or 0.0) + POSITION_STEP
+
+
+async def create_task(
+    session: AsyncSession,
+    ref: str | uuid.UUID,
+    title: str,
+    notes: str = "",
+    group: str | uuid.UUID | None = None,
+    size: str | None = None,
+    due_date: date | None = None,
+    assignee: str | None = None,
+) -> Task:
+    project = await get_project(session, ref)
+    group_id = (await resolve_group(session, project.id, group)).id if group is not None else None
+    task = Task(
+        project_id=project.id,
+        group_id=group_id,
+        title=title.strip(),
+        notes=notes,
+        size=normalize_size(size),
+        due_date=due_date,
+        assignee=_clean(assignee),
+        position=await _next_position(session, project.id, group_id),
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+    broadcaster.publish("tasks", str(task.project_id))
+    return task
+
+
+async def set_task_group(
+    session: AsyncSession, task_id: uuid.UUID, group: str | uuid.UUID | None
+) -> Task:
+    """Move a task into a group (or out, with group=None); appended at the end."""
+    task = await get_task(session, task_id)
+    group_id = (
+        (await resolve_group(session, task.project_id, group)).id if group is not None else None
+    )
+    if group_id != task.group_id:
+        task.group_id = group_id
+        task.position = await _next_position(session, task.project_id, group_id)
+    await session.commit()
+    await session.refresh(task)
+    broadcaster.publish("tasks", str(task.project_id))
+    return task
+
+
+async def update_task(
+    session: AsyncSession,
+    task_id: uuid.UUID,
+    title: str | None = None,
+    notes: str | None = None,
+    done: bool | None = None,
+    size: str | None = UNSET,
+    due_date: date | None = UNSET,
+    assignee: str | None = UNSET,
+) -> Task:
+    """Edit a task. ``size``, ``due_date``, and ``assignee`` clear on ``None``."""
+    task = await get_task(session, task_id)
+    if title is not None:
+        task.title = title.strip()
+    if notes is not None:
+        task.notes = notes
+    if done is not None and done != task.done:
+        task.done = done
+        task.done_at = datetime.now(UTC) if done else None
+    if size is not UNSET:
+        task.size = normalize_size(size)
+    if due_date is not UNSET:
+        task.due_date = due_date
+    if assignee is not UNSET:
+        task.assignee = _clean(assignee)
+    await session.commit()
+    await session.refresh(task)
+    broadcaster.publish("tasks", str(task.project_id))
+    return task
+
+
+async def delete_task(session: AsyncSession, task_id: uuid.UUID) -> None:
+    task = await get_task(session, task_id)
+    project_id = str(task.project_id)
+    await session.delete(task)
+    await session.commit()
+    broadcaster.publish("tasks", project_id)
+
+
+async def reorder_tasks(
+    session: AsyncSession,
+    ref: str | uuid.UUID,
+    ordered_ids: list[uuid.UUID],
+    group: str | uuid.UUID | None = None,
+) -> list[Task]:
+    """Authoritative reorder of ONE container (the root list, or one group).
+
+    ordered_ids becomes the container's complete content, in order. Listed
+    tasks currently in another container are moved in (this is how a drag
+    into a group lands in a single call). A task currently in the container
+    but missing from the list is a conflict — a stale client (missing a task
+    another client just added) must refetch instead of silently dropping it.
+
+    For a project with no groups this is identical to the original whole-
+    project reorder.
+    """
+    project = await get_project(session, ref)
+    group_id = (await resolve_group(session, project.id, group)).id if group is not None else None
+    tasks = {
+        t.id: t
+        for t in (await session.scalars(select(Task).where(Task.project_id == project.id))).all()
+    }
+    unknown = [i for i in ordered_ids if i not in tasks]
+    if unknown or len(set(ordered_ids)) != len(ordered_ids):
+        raise ConflictError("ordered_ids must be distinct task ids of this project")
+    current_members = {i for i, t in tasks.items() if t.group_id == group_id}
+    missing = current_members - set(ordered_ids)
+    if missing:
+        raise ConflictError("ordered_ids must include every task currently in this container")
+    for index, task_id in enumerate(ordered_ids):
+        tasks[task_id].group_id = group_id
+        tasks[task_id].position = (index + 1) * POSITION_STEP
+    project_id = project.id
+    await session.commit()
+    broadcaster.publish("tasks", str(project_id))
+    # Re-select with populate_existing: updated_at is server-generated on
+    # UPDATE, so the in-memory objects hold expired attributes that can't
+    # lazy-load during async response serialization.
+    reordered = (
+        await session.scalars(
+            select(Task)
+            .where(
+                Task.project_id == project_id,
+                Task.group_id == group_id if group_id else Task.group_id.is_(None),
+            )
+            .order_by(Task.position, Task.created_at)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return list(reordered)
+
+
+async def move_task(session: AsyncSession, task_id: uuid.UUID, to_project: str | uuid.UUID) -> Task:
+    """Move a task to the end of another project's root list (ungrouped)."""
+    task = await get_task(session, task_id)
+    project = await get_project(session, to_project)
+    source_project_id = str(task.project_id)
+    task.project_id = project.id
+    task.group_id = None
+    task.position = await _next_position(session, project.id)
+    await session.commit()
+    await session.refresh(task)
+    broadcaster.publish("tasks", source_project_id)
+    broadcaster.publish("tasks", str(task.project_id))
+    return task

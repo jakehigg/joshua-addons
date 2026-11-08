@@ -130,28 +130,27 @@ export function Admin({ onRefresh }: Props) {
   }
 
   if (error && rows === null) return <div className="error">{error}</div>;
-  if (rows === null) return <div className="empty"><span className="spinner" />Loading…</div>;
-  if (rows.length === 0) return <div className="empty">No purchases recorded yet.</div>;
+  if (rows === null) return <div className="j-empty loading"><span className="j-spinner" />Loading…</div>;
+  if (rows.length === 0) return <div className="j-empty">No purchases recorded yet.</div>;
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <h2>All Purchases</h2>
-        <span className="badge">{total}</span>
-      </div>
+    <section className="stock-section">
+      <h2 className="j-label">
+        All purchases <span className="j-count">{total}</span>
+      </h2>
 
       {error && <div className="error">{error}</div>}
 
-      <div className="analytics-scroll">
-        <table className="analytics-table">
+      <div className="j-table-wrap">
+        <table className="j-table data-table">
           <thead>
             <tr>
               <th className="ta-left">Item</th>
               <th className="ta-left">Purchased</th>
-              <th className="ta-right">Cost</th>
+              <th className="num">Cost</th>
               <th className="ta-left">Store</th>
               <th className="ta-left">Source</th>
-              <th className="ta-right">Actions</th>
+              <th className="num">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -163,21 +162,23 @@ export function Admin({ onRefresh }: Props) {
                 <Fragment key={p.id}>
                   <tr>
                     <td className="ta-left">{p.item_name}</td>
-                    <td className="ta-left">{fmtDateTime(p.purchased_at)}</td>
-                    <td>{fmtMoney(p.unit_cost)}</td>
+                    <td className="ta-left nowrap">{fmtDateTime(p.purchased_at)}</td>
+                    <td className="num">{fmtMoney(p.unit_cost)}</td>
                     <td className="ta-left">{p.store ?? "—"}</td>
-                    <td className="ta-left">{sourceLabel(p.source)}</td>
-                    <td className="ta-right">
-                      <div className="admin-actions">
+                    <td className="ta-left">
+                      <span className={`j-badge plain${p.source === "automatic" ? " accent" : ""}`}>{sourceLabel(p.source)}</span>
+                    </td>
+                    <td className="num">
+                      <div className="item-actions">
                         <button
-                          className="admin-btn"
+                          className="j-btn sm"
                           onClick={() => (editing ? cancelEdit() : startEdit(p))}
                           disabled={busy}
                         >
                           {editing ? "Close" : "Edit"}
                         </button>
                         <button
-                          className={`admin-btn admin-btn--danger${confirming ? " admin-btn--armed" : ""}`}
+                          className={`j-btn sm danger${confirming ? " armed" : ""}`}
                           onClick={() => handleDelete(p)}
                           disabled={busy}
                         >
@@ -189,34 +190,37 @@ export function Admin({ onRefresh }: Props) {
                   {editing && (
                     <tr className="analytics-subrow">
                       <td className="ta-left" colSpan={6}>
-                        <div className="admin-edit">
-                          <label className="admin-edit-field">
+                        <div className="inline-form admin-edit">
+                          <label className="j-field-label">
                             <span>Cost</span>
+                            <span className="j-field sm">
                             <input
-                              className="rename-input"
                               type="number"
+                              inputMode="decimal"
                               step="0.01"
                               min="0"
                               placeholder="unset"
                               value={editCost}
                               onChange={(e) => setEditCost(e.target.value)}
                             />
+                            </span>
                           </label>
-                          <label className="admin-edit-field">
+                          <label className="j-field-label">
                             <span>Store</span>
+                            <span className="j-field sm">
                             <input
-                              className="rename-input"
                               type="text"
                               placeholder="unset"
                               value={editStore}
                               onChange={(e) => setEditStore(e.target.value)}
                             />
+                            </span>
                           </label>
-                          <button className="rename-confirm-btn" onClick={() => saveEdit(p)} disabled={saving}>
-                            ✓
+                          <button className="j-btn primary sm" onClick={() => saveEdit(p)} disabled={saving}>
+                            {saving ? "Saving…" : "Save"}
                           </button>
-                          <button className="rename-cancel-btn" onClick={cancelEdit} disabled={saving}>
-                            ✕
+                          <button className="j-btn ghost sm" onClick={cancelEdit} disabled={saving}>
+                            Cancel
                           </button>
                         </div>
                       </td>
@@ -231,11 +235,11 @@ export function Admin({ onRefresh }: Props) {
 
       {hasMore && (
         <div className="admin-load-more">
-          <button className="admin-btn" onClick={loadMore} disabled={loadingMore}>
+          <button className="j-btn" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? "Loading…" : `Load more (${rows.length} of ${total})`}
           </button>
         </div>
       )}
-    </div>
+    </section>
   );
 }

@@ -7,6 +7,12 @@ import { useItemControls } from "./components/itemControls";
 
 type Tab = "pantry" | "analytics" | "admin";
 
+const TABS: { id: Tab; label: string }[] = [
+  { id: "pantry", label: "Inventory" },
+  { id: "analytics", label: "Analytics" },
+  { id: "admin", label: "Admin" },
+];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("pantry");
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
@@ -42,51 +48,58 @@ export default function App() {
 
   return (
     <div className="app">
-      {controls.mergeSource && (
-        <div className="merge-banner">
-          <span>
-            Merging <strong>{controls.mergeSource.name}</strong> — tap the item to keep
-          </span>
-          <button className="merge-cancel-btn" onClick={controls.cancelMerge}>
-            Cancel
-          </button>
-        </div>
-      )}
-      {controls.mergeError && <div className="error">{controls.mergeError}</div>}
+      <header className="j-appbar">
+        <img className="j-logo" src="/logo-64.png" alt="" />
+        <a className="j-appbar-title" href="/">
+          <small>Joshua</small>
+          <strong>Pantry</strong>
+        </a>
+      </header>
 
-      <nav className="tab-bar">
-        <button
-          className={`tab-btn${activeTab === "pantry" ? " tab-btn--active" : ""}`}
-          onClick={() => handleTabSwitch("pantry")}
-        >
-          Pantry
-        </button>
-        <button
-          className={`tab-btn${activeTab === "analytics" ? " tab-btn--active" : ""}`}
-          onClick={() => handleTabSwitch("analytics")}
-        >
-          Analytics
-        </button>
-        <button
-          className={`tab-btn${activeTab === "admin" ? " tab-btn--active" : ""}`}
-          onClick={() => handleTabSwitch("admin")}
-        >
-          Admin
-        </button>
+      <nav className="j-tabs" role="tablist" aria-label="Pantry sections">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            className="j-tab"
+            aria-selected={activeTab === t.id}
+            onClick={() => handleTabSwitch(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
       </nav>
 
-      {error && <div className="error">{error}</div>}
+      <main className="j-content wide">
+        {controls.mergeSource && (
+          <div className="merge-banner" role="status">
+            <span>
+              Merging <strong>{controls.mergeSource.name}</strong>. Tap the item to keep.
+            </span>
+            <button className="j-btn sm" onClick={controls.cancelMerge}>
+              Cancel
+            </button>
+          </div>
+        )}
+        {controls.mergeError && <div className="error">{controls.mergeError}</div>}
+
+        {error && <div className="error">{error}</div>}
+
+        {activeTab === "pantry" && (
+          <PantryInventory items={inventoryItems} loading={loading} controls={controls} />
+        )}
+
+        {activeTab === "analytics" && <Analytics controls={controls} refreshKey={dataVersion} />}
+
+        {activeTab === "admin" && <Admin onRefresh={refresh} />}
+      </main>
 
       {activeTab === "pantry" && (
-        <>
+        <div className="j-bottom-bar">
           <RecordPurchaseForm onRefresh={refresh} />
-          <PantryInventory items={inventoryItems} loading={loading} controls={controls} />
-        </>
+        </div>
       )}
-
-      {activeTab === "analytics" && <Analytics controls={controls} refreshKey={dataVersion} />}
-
-      {activeTab === "admin" && <Admin onRefresh={refresh} />}
     </div>
   );
 }

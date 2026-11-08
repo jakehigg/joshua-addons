@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080d17" />
+    <title>Joshua Tasks</title>
+    <link rel="icon" type="image/png" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/src/joshua-ui.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="j-appbar">
+      <img class="j-logo" src="/logo-64.png" alt="" />
+      <a class="j-appbar-title" href="/"><small>Joshua</small><strong>Tasks</strong></a>
+      <div class="controls">
+        <select id="project-select" aria-label="Project"></select>
+        <button id="add-project" class="ghost" title="New project" aria-label="New project">+<span class="label"> Project</span></button>
+      </div>
+    </header>
+    <div class="wrap">
+      <!-- inline (dialog-free — window.prompt is unreliable on mobile) -->
+      <form id="new-project-form" autocomplete="off" hidden>
+        <input
+          id="new-project-input"
+          type="text"
+          placeholder="New project name…"
+          maxlength="200"
+        />
+        <input
+          id="new-project-goal"
+          type="text"
+          placeholder="Goal (optional)…"
+          maxlength="2000"
+        />
+        <button type="submit">Create</button>
+        <button type="button" id="new-project-cancel" class="ghost">Cancel</button>
+      </form>
+      <main id="main" hidden>
+        <!-- The project header: goal, progress, target date, status. -->
+        <section id="project-header">
+          <div class="project-goal-row">
+            <span id="project-goal" class="project-goal" title="Click to set the goal"></span>
+          </div>
+          <div class="project-progress">
+            <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+            <span id="progress-text" class="progress-text"></span>
+            <span id="project-health" class="health"></span>
+          </div>
+          <div class="project-controls">
+            <label>Target <input id="project-target" type="date" /></label>
+            <label>
+              Status
+              <select id="project-status">
+                <option value="active">active</option>
+                <option value="paused">paused</option>
+                <option value="closed">closed</option>
+                <option value="done">done</option>
+              </select>
+            </label>
+            <button id="complete-project" type="button" title="Mark the project done">
+              Complete
+            </button>
+          </div>
+        </section>
+        <!-- Phases (groups) first, in order; the backlog comes after. -->
+        <div id="group-list"></div>
+        <div id="group-controls">
+          <button id="add-group" class="ghost">+ Group</button>
+          <form id="new-group-form" autocomplete="off" hidden>
+            <input
+              id="new-group-input"
+              type="text"
+              placeholder="New group name…"
+              maxlength="200"
+            />
+            <button type="submit">Create</button>
+            <button type="button" id="new-group-cancel" class="ghost">Cancel</button>
+          </form>
+        </div>
+        <section id="backlog">
+          <header class="backlog-header"><span id="backlog-label">Backlog</span></header>
+          <form id="add-task-form" autocomplete="off">
+            <input
+              id="add-task-input"
+              type="text"
+              placeholder="Add a task…"
+              maxlength="1000"
+            />
+          </form>
+          <ul id="task-list"></ul>
+        </section>
+        <p id="empty-tasks" class="empty" hidden>
+          Nothing here yet — add a task above.
+        </p>
+      </main>
+      <div id="empty-projects" class="empty-hero" hidden>
+        <p>No projects yet.</p>
+        <button id="create-first-project">Create your first project</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

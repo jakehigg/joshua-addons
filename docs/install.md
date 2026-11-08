@@ -108,6 +108,23 @@ docker compose exec core python -c "import urllib.request; print(urllib.request.
    The answer carries a `connected` count for the MCP upstreams. The count
    goes up by one after step 6.
 
+### The developer addon
+
+`developer` starts a container for each task, so it needs more than the steps
+above. Read [its README](../addons/developer/README.md) before you install
+it. Know two facts first:
+
+- Its compose file also starts a Docker socket proxy, which has the Docker
+  socket of the host, read-only. The manager uses the proxy to start and
+  remove the workers. It never mounts the socket.
+- A worker has no network access but the manager, because `network: off` is
+  the default in `developer.yaml`. With `network: off`, a worker cannot
+  install dependencies.
+
+The install also changes the joshua-ai compose file: channels needs the
+fleet token of the addon. Step 3 of "Run it on Docker Compose" in the README
+has the change.
+
 ## Kubernetes
 
 ### Install
@@ -125,6 +142,20 @@ The release name, `hello` above, becomes the Service name of the addon, and
 the name of every object the chart makes. Install the chart again, with
 another release name and another values file, for a second addon. The full
 values table is in [the chart README](../charts/joshua-addon/README.md).
+
+### The developer addon
+
+`developer` starts a Job for each task. Read
+[its README](../addons/developer/README.md) before you install it. Know two
+facts first:
+
+- Its `values.yaml` turns on the `rbac` block of the chart. The Role lets the
+  manager create, read, and delete Jobs, and read pods and pod logs, in the
+  release namespace only.
+- Its `values.yaml` also turns on the `networkPolicy` block, and
+  `network: off` is the default in `developer.yaml`. A worker then connects
+  to the manager and the cluster DNS pods only, and cannot install dependencies. The CNI of
+  the cluster must enforce NetworkPolicy.
 
 ### ArgoCD
 

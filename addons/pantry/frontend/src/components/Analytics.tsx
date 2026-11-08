@@ -117,17 +117,16 @@ export function Analytics({ controls, refreshKey }: Props) {
   }
 
   if (error) return <div className="error">{error}</div>;
-  if (rows === null || sortedRows === null) return <div className="empty"><span className="spinner" />Loading…</div>;
-  if (sortedRows.length === 0) return <div className="empty">No tracked items yet.</div>;
+  if (rows === null || sortedRows === null) return <div className="j-empty loading"><span className="j-spinner" />Loading…</div>;
+  if (sortedRows.length === 0) return <div className="j-empty">No tracked items yet.</div>;
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <h2>Purchase Analytics</h2>
-        <span className="badge">{sortedRows.length}</span>
-      </div>
-      <div className="analytics-scroll">
-        <table className="analytics-table">
+    <section className="stock-section">
+      <h2 className="j-label">
+        Purchase analytics <span className="j-count">{sortedRows.length}</span>
+      </h2>
+      <div className="j-table-wrap">
+        <table className="j-table data-table">
           <thead>
             <tr>
               {COLUMNS.map((col) => {
@@ -135,17 +134,17 @@ export function Analytics({ controls, refreshKey }: Props) {
                 return (
                   <th
                     key={col.key}
-                    className={`sortable${col.align === "left" ? " ta-left" : ""}${active ? " sorted" : ""}`}
+                    className={`sortable${col.align === "left" ? " ta-left" : " num"}${active ? " sorted" : ""}`}
                     title={col.title}
                     onClick={() => handleSort(col.key)}
                     aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     {col.label}
-                    <span className="sort-arrow">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
+                    <span className="sort-arrow" aria-hidden="true">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
                   </th>
                 );
               })}
-              <th className="ta-right">Actions</th>
+              <th className="num">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -158,30 +157,30 @@ export function Analytics({ controls, refreshKey }: Props) {
                 <Fragment key={r.item_id}>
                   <tr
                     className={
-                      (isMergeSource ? "analytics-row--merge-source" : "") +
-                      (mergeMode && !isMergeSource ? " analytics-row--merge-target" : "")
+                      (isMergeSource ? "item--merge-source" : "") +
+                      (mergeMode && !isMergeSource ? " item--merge-target" : "")
                     }
                   >
                     <td className="ta-left">
-                      <span className="analytics-name item-name--tappable" onClick={() => onNameTap(r)}>
+                      <button type="button" className="item-name" onClick={() => onNameTap(r)} aria-expanded={expanded}>
                         {r.name}
-                      </span>
+                      </button>
                       {r.aliases.length > 0 && (
                         <span className="analytics-aka" title={r.aliases.join(", ")}>
                           aka {r.aliases.join(", ")}
                         </span>
                       )}
                     </td>
-                    <td>{r.purchase_count}</td>
-                    <td>{fmtDays(r.shortest_interval_days)}</td>
-                    <td className="ta-strong">{fmtDays(r.median_interval_days)}</td>
-                    <td>{fmtDays(r.longest_interval_days)}</td>
-                    <td>{fmtDays(r.cycle_days)}</td>
-                    <td>{fmtMoney(r.avg_cost)}</td>
-                    <td className="ta-left">{fmtDate(r.last_purchased_at)}</td>
-                    <td className="ta-right">
+                    <td className="num">{r.purchase_count}</td>
+                    <td className="num">{fmtDays(r.shortest_interval_days)}</td>
+                    <td className="num ta-strong">{fmtDays(r.median_interval_days)}</td>
+                    <td className="num">{fmtDays(r.longest_interval_days)}</td>
+                    <td className="num">{fmtDays(r.cycle_days)}</td>
+                    <td className="num">{fmtMoney(r.avg_cost)}</td>
+                    <td className="ta-left nowrap">{fmtDate(r.last_purchased_at)}</td>
+                    <td className="num">
                       {!mergeMode && (
-                        <div className="analytics-actions">
+                        <div className="item-actions">
                           <ItemActions
                             item={{ item_id: r.item_id, name: r.name, status }}
                             onRefresh={refresh}
@@ -217,6 +216,6 @@ export function Analytics({ controls, refreshKey }: Props) {
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   );
 }

@@ -32,6 +32,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from joshua_pantry import inventory as inv_service
+from joshua_pantry import merge as merge_service
 from joshua_pantry.database import build_engine, build_sessionmaker
 from joshua_pantry.log import get_logger
 from joshua_pantry.migrations import run_migrations
@@ -51,6 +52,7 @@ from joshua_pantry.products import (
 )
 from joshua_pantry.purchases import upsert_purchase
 from joshua_pantry.resolution import (
+    find_possible_matches,
     get_aliases_by_item,
     normalize,
     resolve_item,
@@ -163,6 +165,26 @@ async def record_purchase(
     same item twice on the same date merges into one purchase record; a
     later call can still fill in a SKU or UPC the first call left out.
 
+    The automatic match is careful on purpose, so a new item can be a
+    duplicate of a tracked item under another name. For each new item, the
+    line's possible_matches lists up to three tracked items that share a
+    significant word with it. The top-level possible_matches holds the same
+    lists, for each new item that has one. Resolve each new item that has
+    possible matches before you finish:
+
+    - Merge: the same food under another name. Call
+      merge_items(source=<new item>, target=<tracked item>). The purchase
+      moves to the tracked item, and the receipt name becomes its alias,
+      so the next receipt matches on its own.
+    - Alias: add_alias refuses a name that is already an item, so it
+      cannot fix the new item itself. Use merge_items for that. Use
+      add_alias only for another wording of the same food that is not an
+      item yet.
+    - Keep: a different food ("almond milk" is not "milk"). Keep the new
+      item. Tell the person that you added it, and name the possible match.
+
+    When you are not sure, ask the person.
+
     A line with a upc, or a sku and a store, finds or creates that exact
     product on the item (see resolve_product): a second sighting stamps it
     seen again, and description/size/unit fill in only what is still blank.
@@ -185,6 +207,8 @@ async def record_purchase(
 
     lines: list[dict[str, Any]] = []
     created_items: list[str] = []
+    created_ids: set[int] = set()
+    possible_by_item: dict[str, list[dict[str, Any]]] = {}
     touched: set[int] = set()
 
     async with _session_factory()() as session:
@@ -195,7 +219,11 @@ async def record_purchase(
 
             match = await resolve_item(session, name)
             item_created = False
+            possible: list[dict[str, Any]] = []
             if match is None:
+                # Compare with the items that were tracked before this
+                # receipt, not with other new lines of the same receipt.
+                possible = await find_possible_matches(session, name, exclude_ids=created_ids)
                 display = name.lower()
                 match = Item(
                     name=display,
@@ -207,6 +235,9 @@ async def record_purchase(
                 session.add(match)
                 await session.flush()
                 created_items.append(match.name.title())
+                created_ids.add(match.id)
+                if possible:
+                    possible_by_item[match.name.title()] = possible
                 item_created = True
             else:
                 match.is_tracked = True
@@ -254,6 +285,7 @@ async def record_purchase(
                     "store": rec.store,
                     "purchased_at": rec.purchased_at.isoformat(),
                     "product": product_dict(product),
+                    "possible_matches": possible,
                 }
             )
             touched.add(match.id)
@@ -267,12 +299,16 @@ async def record_purchase(
         "purchased_at": when.date().isoformat(),
         "items": lines,
         "created_items": created_items,
+        "possible_matches": possible_by_item,
     }
 
 
 @mcp.tool()
 async def get_inventory(status_filter: str | None = None) -> list[dict[str, Any]]:
     """List every tracked item's inventory status.
+
+    For a question about a specific food ("do we have spinach?"), use
+    check_items instead. It finds every item for that food.
 
     Each item carries its status, category, last_purchased_at, estimated
     depletion, and avg_cycle_days. Aliases, when the item has any, show
@@ -285,6 +321,32 @@ async def get_inventory(status_filter: str | None = None) -> list[dict[str, Any]
     """
     async with _session_factory()() as session:
         return await inv_service.get_all_inventory_status(session, status_filter)
+
+
+@mcp.tool()
+async def check_items(names: list[str]) -> dict[str, Any]:
+    """Answer "do we have X?" for one or more foods.
+
+    Use this, not get_inventory, for a question about a specific food. One
+    food often has several tracked items, for example "baby spinach" and
+    "frozen chopped spinach". This tool finds all of them, so you do not
+    read the full inventory and pick one item by its name.
+
+    For each name, matches lists every tracked item whose name or alias is
+    the name, or holds every word of the name. Each match has its status
+    and last_purchased_at. verdict is "in_stock" when one or more matches
+    are in stock. Otherwise it is the best status of the matches, in this
+    order: likely_depleted, unknown, out_of_stock. It is "no_match" when no
+    item matches. Answer from the verdict, and name the matching items when
+    they disagree.
+
+    Args:
+        names: The foods to check, for example ["spinach", "oat milk"].
+    """
+    if not names:
+        raise ToolError("names is empty; check_items needs at least one name.")
+    async with _session_factory()() as session:
+        return {"results": await inv_service.check_items(session, names)}
 
 
 @mcp.tool()
@@ -315,6 +377,11 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
 
         inv_result = await session.execute(select(Inventory).where(Inventory.item_id == match.id))
         inv = inv_result.scalar_one_or_none()
+        last_consumed_at = await session.scalar(
+            select(func.max(ConsumptionEvent.occurred_at)).where(
+                ConsumptionEvent.item_id == match.id
+            )
+        )
 
         preferred_product = (
             await session.get(Product, match.preferred_product_id)
@@ -343,7 +410,7 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
             "matched_via": matched_via,
             "preferred_store": match.preferred_store,
             "preferred_product": product_dict(preferred_product),
-            "status": inv_service.get_item_status(inv),
+            "status": inv_service.get_item_status(inv, last_consumed_at),
             "avg_cycle_days": inv.avg_cycle_days if inv else None,
             "last_purchased_at": (
                 inv.last_purchased_at.isoformat() if inv and inv.last_purchased_at else None
@@ -938,7 +1005,8 @@ async def add_alias(item_name: str, alias: str) -> dict[str, Any]:
     Use this when a receipt says one thing but the pantry tracks it under
     another name — e.g. a receipt says "Trail Mix Bars" but the pantry
     tracks "Granola Bars". Do not alias genuinely different products:
-    almond milk is not milk. When unsure, ask instead of aliasing.
+    almond milk is not milk. When unsure, ask instead of aliasing. When the
+    alias is already the name of a tracked item, use merge_items instead.
 
     Args:
         item_name: The existing pantry item the alias refers to (alias and
@@ -968,7 +1036,9 @@ async def add_alias(item_name: str, alias: str) -> dict[str, Any]:
         if existing_item is not None:
             raise ToolError(
                 f"'{alias}' is already a tracked item "
-                f"('{existing_item.name.title()}'), not an alias."
+                f"('{existing_item.name.title()}'), not an alias. If the two items are the "
+                f"same food, use merge_items(source='{existing_item.name}', "
+                f"target='{target.name}') to combine them."
             )
 
         existing_alias = (
@@ -992,6 +1062,58 @@ async def add_alias(item_name: str, alias: str) -> dict[str, Any]:
         await session.commit()
 
     return {"item": target.name.title(), "alias": display, "already_aliased": False}
+
+
+@mcp.tool()
+async def merge_items(source: str, target: str) -> dict[str, Any]:
+    """Combine two tracked items that are the same food into one item.
+
+    Use this when the pantry tracks one food under two names, for example
+    after a receipt created a duplicate item. Do not use it for different
+    products: almond milk is not milk. When unsure, ask the person first.
+
+    The source item goes away. Its purchases, consumption events, products,
+    and aliases move to the target, and its name becomes an alias of the
+    target. When both items have a purchase on one date, the target's
+    purchase stays and takes each blank field (cost, store, sku, upc,
+    quantity) from the source's purchase. purchase_conflicts lists each
+    field that both purchases held with different values. The target keeps
+    its own value there. Tell the person about each conflict.
+
+    Do not copy purchases by hand with record_purchase and delete_item.
+    That loses data.
+
+    Args:
+        source: The item to merge away (alias and fuzzy matched).
+        target: The item to keep (alias and fuzzy matched).
+    """
+    async with _session_factory()() as session:
+        source_item = await resolve_item(session, source)
+        if source_item is None:
+            raise ToolError(f"Item '{source}' not found.")
+        target_item = await resolve_item(session, target)
+        if target_item is None:
+            raise ToolError(f"Item '{target}' not found.")
+        if source_item.id == target_item.id:
+            raise ToolError(
+                f"'{source}' and '{target}' are the same item "
+                f"('{target_item.name.title()}'). Nothing to merge."
+            )
+
+        source_name = source_item.name.title()
+        result = await merge_service.merge_items(session, source_item, target_item)
+
+    aliases_added = [a.title() for a in result["aliases_moved"]]
+    if result["alias_added"]:
+        aliases_added.insert(0, result["alias_added"].title())
+    return {
+        "source": source_name,
+        "target": result["target_name"].title(),
+        "moved_purchases": result["moved_purchases"],
+        "combined_purchases": result["combined_purchases"],
+        "purchase_conflicts": result["purchase_conflicts"],
+        "aliases_added": aliases_added,
+    }
 
 
 @mcp.tool()

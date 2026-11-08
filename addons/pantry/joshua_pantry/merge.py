@@ -3,8 +3,8 @@
 Ported from the joshua-pantry backend
 (``pantry/backend/app/services/merge.py``). This addon has no poller-only
 tables (``Event``, ``SnapshotItem``) and no reminder id (``Item.mag_id``) to
-carry across a merge, so this version only moves purchases, consumption
-events, aliases, and inventory state.
+carry across a merge, so this version moves purchases, consumption events,
+aliases, products, and inventory state.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import inventory as inv_service
-from .models import ConsumptionEvent, Inventory, Item, ItemAlias, PurchaseRecord
+from .models import ConsumptionEvent, Inventory, Item, ItemAlias, Product, PurchaseRecord
 from .resolution import normalize
 
 
@@ -34,25 +34,58 @@ class DuplicateItemError(Exception):
         super().__init__(f"'{item.name}' already exists as item {item.id}")
 
 
+# The purchase fields that a same-day merge combines, in report order.
+_PURCHASE_DATA_FIELDS = ("unit_cost", "store", "sku", "upc", "quantity")
+
+
+def _combine_same_day(kept: PurchaseRecord, dropped: PurchaseRecord) -> list[dict]:
+    """Copy each field of ``dropped`` into a blank field of ``kept``.
+
+    When both records hold a different value for one field, ``kept`` keeps
+    its value. Returns one conflict entry for each such field, so the caller
+    can report the value that the merge could not keep.
+    """
+    conflicts: list[dict] = []
+    for field in _PURCHASE_DATA_FIELDS:
+        kept_value = getattr(kept, field)
+        dropped_value = getattr(dropped, field)
+        if dropped_value is None:
+            continue
+        if kept_value is None:
+            setattr(kept, field, dropped_value)
+        elif kept_value != dropped_value:
+            conflicts.append(
+                {
+                    "purchase_date": kept.purchase_date.isoformat(),
+                    "field": field,
+                    "kept": kept_value,
+                    "dropped": dropped_value,
+                }
+            )
+    return conflicts
+
+
 async def merge_items(session: AsyncSession, source: Item, target: Item) -> dict:
-    """Merge ``source`` into ``target``, preserving combined history. Commits."""
+    """Merge ``source`` into ``target``, preserving combined history. Commits.
+
+    The ``uq_purchase_records_item_date`` constraint allows one purchase for
+    each item on each date. When ``source`` and ``target`` both have a
+    purchase on one date, the target's record stays and takes every field
+    that it does not have from the source's record. A field that both
+    records hold with different values keeps the target's value, and the
+    result lists it in ``purchase_conflicts``.
+    """
     if source.id == target.id:
         raise ValueError("Cannot merge an item into itself")
 
-    # Move purchase history, resolving same-day conflicts inline. The
-    # uq_purchase_records_item_date constraint forbids two purchases for one
-    # item on a single date, so a bulk reassignment blows up when source and
-    # target were both bought on the same day. Keep the target's record for a
-    # conflicting date and drop the source's duplicate.
-    target_dates = set(
-        (
-            await session.execute(
-                select(PurchaseRecord.purchase_date).where(PurchaseRecord.item_id == target.id)
-            )
+    target_records = {
+        rec.purchase_date: rec
+        for rec in (
+            await session.execute(select(PurchaseRecord).where(PurchaseRecord.item_id == target.id))
         )
         .scalars()
         .all()
-    )
+    }
     source_records = (
         (
             await session.execute(
@@ -65,14 +98,29 @@ async def merge_items(session: AsyncSession, source: Item, target: Item) -> dict
         .all()
     )
     moved_purchases = 0
+    combined_purchases = 0
+    purchase_conflicts: list[dict] = []
     for record in source_records:
-        if record.purchase_date in target_dates:
+        kept = target_records.get(record.purchase_date)
+        if kept is not None:
+            purchase_conflicts.extend(_combine_same_day(kept, record))
             await session.delete(record)
+            combined_purchases += 1
         else:
             record.item_id = target.id
-            target_dates.add(record.purchase_date)
+            target_records[record.purchase_date] = record
             moved_purchases += 1
     await session.flush()
+
+    # Products follow the item. A product upc is unique across every item,
+    # so the move cannot collide.
+    await session.execute(
+        update(Product).where(Product.item_id == source.id).values(item_id=target.id)
+    )
+    if target.preferred_product_id is None and source.preferred_product_id is not None:
+        target.preferred_product_id = source.preferred_product_id
+        target.preference_confidence = source.preference_confidence
+        target.preference_source = source.preference_source
 
     await session.execute(
         update(ConsumptionEvent)
@@ -82,6 +130,17 @@ async def merge_items(session: AsyncSession, source: Item, target: Item) -> dict
     await session.execute(delete(Inventory).where(Inventory.item_id == source.id))
 
     # Source's aliases follow it, and its own name becomes an alias.
+    aliases_moved = list(
+        (
+            await session.execute(
+                select(ItemAlias.alias)
+                .where(ItemAlias.item_id == source.id)
+                .order_by(ItemAlias.alias)
+            )
+        )
+        .scalars()
+        .all()
+    )
     await session.execute(
         update(ItemAlias).where(ItemAlias.item_id == source.id).values(item_id=target.id)
     )
@@ -121,7 +180,10 @@ async def merge_items(session: AsyncSession, source: Item, target: Item) -> dict
         "target_id": target.id,
         "target_name": target.name,
         "alias_added": alias_added,
+        "aliases_moved": aliases_moved,
         "moved_purchases": moved_purchases,
+        "combined_purchases": combined_purchases,
+        "purchase_conflicts": purchase_conflicts,
     }
 
 

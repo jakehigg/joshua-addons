@@ -85,6 +85,25 @@ export function useItemControls(refresh: () => void) {
 
 export type ItemControls = ReturnType<typeof useItemControls>;
 
+const ICON_PATHS: Record<string, string> = {
+  minus: "M5 12h14",
+  merge: "M7 4v6a5 5 0 0 0 5 5h5M14 12l3 3-3 3M7 20v-4",
+  edit: "M4 20h4L19 9l-4-4L4 16z",
+  trash: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13",
+  plus: "M12 5v14M5 12h14",
+  check: "m5 12.5 4.5 4.5L19 7.5",
+  close: "M6 6l12 12M18 6 6 18",
+};
+
+/** A stroke icon from the shared Joshua set (sized by .j-icon). */
+export function Icon({ name }: { name: keyof typeof ICON_PATHS }) {
+  return (
+    <svg className="j-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  );
+}
+
 export function AliasEditor({ itemId, onChanged }: { itemId: number; onChanged: () => void }) {
   const [aliases, setAliases] = useState<AliasEntry[] | null>(null);
   const [name, setName] = useState("");
@@ -129,41 +148,44 @@ export function AliasEditor({ itemId, onChanged }: { itemId: number; onChanged: 
   };
 
   return (
-    <div className="alias-editor">
+    <div className="item-panel">
       {aliases === null ? (
-        <span className="alias-loading">Loading aliases…</span>
+        <span className="j-muted alias-note">Loading aliases…</span>
       ) : (
-        <div className="alias-chips">
-          {aliases.length === 0 && <span className="alias-empty">No aliases yet</span>}
+        <div className="j-chips">
+          {aliases.length === 0 && <span className="j-muted alias-note">No aliases yet</span>}
           {aliases.map((a) => (
-            <span key={a.id} className="alias-chip">
+            <span key={a.id} className="j-chip alias-chip">
               {a.alias}
               <button
                 className="alias-chip-remove"
                 onClick={() => handleRemove(a.id)}
                 disabled={busy}
                 title="Remove alias"
+                aria-label={`Remove alias ${a.alias}`}
               >
-                ×
+                <Icon name="close" />
               </button>
             </span>
           ))}
         </div>
       )}
-      <form className="alias-form" onSubmit={handleAdd}>
-        <input
-          className="alias-input"
-          type="text"
-          placeholder="Add alias (aka name)…"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={busy}
-        />
-        <button type="submit" className="alias-add-btn" disabled={!name.trim() || busy}>
-          +
+      <form className="inline-form" onSubmit={handleAdd}>
+        <label className="j-field sm">
+          <input
+            type="text"
+            placeholder="Add alias (aka name)…"
+            aria-label="New alias"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button type="submit" className="j-btn primary sm" disabled={!name.trim() || busy}>
+          <Icon name="plus" />Add
         </button>
       </form>
-      {error && <div className="alias-error">{error}</div>}
+      {error && <p className="j-error">{error}</p>}
     </div>
   );
 }
@@ -195,24 +217,26 @@ export function RenameForm({ item, onSuccess, onCancel }: RenameFormProps) {
   };
 
   return (
-    <div className="rename-form">
-      <form className="rename-form-inner" onSubmit={handleSubmit}>
-        <input
-          className="rename-input"
-          type="text"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          disabled={state === "loading"}
-          autoFocus
-        />
-        <button type="submit" className="rename-confirm-btn" disabled={!value.trim() || state === "loading"}>
-          {state === "loading" ? "…" : "✓"}
+    <div className="item-panel">
+      <form className="inline-form" onSubmit={handleSubmit}>
+        <label className="j-field sm">
+          <input
+            type="text"
+            aria-label="New name"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={state === "loading"}
+            autoFocus
+          />
+        </label>
+        <button type="submit" className="j-btn primary sm" disabled={!value.trim() || state === "loading"}>
+          {state === "loading" ? "Saving…" : "Rename"}
         </button>
-        <button type="button" className="rename-cancel-btn" onClick={onCancel} disabled={state === "loading"}>
-          ✕
+        <button type="button" className="j-btn ghost sm" onClick={onCancel} disabled={state === "loading"}>
+          Cancel
         </button>
       </form>
-      {error && <div className="rename-error">{error}</div>}
+      {error && <p className="j-error">{error}</p>}
     </div>
   );
 }
@@ -263,35 +287,39 @@ export function ItemActions({ item, onRefresh, onMergeStart, onRenameStart, rena
     <>
       {(item.status === "in_stock" || item.status === "likely_depleted") && (
         <button
-          className={`oos-btn oos-btn--${ooState}`}
+          className={`j-icon-btn sm act act--${ooState}`}
           onClick={handleOutOfStock}
           disabled={ooState !== "idle"}
           title="Mark as out of stock"
+          aria-label={`Mark ${item.name} out of stock`}
         >
-          {ooState === "loading" ? "…" : ooState === "error" ? "!" : "−"}
+          {ooState === "loading" ? <span className="j-spinner" /> : ooState === "error" ? "!" : <Icon name="minus" />}
         </button>
       )}
       <button
-        className="merge-btn"
+        className="j-icon-btn sm act"
         onClick={onMergeStart}
         title="Merge this item into another"
+        aria-label={`Merge ${item.name} into another item`}
       >
-        ⇆
+        <Icon name="merge" />
       </button>
       <button
-        className={`rename-btn${renaming ? " rename-btn--active" : ""}`}
+        className={`j-icon-btn sm act${renaming ? " act--active" : ""}`}
         onClick={onRenameStart}
         title="Rename this item"
+        aria-label={`Rename ${item.name}`}
       >
-        ✎
+        <Icon name="edit" />
       </button>
       <button
-        className={`hide-btn hide-btn--${hideState}`}
+        className={`j-icon-btn sm act act--danger act--${hideState}`}
         onClick={handleHide}
         disabled={hideState !== "idle"}
         title="Hide this item"
+        aria-label={`Hide ${item.name}`}
       >
-        {hideState === "loading" ? "…" : hideState === "error" ? "!" : "🗑"}
+        {hideState === "loading" ? <span className="j-spinner" /> : hideState === "error" ? "!" : <Icon name="trash" />}
       </button>
     </>
   );

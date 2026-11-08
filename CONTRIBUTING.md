@@ -81,6 +81,8 @@ answers `GET /healthz` with `{"ok": true}`, and it accepts an optional
 without one is not built.
 
 One version covers the whole repository. Never version one addon on its own.
+[docs/releasing.md](docs/releasing.md) has the files to change and the
+release steps.
 
 ## Files that never reach a commit
 

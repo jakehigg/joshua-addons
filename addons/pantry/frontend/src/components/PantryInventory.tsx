@@ -1,6 +1,6 @@
 import { Fragment, useRef, useState } from "react";
 import { api, type InventoryItem } from "../api";
-import { AliasEditor, ItemActions, RenameForm, type ItemControls } from "./itemControls";
+import { AliasEditor, Icon, ItemActions, RenameForm, type ItemControls } from "./itemControls";
 
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -29,10 +29,10 @@ function ItemRow({ item, controls }: ItemRowProps) {
   const renaming = renameId === item.item_id;
 
   const dotClass =
-    item.status === "in_stock" ? "dot-green" :
-    item.status === "out_of_stock" ? "dot-red" :
-    item.status === "likely_depleted" ? "dot-amber" :
-    "dot-gray";
+    item.status === "in_stock" ? "ok" :
+    item.status === "out_of_stock" ? "bad" :
+    item.status === "likely_depleted" ? "warn" :
+    "";
 
   const statusMeta =
     item.status === "in_stock" && item.estimated_depletion
@@ -44,23 +44,30 @@ function ItemRow({ item, controls }: ItemRowProps) {
     : "never purchased";
 
   return (
-    <li className={`item-card${isMergeSource ? " item-card--merge-source" : ""}${mergeMode && !isMergeSource ? " item-card--merge-target" : ""}`}>
+    <li className={`item${isMergeSource ? " item--merge-source" : ""}${mergeMode && !isMergeSource ? " item--merge-target" : ""}`}>
       <div className="item-row">
-        <div className={`dot ${dotClass}`} />
-        <span className="item-name item-name--tappable" onClick={() => onNameTap(item)}>
-          {item.name}
-          {item.aliases.length > 0 && <span className="aka-tag">aka {item.aliases.length}</span>}
-        </span>
-        {statusMeta && <span className="item-meta">{statusMeta}</span>}
-        <span className="item-meta item-purchased">{purchasedMeta}</span>
+        <span className={`j-dot ${dotClass}`} />
+        <div className="j-list-main">
+          <button type="button" className="item-name" onClick={() => onNameTap(item)} aria-expanded={expanded}>
+            {item.name}
+            {item.aliases.length > 0 && <span className="j-badge plain aka-tag">aka {item.aliases.length}</span>}
+          </button>
+          <span className="j-list-sub">
+            {statusMeta && <span className="item-left">{statusMeta}</span>}
+            {statusMeta && " · "}
+            {purchasedMeta}
+          </span>
+        </div>
         {!mergeMode && (
-          <ItemActions
-            item={item}
-            onRefresh={refresh}
-            onMergeStart={() => onMergeStart(item)}
-            onRenameStart={() => onRenameStart(item)}
-            renaming={renaming}
-          />
+          <div className="item-actions">
+            <ItemActions
+              item={item}
+              onRefresh={refresh}
+              onMergeStart={() => onMergeStart(item)}
+              onRenameStart={() => onRenameStart(item)}
+              renaming={renaming}
+            />
+          </div>
         )}
       </div>
       {expanded && !mergeMode && (
@@ -103,21 +110,24 @@ export function RecordPurchaseForm({ onRefresh }: { onRefresh: () => void }) {
 
   return (
     <form className="record-purchase-form" onSubmit={handleSubmit}>
-      <input
-        ref={inputRef}
-        className="record-purchase-input"
-        type="text"
-        placeholder="Record a purchase…"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        disabled={state === "loading"}
-      />
+      <label className={`j-field${state === "error" ? " invalid" : ""}`}>
+        <Icon name="plus" />
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Record a purchase…"
+          aria-label="Record a purchase"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={state === "loading"}
+        />
+      </label>
       <button
         type="submit"
-        className={`record-purchase-btn record-purchase-btn--${state}`}
+        className={`j-btn primary record-purchase-btn record-purchase-btn--${state}`}
         disabled={!name.trim() || state !== "idle"}
       >
-        {state === "loading" ? "…" : state === "done" ? "✓" : state === "error" ? "!" : "+"}
+        {state === "loading" ? <span className="j-spinner" /> : state === "done" ? <Icon name="check" /> : state === "error" ? "Retry" : "Add"}
       </button>
     </form>
   );
@@ -158,7 +168,7 @@ export function PantryInventory({ items, loading, controls }: Props) {
     const showHeaders = categories.length > 1 || categories[0] !== "";
 
     return (
-      <ul className="item-list">
+      <ul className="j-list item-list">
         {categories.map((cat) => (
           <Fragment key={cat || "__uncategorized"}>
             {showHeaders && <li className="category-header">{cat || "Other"}</li>}
@@ -181,7 +191,7 @@ export function PantryInventory({ items, loading, controls }: Props) {
     if (groups.has("")) categories.push("");
 
     if (categories.length === 0) {
-      return <div className="empty">No items in stock.</div>;
+      return <div className="j-empty">No items in stock.</div>;
     }
 
     // Sort tallest first for better greedy packing
@@ -203,15 +213,14 @@ export function PantryInventory({ items, loading, controls }: Props) {
         {cols.map((colCats, ci) => (
           <div key={ci} className="tile-col">
             {colCats.map((cat) => (
-              <div key={cat || "__other"} className="tile-card panel">
-                <div className="panel-header">
-                  <h2>{cat || "Other"}</h2>
-                  <span className="badge">{groups.get(cat)!.length}</span>
-                </div>
-                <ul className="item-list">
+              <section key={cat || "__other"} className="tile-card">
+                <h2 className="j-label">
+                  {cat || "Other"} <span className="j-count">{groups.get(cat)!.length}</span>
+                </h2>
+                <ul className="j-list item-list">
                   {groups.get(cat)!.map(makeRow)}
                 </ul>
-              </div>
+              </section>
             ))}
           </div>
         ))}
@@ -220,36 +229,41 @@ export function PantryInventory({ items, loading, controls }: Props) {
   };
 
   if (loading) {
-    return <div className="empty"><span className="spinner" />Loading…</div>;
+    return <div className="j-empty loading"><span className="j-spinner" />Loading…</div>;
   }
 
   const showOos = outOfStock.length > 0;
 
   return (
     <>
+      <div className="j-stats">
+        <div className="j-stat ok"><b>{inStock.length}</b><span>In stock</span></div>
+        <div className="j-stat warn"><b>{depleted.length}</b><span>Likely depleted</span></div>
+        <div className="j-stat bad"><b>{outOfStock.length}</b><span>Out of stock</span></div>
+        <div className="j-stat"><b>{unknown.length}</b><span>Unknown</span></div>
+      </div>
+
       {renderTiles(inStock)}
 
       {showOos && (
-        <div className="panel" style={{ marginTop: 20 }}>
-          <div className="panel-header">
-            <h2>Out of Stock</h2>
-            <span className="badge">{outOfStock.length}</span>
-          </div>
+        <section className="stock-section">
+          <h2 className="j-label">
+            Out of stock <span className="j-count">{outOfStock.length}</span>
+          </h2>
           {renderList(outOfStock)}
-        </div>
+        </section>
       )}
 
-      <div className="panel" style={{ marginTop: 20 }}>
-        <div className="panel-header">
-          <h2>Likely Depleted / Unknown</h2>
-          <span className="badge">{depleted.length + unknown.length}</span>
-        </div>
+      <section className="stock-section">
+        <h2 className="j-label">
+          Likely depleted / unknown <span className="j-count">{depleted.length + unknown.length}</span>
+        </h2>
         {depleted.length + unknown.length === 0 ? (
-          <div className="empty">No depleted or untracked items.</div>
+          <div className="j-list j-empty">No depleted or untracked items.</div>
         ) : (
           renderList([...depleted, ...unknown])
         )}
-      </div>
+      </section>
     </>
   );
 }

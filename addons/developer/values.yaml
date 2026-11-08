@@ -1,0 +1,114 @@
+# The developer addon, installed with charts/joshua-addon. The manager starts
+# one Kubernetes Job for each task, in its own namespace. developer.db needs
+# somewhere to live, so persistence is on, at /data. developer.yaml comes from
+# configFile. Put the tokens in an existingSecret, never here.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-developer
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi
+
+# existingSecret: joshua-developer
+# The keys of the Secret:
+#   DEVELOPER_TOKENS          one bearer token for each person: alex=<token>,mia=<token>
+#   ADDON_TOKEN               a bearer token with no person, for reads
+#   CLAUDE_CODE_OAUTH_TOKEN   the Claude token of the Claude forwarder
+#   JOSHUA_TOKEN_DEVELOPER    the fleet token for channels
+#   the git tokens            the names that token_env gives in developer.yaml:
+#                             one for each platform (such as GITHUB_TOKEN or
+#                             GITLAB_TOKEN), and one for each
+#                             people.<id>.platforms entry (such as GITHUB_TOKEN_ALEX)
+
+configFile:
+  enabled: true
+  name: developer.yaml
+  mountPath: /etc/joshua-addon/developer.yaml
+  content: |
+    network: off
+    default_persona: opus
+    max_workers: 2
+    # The total time a worker waits for answers in one task, in seconds. The
+    # task clock pauses while it waits. A persona can set its own value.
+    ask_wait_s: 7200
+    # The limits of one worker. disk is the sizeLimit of each emptyDir and
+    # the ephemeral-storage limit of the worker pod.
+    worker:
+      memory: 2g
+      cpus: 2.0
+      disk: 4Gi
+    platforms:
+      github.com:
+        kind: github
+        token_env: GITHUB_TOKEN
+    repos: []
+    people: {}
+
+env:
+  DEVELOPER_DATA_DIR: /data
+  DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
+  WORKER_RUNTIME: kubernetes
+  # The worker image. Use the same version as this chart.
+  WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:0.1.3
+  # The name a worker uses to reach the manager: the Service name, which is
+  # the release name. Set it to the name of your release.
+  MANAGER_HOST: developer
+  # An image pull Secret for the worker pods, for a private registry.
+  # WORKER_IMAGE_PULL_SECRET: ghcr-pull
+  # Where a task report goes. Set the address of the joshua-ai channels
+  # Service, and put JOSHUA_TOKEN_DEVELOPER in the existingSecret.
+  # CHANNELS_URL: http://<joshua-ai channels service>:8000
+  # A CA bundle for a git host with a private certificate authority. Mount
+  # the file, and give its path. The manager also gives it to each worker.
+  # GIT_CA_BUNDLE: /etc/ssl/certs/git-host-ca.pem
+  # The seconds a worker has from its start to its first brief call (the
+  # image pull). A worker that takes longer fails its task.
+  # WORKER_START_GRACE_S: "600"
+
+# The namespace of the worker Jobs: the namespace of the manager pod.
+extraEnv:
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
+
+# The worker API (8001) and the git host tunnel (8002), for the workers.
+service:
+  extraPorts:
+    - name: worker-api
+      port: 8001
+      targetPort: 8001
+    - name: git-proxy
+      port: 8002
+      targetPort: 8002
+
+# A Role that lets the manager start and delete worker Jobs, and read their
+# pods and logs, in this namespace only.
+rbac:
+  enabled: true
+
+# A worker can connect to the manager on 8001 and 8002, and to the cluster
+# DNS pods (networkPolicy.dns in the chart values). For
+# `network: on` in developer.yaml, set workersInternetEgress to true, and set
+# clusterCidrs to the pod and Service CIDRs of your cluster. The CNI must
+# enforce NetworkPolicy.
+networkPolicy:
+  enabled: true
+  workersInternetEgress: false
+  clusterCidrs: []
+  # The namespaces of the joshua-ai gateway. Empty means every namespace.
+  gatewayNamespaces: []
+
+# The manager is small. The workers carry the load, with the `worker` limits
+# in developer.yaml.
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+podSecurityContext:
+  fsGroup: 1000

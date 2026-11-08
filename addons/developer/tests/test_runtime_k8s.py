@@ -1,0 +1,533 @@
+"""The Kubernetes runtime, with fake API clients: no cluster runs."""
+
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from conftest import make_settings
+from joshua_developer import runtime_k8s, server
+from joshua_developer.runtime import Report, TaskClock
+from joshua_developer.runtime_k8s import (
+    KubernetesRuntime,
+    cpu_quantity,
+    job_manifest,
+    load_clients,
+    memory_quantity,
+    pod_namespace,
+)
+from joshua_developer.store import utcnow
+from kubernetes.client.exceptions import ApiException
+
+TASK = {
+    "task_id": "12345678-aaaa-bbbb-cccc-dddddddddddd",
+    "persona": "sonnet",
+    "worker_token": "tok-value",
+}
+LABELS = {
+    "app.kubernetes.io/name": "joshua-addon-developer-worker",
+    "joshua-addon": "developer",
+    "task-id": TASK["task_id"],
+}
+SELECTOR = "joshua-addon=developer,app.kubernetes.io/name=joshua-addon-developer-worker"
+
+
+def running() -> Any:
+    return SimpleNamespace(conditions=None, succeeded=None, failed=None)
+
+
+def condition(kind: str, reason: str = "", status: str = "True") -> Any:
+    return SimpleNamespace(conditions=[SimpleNamespace(type=kind, status=status, reason=reason)])
+
+
+def job(name: str, status: Any, task_id: str | None = None) -> Any:
+    labels = {"task-id": task_id} if task_id else None
+    return SimpleNamespace(metadata=SimpleNamespace(name=name, labels=labels), status=status)
+
+
+class FakeBatch:
+    def __init__(self) -> None:
+        self.created: list[dict] = []
+        self.deleted: list[tuple[str, str, str]] = []
+        self.listed: list[dict] = []
+        self.jobs: list[Any] = []
+        # The status each read returns, in order. The last one repeats.
+        self.statuses: list[Any] = [running()]
+        self.read_error: ApiException | None = None
+        self.delete_error: ApiException | None = None
+        # The fake core API: a delete makes its pods go, as the garbage collector does.
+        self.core: Any = None
+
+    def create_namespaced_job(self, namespace: str, body: dict) -> None:
+        self.created.append({"namespace": namespace, "body": body})
+
+    def read_namespaced_job(self, name: str, namespace: str) -> Any:
+        if self.read_error is not None:
+            raise self.read_error
+        status = self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
+        return job(name, status)
+
+    def list_namespaced_job(self, namespace: str, label_selector: str) -> Any:
+        self.listed.append({"namespace": namespace, "label_selector": label_selector})
+        return SimpleNamespace(items=list(self.jobs))
+
+    def delete_namespaced_job(self, name: str, namespace: str, propagation_policy: str) -> None:
+        if self.delete_error is not None:
+            raise self.delete_error
+        self.deleted.append((name, namespace, propagation_policy))
+        if self.core is not None and not self.core.pods_stay:
+            self.core.pods = []
+
+
+class FakeCore:
+    def __init__(self) -> None:
+        self.pods = [SimpleNamespace(metadata=SimpleNamespace(name="dev-worker-12345678-abcde"))]
+        self.log = "x" * 5000 + "the end"
+        self.log_error: ApiException | None = None
+        self.log_calls: list[dict] = []
+        self.pod_selectors: list[str] = []
+        self.pods_stay = False
+        self.list_error: ApiException | None = None
+
+    def list_namespaced_pod(self, namespace: str, label_selector: str) -> Any:
+        self.pod_selectors.append(label_selector)
+        if self.list_error is not None:
+            raise self.list_error
+        return SimpleNamespace(items=list(self.pods))
+
+    def read_namespaced_pod_log(self, **kwargs: Any) -> str:
+        self.log_calls.append(kwargs)
+        if self.log_error is not None:
+            raise self.log_error
+        return self.log
+
+
+class Recorder:
+    def __init__(self) -> None:
+        self.running: list[str] = []
+        self.reports: list[tuple[str, Report]] = []
+        self.active = True
+        # The worker read its brief when the recorder was made.
+        self.clock: TaskClock | None = TaskClock(started_at=utcnow())
+        self.active_ids: set[str] | None = None
+
+    def is_active(self, task_id: str, worker_token: str | None = None) -> bool:
+        if self.active_ids is not None:
+            return task_id in self.active_ids
+        return self.active
+
+    def mark_running(self, task_id: str) -> None:
+        self.running.append(task_id)
+
+    def task_clock(self, task_id: str) -> TaskClock | None:
+        return self.clock
+
+    async def record_report(self, task_id: str, report: Report) -> dict:
+        self.reports.append((task_id, report))
+        self.active = False
+        return {}
+
+
+def settings_for(tmp_path, **overrides) -> Any:
+    config = overrides.pop("config", {})
+    return make_settings(
+        tmp_path,
+        worker_image="example/worker:1",
+        worker_runtime="kubernetes",
+        manager_host="developer",
+        config=config,
+        **overrides,
+    )
+
+
+def make_runtime(
+    tmp_path, recorder=None, **kwargs
+) -> tuple[KubernetesRuntime, FakeBatch, FakeCore]:
+    batch, core = FakeBatch(), FakeCore()
+    batch.core = core
+    settings = kwargs.pop("settings", None) or settings_for(tmp_path)
+    runtime = KubernetesRuntime(
+        recorder or Recorder(),
+        settings,
+        batch=batch,
+        core=core,
+        namespace="joshua",
+        poll_s=kwargs.pop("poll_s", 0.01),
+        **kwargs,
+    )
+    return runtime, batch, core
+
+
+async def wait_for(check, seconds: float = 2.0) -> None:
+    for _ in range(int(seconds / 0.01)):
+        if check():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("the condition did not come true")
+
+
+def test_the_job_manifest_has_every_security_field(tmp_path) -> None:
+    settings = settings_for(tmp_path, config={"worker": {"memory": "1g", "cpus": 1.5}})
+    manifest = job_manifest(settings, TASK, "joshua", 1320)
+    assert manifest["apiVersion"] == "batch/v1" and manifest["kind"] == "Job"
+    assert manifest["metadata"] == {
+        "name": "dev-worker-12345678",
+        "namespace": "joshua",
+        "labels": LABELS,
+    }
+    spec = manifest["spec"]
+    assert spec["backoffLimit"] == 0
+    assert spec["activeDeadlineSeconds"] == 1320
+    assert spec["ttlSecondsAfterFinished"] == 3600
+    assert spec["template"]["metadata"]["labels"] == LABELS
+    pod = spec["template"]["spec"]
+    assert pod["restartPolicy"] == "Never"
+    assert pod["automountServiceAccountToken"] is False
+    assert pod["enableServiceLinks"] is False
+    assert pod["securityContext"] == {
+        "runAsNonRoot": True,
+        "runAsUser": 1000,
+        "fsGroup": 1000,
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    assert "imagePullSecrets" not in pod
+    assert "serviceAccountName" not in pod
+    [container] = pod["containers"]
+    assert container["image"] == "example/worker:1"
+    assert container["imagePullPolicy"] == "IfNotPresent"
+    assert container["securityContext"] == {
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+        "readOnlyRootFilesystem": True,
+    }
+    assert container["env"] == [
+        {"name": "TASK_ID", "value": TASK["task_id"]},
+        {"name": "MANAGER_URL", "value": "http://developer:8001"},
+        {"name": "GIT_PROXY_URL", "value": "http://task:tok-value@developer:8002"},
+        {"name": "TASK_TOKEN", "value": "tok-value"},
+    ]
+    assert "envFrom" not in container
+    assert container["resources"] == {
+        "requests": {"memory": "1Gi", "cpu": "1500m", "ephemeral-storage": "4Gi"},
+        "limits": {"memory": "1Gi", "cpu": "1500m", "ephemeral-storage": "4Gi"},
+    }
+    assert container["volumeMounts"] == [
+        {"name": "work", "mountPath": "/work"},
+        {"name": "tmp", "mountPath": "/tmp"},
+    ]
+    assert pod["volumes"] == [
+        {"name": "work", "emptyDir": {"sizeLimit": "4Gi"}},
+        {"name": "tmp", "emptyDir": {"sizeLimit": "4Gi"}},
+    ]
+
+
+def test_the_disk_limit_comes_from_worker_disk(tmp_path) -> None:
+    settings = settings_for(tmp_path, config={"worker": {"disk": "10Gi"}})
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    assert pod["containers"][0]["resources"]["limits"]["ephemeral-storage"] == "10Gi"
+    assert [v["emptyDir"]["sizeLimit"] for v in pod["volumes"]] == ["10Gi", "10Gi"]
+
+
+def test_the_pull_secret_goes_on_the_pod_when_it_is_set(tmp_path) -> None:
+    settings = settings_for(tmp_path, worker_image_pull_secret="ghcr-pull")
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    assert pod["imagePullSecrets"] == [{"name": "ghcr-pull"}]
+
+
+@pytest.mark.parametrize(
+    ("memory", "quantity"),
+    [("2g", "2Gi"), ("512m", "512Mi"), ("1024k", "1024Ki"), ("100b", "100"), ("4096", "4096")],
+)
+def test_memory_quantity(memory: str, quantity: str) -> None:
+    assert memory_quantity(memory) == quantity
+
+
+def test_cpu_quantity() -> None:
+    assert cpu_quantity(2.0) == "2000m"
+    assert cpu_quantity(0.25) == "250m"
+
+
+def test_the_namespace_comes_from_pod_namespace_then_the_service_account(tmp_path) -> None:
+    file = tmp_path / "namespace"
+    assert pod_namespace(settings_for(tmp_path, pod_namespace="joshua"), file) == "joshua"
+    assert pod_namespace(settings_for(tmp_path), file) == "default"
+    file.write_text("home\n")
+    assert pod_namespace(settings_for(tmp_path), file) == "home"
+
+
+async def test_start_creates_the_job_and_returns_its_name(tmp_path) -> None:
+    recorder = Recorder()
+    runtime, batch, _ = make_runtime(tmp_path, recorder)
+    name = await runtime.start(TASK)
+    assert name == "dev-worker-12345678"
+    [created] = batch.created
+    assert created["namespace"] == "joshua"
+    assert created["body"]["metadata"]["name"] == name
+    # The hard cap: the sonnet timeout_s 1200, ask_wait_s 7200, the grace time
+    # 120 s, and WORKER_START_GRACE_S 600, because the Job clock counts the pull.
+    assert created["body"]["spec"]["activeDeadlineSeconds"] == 1200 + 7200 + 120 + 600
+    # The task starts running when the worker reads its brief, not here.
+    assert recorder.running == []
+    for supervisor in list(runtime._supervisors):
+        supervisor.cancel()
+
+
+async def test_count_active_counts_the_jobs_that_have_not_ended(tmp_path) -> None:
+    runtime, batch, _ = make_runtime(tmp_path)
+    batch.jobs = [
+        job("a", running()),
+        job("b", condition("Complete")),
+        job("c", condition("Failed", "BackoffLimitExceeded")),
+        job("d", condition("Failed", status="False")),
+        job("e", SimpleNamespace(conditions=None, succeeded=1, failed=None)),
+        job("f", SimpleNamespace(conditions=None, succeeded=None, failed=1)),
+    ]
+    assert runtime.count_active() == 2
+    assert batch.listed == [{"namespace": "joshua", "label_selector": SELECTOR}]
+
+
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [
+        (condition("Failed", "BackoffLimitExceeded"), "the worker failed and sent no report"),
+        (condition("Complete"), "the worker exited with code 0 and sent no report"),
+    ],
+)
+async def test_an_end_without_a_report_records_failed_with_the_log_tail(
+    tmp_path, status: Any, error: str
+) -> None:
+    recorder = Recorder()
+    runtime, batch, core = make_runtime(tmp_path, recorder)
+    batch.statuses = [running(), status]
+    await runtime.start(TASK)
+    await wait_for(lambda: batch.deleted)
+    [(task_id, report)] = recorder.reports
+    assert task_id == TASK["task_id"]
+    assert report.status == "failed"
+    assert report.error == error
+    assert len(report.log) == 4000 and report.log.endswith("the end")
+    assert "tok-value" not in (report.error or "")
+    assert core.pod_selectors == ["job-name=dev-worker-12345678"]
+    assert core.log_calls == [
+        {"name": "dev-worker-12345678-abcde", "namespace": "joshua", "tail_lines": 1000}
+    ]
+    assert batch.deleted == [("dev-worker-12345678", "joshua", "Background")]
+
+
+async def test_an_end_after_a_report_records_nothing_and_deletes_the_job(tmp_path) -> None:
+    recorder = Recorder()
+    recorder.active = False
+    runtime, batch, core = make_runtime(tmp_path, recorder)
+    batch.statuses = [condition("Complete")]
+    await runtime.start(TASK)
+    await wait_for(lambda: batch.deleted)
+    assert recorder.reports == []
+    assert core.log_calls == []
+
+
+async def test_a_worker_past_its_timeout_is_deleted_and_timed_out(tmp_path) -> None:
+    recorder = Recorder()
+    runtime, batch, core = make_runtime(tmp_path, recorder, grace_s=-20_000)
+    at_report: list[tuple[int, int]] = []
+    record = recorder.record_report
+
+    async def check_order(task_id: str, report: Report) -> dict:
+        at_report.append((len(batch.deleted), len(core.pods)))
+        return await record(task_id, report)
+
+    recorder.record_report = check_order  # type: ignore[method-assign]
+    await runtime.start({**TASK, "persona": "retired"})
+    await wait_for(lambda: recorder.reports)
+    [(_, report)] = recorder.reports
+    assert report.status == "timed_out"
+    assert report.log.endswith("the end")
+    # The Job was deleted, and its pod gone, before timed_out was recorded.
+    assert at_report == [(1, 0)]
+    await wait_for(lambda: len(batch.deleted) == 2)
+    assert batch.deleted[0] == ("dev-worker-12345678", "joshua", "Background")
+    # The Job deadline is never below one second.
+    assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 1
+
+
+async def test_a_worker_that_never_reads_its_brief_fails_after_the_start_grace(tmp_path) -> None:
+    from datetime import timedelta
+
+    t0 = utcnow()
+    now = [t0]
+    recorder = Recorder()
+    recorder.clock = TaskClock(started_at=None)
+    runtime, batch, core = make_runtime(tmp_path, recorder, now=lambda: now[0])
+    await runtime.start(TASK)
+    now[0] = t0 + timedelta(seconds=599)
+    await asyncio.sleep(0.05)
+    assert batch.deleted == []
+    now[0] = t0 + timedelta(seconds=600)
+    await wait_for(lambda: recorder.reports)
+    [(_, report)] = recorder.reports
+    assert report.status == "failed"
+    assert "did not start in 600 seconds" in (report.error or "")
+    assert report.log.endswith("the end")
+    assert batch.deleted[0][0] == "dev-worker-12345678"
+
+
+async def test_the_start_grace_comes_from_the_settings(tmp_path) -> None:
+    settings = settings_for(tmp_path, worker_start_grace_s=30)
+    runtime, batch, _ = make_runtime(tmp_path, settings=settings)
+    await runtime.start(TASK)
+    assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 1200 + 7200 + 120 + 30
+    for supervisor in list(runtime._supervisors):
+        supervisor.cancel()
+
+
+def test_a_stop_gives_up_when_the_pod_stays(tmp_path, caplog) -> None:
+    runtime, batch, core = make_runtime(tmp_path, kill_wait_s=0.02)
+    core.pods_stay = True
+    runtime._stop("dev-worker-12345678")
+    assert batch.deleted == [("dev-worker-12345678", "joshua", "Background")]
+    assert "the pod of a stopped worker is still there" in caplog.text
+    core.list_error = ApiException(status=403)
+    runtime._stop("dev-worker-12345678")
+    assert len(batch.deleted) == 2
+
+
+async def test_the_job_deadline_of_kubernetes_is_timed_out(tmp_path) -> None:
+    recorder = Recorder()
+    runtime, batch, _ = make_runtime(tmp_path, recorder)
+    batch.statuses = [condition("Failed", "DeadlineExceeded")]
+    await runtime.start(TASK)
+    await wait_for(lambda: batch.deleted)
+    [(_, report)] = recorder.reports
+    assert report.status == "timed_out"
+
+
+async def test_a_job_that_is_gone_and_a_broken_log(tmp_path) -> None:
+    recorder = Recorder()
+    runtime, batch, core = make_runtime(tmp_path, recorder)
+    batch.read_error = ApiException(status=404)
+    core.log_error = ApiException(status=403)
+    await runtime.start(TASK)
+    await wait_for(lambda: batch.deleted)
+    [(_, report)] = recorder.reports
+    assert report.status == "failed"
+    assert report.error == "the worker job was deleted before the worker sent a report"
+    assert report.log == ""
+
+
+async def test_no_pod_gives_an_empty_log(tmp_path) -> None:
+    recorder = Recorder()
+    runtime, batch, core = make_runtime(tmp_path, recorder)
+    core.pods = []
+    batch.statuses = [condition("Failed", "BackoffLimitExceeded")]
+    await runtime.start(TASK)
+    await wait_for(lambda: batch.deleted)
+    [(_, report)] = recorder.reports
+    assert report.log == ""
+
+
+async def test_a_supervisor_error_is_logged_and_the_job_deleted(tmp_path, caplog) -> None:
+    runtime, batch, _ = make_runtime(tmp_path)
+    batch.read_error = ApiException(status=500)
+    await runtime.start(TASK)
+    await wait_for(lambda: batch.deleted)
+    assert "the supervisor of a worker failed" in caplog.text
+
+
+def test_orphans_are_deleted_and_an_active_task_keeps_its_job(tmp_path) -> None:
+    recorder = Recorder()
+    recorder.active_ids = {"live-task"}
+    runtime, batch, _ = make_runtime(tmp_path, recorder)
+    batch.jobs = [
+        job("old", condition("Complete"), task_id="old-task"),
+        job("live", running(), task_id="live-task"),
+        job("unlabelled", running()),
+    ]
+    assert runtime.remove_orphans() == 2
+    assert [name for name, _, _ in batch.deleted] == ["old", "unlabelled"]
+    assert batch.listed[-1] == {"namespace": "joshua", "label_selector": SELECTOR}
+    batch.jobs = []
+    assert runtime.remove_orphans() == 0
+
+
+def test_a_refused_delete_is_not_counted(tmp_path, caplog) -> None:
+    recorder = Recorder()
+    recorder.active = False
+    runtime, batch, _ = make_runtime(tmp_path, recorder)
+    batch.jobs = [job("stuck", running(), task_id="t")]
+    batch.delete_error = ApiException(status=403)
+    assert runtime.remove_orphans() == 0
+    assert "could not delete a worker job" in caplog.text
+    batch.delete_error = ApiException(status=404)
+    assert runtime.remove_orphans() == 1
+
+
+def test_the_runtime_needs_an_image(tmp_path) -> None:
+    with pytest.raises(ValueError, match="WORKER_IMAGE"):
+        KubernetesRuntime(Recorder(), make_settings(tmp_path), batch=FakeBatch(), core=FakeCore())
+
+
+def test_load_clients_falls_back_to_the_kubeconfig(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def no_cluster() -> None:
+        calls.append("incluster")
+        raise runtime_k8s.k8s_config.ConfigException("not in a cluster")
+
+    monkeypatch.setattr(runtime_k8s.k8s_config, "load_incluster_config", no_cluster)
+    monkeypatch.setattr(
+        runtime_k8s.k8s_config, "load_kube_config", lambda: calls.append("kubeconfig")
+    )
+    monkeypatch.setattr(runtime_k8s.k8s_client, "BatchV1Api", lambda: "batch")
+    monkeypatch.setattr(runtime_k8s.k8s_client, "CoreV1Api", lambda: "core")
+    assert load_clients() == ("batch", "core")
+    assert calls == ["incluster", "kubeconfig"]
+
+
+def test_server_start_builds_the_kubernetes_runtime(tmp_path, monkeypatch) -> None:
+    batch, core = FakeBatch(), FakeCore()
+    monkeypatch.setattr(runtime_k8s, "load_clients", lambda: (batch, core))
+    manager = server.start(settings_for(tmp_path, pod_namespace="joshua"))
+    assert isinstance(manager.runtime, KubernetesRuntime)
+    assert manager.runtime.namespace == "joshua"
+    assert batch.listed == [{"namespace": "joshua", "label_selector": SELECTOR}]
+
+
+async def test_the_job_hard_cap_takes_the_ask_wait_of_the_persona(tmp_path) -> None:
+    settings = settings_for(
+        tmp_path,
+        config={
+            "ask_wait_s": 1800,
+            "personas": {
+                "sonnet": {"model": "m", "max_turns": 5, "timeout_s": 600, "ask_wait_s": 60}
+            },
+        },
+    )
+    runtime, batch, _ = make_runtime(tmp_path, settings=settings)
+    await runtime.start(TASK)
+    await runtime.start({**TASK, "task_id": "abcdefgh-1", "persona": "opus"})
+    assert batch.created[0]["body"]["spec"]["activeDeadlineSeconds"] == 600 + 60 + 120 + 600
+    assert batch.created[1]["body"]["spec"]["activeDeadlineSeconds"] == 2400 + 1800 + 120 + 600
+    for supervisor in list(runtime._supervisors):
+        supervisor.cancel()
+
+
+async def test_the_supervisor_waits_while_a_question_is_open(tmp_path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    t0 = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+    now = [t0 + timedelta(seconds=3000)]
+    recorder = Recorder()
+    recorder.clock = TaskClock(started_at=t0, asked_at=t0 + timedelta(seconds=600))
+    runtime, batch, _ = make_runtime(tmp_path, recorder, now=lambda: now[0])
+    await runtime.start(TASK)
+    await asyncio.sleep(0.05)
+    assert batch.deleted == []
+    # The worker stops waiting at 3000 s: 2400 s paused, the deadline is 3720 s.
+    recorder.clock = TaskClock(started_at=t0, paused_s=2400)
+    await asyncio.sleep(0.05)
+    assert batch.deleted == []
+    now[0] = t0 + timedelta(seconds=3720)
+    await wait_for(lambda: batch.deleted)
+    [(_, report)] = recorder.reports
+    assert report.status == "timed_out"

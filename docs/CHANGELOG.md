@@ -8,6 +8,98 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `tasks`, an addon for household task lists: projects, an ordered task
+  list, optional groups, notes, and done or not done. Joshua uses 14 MCP
+  tools, and people use a web UI on the same port that updates live.
+  SQLite by default, or Postgres with `DATABASE_URL`.
+  `addons/tasks/README.md` has the tools and the settings.
+- `tasks`: goals and phases. A project can have a goal, a target date, and a
+  status (`active`, `paused`, `done`, `closed`). Groups are the phases of a
+  project and can have a target date; the ungrouped tasks are the backlog
+  and come after the phases. A task can have a size (`XS` to `XL`), a due
+  date, and an assignee. `list_projects` returns the percent done, a health
+  signal, and the next task. Five new tools: `set_project_goal`,
+  `complete_project` (refuses while a task is open), `set_project_status`,
+  `next_steps`, and `set_group_target_date`. `list_tasks` returns `backlog`
+  in place of `ungrouped`. The new columns are added to an existing
+  database on start; nothing is dropped.
+- The chart sets `strategy: Recreate` for a Deployment that mounts the claim
+  the chart makes. That claim is ReadWriteOnce, and a rolling update waited
+  forever on a Multi-Attach error. The chart also takes
+  `deploymentAnnotations` and `podAnnotations`, and adds a `checksum/config`
+  annotation when `configFile` is on, so a changed config file restarts the
+  pod.
+- `developer`, an addon that gives a coding task to a worker.
+  `addons/developer/README.md` has the full detail and the install steps.
+
+  **What it does.** Joshua calls `develop` or `rework` with a repository and
+  a brief. The manager, image `joshua-addons-developer`, starts one worker
+  for each task, image `joshua-addons-developer-worker`: a container through
+  a Docker socket proxy on compose, or a Job on Kubernetes. The worker
+  clones the repository, runs one Claude Code session, pushes one branch,
+  and reports. The manager scans the diff of the worker's commits for
+  credentials, and then opens the pull request on GitHub or GitLab. A plain
+  git host ends at the branch. On a GitHub diff of more than 300 files, the
+  scan is `partial`.
+
+  **Security.** The worker holds no Joshua secret and no Claude token. The
+  Claude forwarder on the manager sends on only the API paths that the
+  Claude CLI uses. With `network: off`, the default, a worker connects to
+  the manager only, so it cannot install dependencies. With `network: on`
+  on compose, a worker joins the default bridge, so it can also reach the
+  host LAN and the ports that the host publishes. A scan hit fails the task,
+  and deletes the branch only when the task made it. A task never works on
+  its base branch, `main`, or `master`. The branch and the pull request come
+  from the manager's data, never from the worker's report. The worker's text
+  in a chat event is in a fenced block. The worker API refuses a body over
+  2 MiB. A worker has a read-only root file system and a process limit on
+  Docker, and a disk limit (`worker.disk`) on Kubernetes. The worker gets
+  the `GIT_CA_BUNDLE` of the manager for git. The compose file pins the
+  socket proxy to `tecnativa/docker-socket-proxy:0.3.0`. A CI job runs the
+  compose file on a real Docker daemon with a scripted worker session
+  (`WORKER_FAKE_SESSION`, a test aid), and calls no Claude API.
+
+  **Questions and the clock.** A worker asks with `ask`. The question
+  arrives in the person's chat as an event, and Joshua answers with
+  `answer`. A worker can ask more than one question. A task is `dispatched`
+  until its worker reads its brief, and its clock starts then, so an image
+  pull is not on it. A worker that does not read its brief in
+  `WORKER_START_GRACE_S` seconds (600 by default) fails its task. The clock
+  pauses while a question waits, for up to `ask_wait_s` seconds in total
+  for the task (2 hours by default, and a persona can set its own). An
+  `answer` that comes after the worker stopped waiting gets `not_waiting`.
+  A task ends `blocked` only when the model sets `blocked`, or when the
+  clock runs out while a question is open. An `answer` to a task that
+  stopped `blocked` or `timed_out` after a push starts a new worker on the
+  same branch. On Docker and on Kubernetes, the hard cap on a worker is
+  `timeout_s + ask_wait_s + 120` seconds after it reads its brief.
+
+  **Capacity.** Each `dispatched` or `running` task holds a `max_workers`
+  slot, a waiting one too. A `develop` and a `rework` on the same branch
+  never run together.
+
+  **Logs.** The access line of a `GET /healthz` shows at `DEBUG` only. A log
+  record above `DEBUG` names a chat destination by a hash prefix
+  (`destination_ref`), never by its text.
+
+  **To run it.** Mint `JOSHUA_TOKEN_DEVELOPER`, and give it to the manager
+  and to channels. On compose, add it to the `x-fleet-tokens` block of the
+  joshua-ai compose file. Add `developer` to
+  `channels.webhooks.allowed_callers`, and add the `developer` entry, with
+  one `identities` entry for each person, to `joshua.yaml`. On Kubernetes,
+  restart the manager pod after a change to its Secret, or run a Reloader
+  with the chart value `deploymentAnnotations`.
+
+  **Not verified yet.** The Docker runtime against a real Docker daemon, the
+  arm64 worker image, and `network: on`.
+- The chart gains `extraEnv` (raw `env` entries, such as a `fieldRef`),
+  `serviceAccount`, `rbac` (a ServiceAccount, a Role, and a RoleBinding in
+  the release namespace), and `networkPolicy` (egress limits for worker pods
+  and ingress limits for the addon). All are off by default. A worker pod
+  can use DNS only on the cluster resolver (`networkPolicy.dns`). With
+  `workersInternetEgress`, it cannot connect to link-local (cloud metadata)
+  or carrier-grade NAT addresses.
+
 - A push to any branch, `main` included, builds the image of every addon for
   amd64 and publishes it tagged with the commit SHA and `branch-<name>`, so
   `branch-main` always names the newest commit on `main`. To test a branch
@@ -77,13 +169,59 @@ releases, with the images and the packaged chart, are at
   shelf is right with no sync.
 - A record added, removed, lent or corrected is on the browse page at once.
 
+- `pantry` gains `merge_items(source, target)`. It combines two tracked
+  items that are the same food, for example a duplicate from a receipt. The
+  purchases, consumption events, products, and aliases of the source move to
+  the target. The source name becomes an alias of the target.
+- `add_alias` now tells the agent to use `merge_items` when the alias is
+  already a tracked item.
+- `pantry`: `record_purchase` returns `possible_matches` for each item that
+  it creates. These are up to three tracked items that share a significant
+  word with the new name. Filler words such as "organic" and "fresh", and
+  sizes, do not count. The automatic match does not change, so "almond
+  milk" stays a new item and does not merge into "milk". The tool text tells
+  the agent to merge each duplicate with `merge_items`, or to keep the new
+  item and tell the person.
+- `pantry` gains `check_items(names)`. It answers "do we have X?" For each
+  name, it lists every tracked item that matches: the same name, an alias,
+  or a name that holds every word of the query. Each match has its status
+  and its last purchase date. One verdict for each name is `in_stock` when
+  one match is in stock. Otherwise the verdict is the best status of the
+  matches, or `no_match`. The agent uses it in place of `get_inventory` for
+  a question about one food.
+
 ### Changed
 
+- `scripts/check_test_policy.py` and the CI test job change a dash in an
+  addon directory name to an underscore in the package name, so an addon
+  such as `developer-worker` gets its test policy and its coverage.
+  `scripts/check_chart_version.py` also checks that a pinned `WORKER_IMAGE`
+  tag in an addon's `values.yaml` or `docker-compose.yml`, or in a chart
+  `ci` values file, is the chart version, and that each `.env.example`
+  names the chart version. `docs/releasing.md` lists every file that a
+  version change touches, and the release steps.
 - The `vinyl` database gains `master_id`, `sort_artist` and `traits` on the
   albums table, and an `overrides` table. A database from an earlier version
   gains the columns when it is opened. `master_id` is what lets the addon say
   the house owns the same album in another pressing, and it fills at the next
   sync.
+
+### Fixed
+
+- `pantry`: a purchase on the same day as a consumption is in stock. A
+  receipt with a bare date records the purchase at 00:00 UTC, and
+  `consume_items` records the current time. The status now compares the
+  dates for such a purchase, so a purchase on the date of the consumption,
+  or later, wins. A consumption on a later date still makes the item out of
+  stock. `get_item_history` also reads the latest consumption, so its status
+  agrees with `get_inventory` and the web page.
+- `pantry`: a merge keeps the data of two purchases on the same date. The
+  purchase of the target takes each blank field (cost, store, SKU, UPC,
+  quantity) from the purchase of the source. When the two purchases hold
+  different values for one field, the target keeps its value. `merge_items`
+  reports the other value in `purchase_conflicts`.
+- `pantry`: a merge moves the products of the source to the target. Before,
+  the merge deleted them. These two fixes apply to the web page too.
 
 ## 0.1.3 - 2026-09-11
 

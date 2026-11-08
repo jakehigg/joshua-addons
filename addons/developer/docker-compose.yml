@@ -1,0 +1,122 @@
+# Run the `developer` addon (joshua-developer) beside joshua-ai on one Docker
+# host. `make up ADDON=developer` starts it. The image comes from the GitHub
+# container registry, so nothing is built here: set JOSHUA_ADDONS_VERSION in
+# `.env` to take another release.
+#
+# Secrets come only from `.env`. No secret is written in this file.
+#
+# The worker image: WORKER_IMAGE in `.env`, else the worker of
+# JOSHUA_ADDONS_VERSION. `make up-dev ADDON=developer` builds both images.
+#
+# Config: developer.yaml sits next to this file and is mounted read-only.
+# Copy the example in README.md to start.
+#
+# Data: developer.db lives in the `developer-data` volume.
+#
+# Networks:
+#   joshua             the external network joshua-ai's compose file creates.
+#                      The gateway reaches the addon at http://developer:8000/mcp.
+#                      The manager also reaches the Claude API and the git hosts
+#                      through it.
+#   developer_workers  internal. The workers and the manager only. A worker
+#                      reaches the manager at developer:8001 (the worker API)
+#                      and developer:8002 (the git host tunnel), and nothing
+#                      else, unless `network: on` in developer.yaml. With
+#                      `network: on`, a worker also joins PUBLIC_NETWORK, the
+#                      default bridge, so it can reach the internet, the host
+#                      LAN, and every port the host publishes.
+#   developer_control  internal. The manager and the Docker socket proxy only.
+# The addon publishes no port.
+services:
+  developer:
+    image: ghcr.io/jakehigg/joshua-addons-developer:${JOSHUA_ADDONS_VERSION:-0.1.3}
+    restart: unless-stopped
+    # `.env` also gives the manager each git token that a token_env in
+    # developer.yaml names, GIT_CA_BUNDLE, and WORKER_START_GRACE_S. The
+    # token names change with the config, so the list below cannot hold them.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DEVELOPER_TOKENS: ${DEVELOPER_TOKENS:-}
+      ADDON_TOKEN: ${ADDON_TOKEN:-}
+      DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
+      DEVELOPER_DATA_DIR: /data
+      CHANNELS_URL: ${CHANNELS_URL:-}
+      JOSHUA_TOKEN_DEVELOPER: ${JOSHUA_TOKEN_DEVELOPER:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      WORKER_RUNTIME: ${WORKER_RUNTIME:-docker}
+      WORKER_IMAGE: ${WORKER_IMAGE:-ghcr.io/jakehigg/joshua-addons-developer-worker:${JOSHUA_ADDONS_VERSION:-0.1.3}}
+      MANAGER_HOST: developer
+      WORKER_NETWORK: developer_workers
+      PUBLIC_NETWORK: ${PUBLIC_NETWORK:-bridge}
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - developer-data:/data
+      - ./developer.yaml:/etc/joshua-addon/developer.yaml:ro
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      - docker-socket-proxy
+    networks:
+      - joshua
+      - developer_workers
+      - developer_control
+
+  # The manager never gets the Docker socket. It calls this proxy, which
+  # passes on only the API sections set to 1 below.
+  #
+  # Checked in the haproxy.cfg and the Dockerfile of the 0.3.0 tag:
+  #   - POST=1 lets every method through that is not GET (POST, PUT, DELETE).
+  #     With POST=0 the proxy refuses them all.
+  #   - CONTAINERS=1 opens /containers/*: create, start, kill, wait, logs,
+  #     inspect, list, and DELETE (remove). ALLOW_START, ALLOW_STOP, and
+  #     ALLOW_RESTARTS are not needed with CONTAINERS=1 and POST=1.
+  #   - NETWORKS=1 opens /networks/*, for the connect of `network: on`.
+  #   - IMAGES=1 opens /images/*, for the pull of the worker image.
+  #   - VERSION=1 and PING=1 are on by default. The SDK asks /version for the
+  #     API version.
+  #   - EXEC stays 0, so /exec/{id}/start is refused: nothing can run a
+  #     command in a container through the proxy.
+  # The proxy does not read request bodies. A caller that reaches it can
+  # create any container. Only the manager is on developer_control.
+  #
+  # The proxy holds the Docker socket, so its image is pinned by digest. A
+  # digest pin stops a moved tag from changing the code that holds the socket.
+  # The digest is the multi-arch index of tag 0.3.0 (2026-10-04). To move to
+  # a new version, get the new digest with:
+  #   docker buildx imagetools inspect tecnativa/docker-socket-proxy:<tag>
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      IMAGES: 1
+      NETWORKS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - developer_control
+
+volumes:
+  developer-data:
+
+networks:
+  joshua:
+    external: true
+    name: ${JOSHUA_NETWORK:-joshua-ai_default}
+  # The names are fixed, so WORKER_NETWORK finds the network without the
+  # compose project prefix.
+  developer_workers:
+    name: developer_workers
+    internal: true
+  developer_control:
+    name: developer_control
+    internal: true

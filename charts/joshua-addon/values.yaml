@@ -4,6 +4,15 @@
 
 replicaCount: 1 # pods for the addon's Deployment
 
+# The Deployment update strategy. Empty means Recreate when the chart makes the
+# claim (it is ReadWriteOnce, and a rolling update cannot attach it twice) and
+# the Kubernetes default otherwise. Set Recreate or RollingUpdate to choose.
+strategy: ""
+
+deploymentAnnotations: {} # annotations on the Deployment, such as reloader.stakater.com/auto: "true"
+
+podAnnotations: {} # annotations on the pod template; configFile adds checksum/config on its own
+
 image:
   repository: "" # required: the addon's image, such as ghcr.io/jakehigg/joshua-addons-hello
   tag: "" # empty means this chart's appVersion, the version the addon shipped with
@@ -12,6 +21,8 @@ image:
 port: 8000 # the port the addon serves MCP and /healthz on
 
 env: {} # plain environment variables, as a map of NAME: value
+
+extraEnv: [] # raw env entries, such as a valueFrom fieldRef, rendered as given after env
 
 envFrom: [] # raw envFrom entries (configMapRef, secretRef), rendered as given
 
@@ -25,6 +36,10 @@ probes:
   periodSeconds: 10 # time between probes
 
 resources: {} # CPU and memory requests and limits for the addon container
+
+serviceAccount:
+  create: false # make a ServiceAccount for the release; rbac.enabled makes one too
+  name: "" # the ServiceAccount name; empty means the release name when the chart makes one, else the namespace default
 
 extraContainers: [] # extra containers, rendered next to the addon's own container as given
 
@@ -61,3 +76,45 @@ configFile:
   name: config.yaml # the file name, and the ConfigMap key
   content: "" # the file's contents, as a string
   mountPath: /etc/joshua-addon/config.yaml # where the addon container mounts the file
+
+# A Role in the release namespace, bound to the release ServiceAccount. For an
+# addon that calls the Kubernetes API, such as developer, which starts one Job
+# for each task. Off, the pod runs as the namespace default ServiceAccount.
+rbac:
+  enabled: false # make the ServiceAccount, the Role, and the RoleBinding
+  rules: # the Role rules; the default lets the addon start and delete Jobs and read their pods and logs
+    - apiGroups: ["batch"]
+      resources: ["jobs"]
+      verbs: ["create", "get", "list", "watch", "delete"]
+    - apiGroups: [""]
+      resources: ["pods"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: [""]
+      resources: ["pods/log"]
+      verbs: ["get"]
+
+# Two NetworkPolicies, for an addon that starts worker pods, such as
+# developer. The CNI of the cluster must enforce NetworkPolicy, or these
+# objects have no effect.
+#   <release>-workers: a worker pod can connect to the addon on managerPorts,
+#     and to DNS. With workersInternetEgress, it can also connect to public
+#     addresses.
+#   <release>-manager: the addon accepts `port` from ingressFrom, and
+#     managerPorts from the worker pods only. Its egress is not limited.
+networkPolicy:
+  enabled: false # render the two policies
+  workerSelector: # the labels of the worker pods
+    joshua-addon: developer
+    app.kubernetes.io/name: joshua-addon-developer-worker
+  managerPorts: # the addon ports the workers call
+    - 8001
+    - 8002
+  allowDns: true # let a worker use DNS on port 53 of the cluster resolver, to find the addon Service by name
+  dns:
+    namespace: kube-system # the namespace of the cluster DNS pods
+    podLabels: # the labels of the cluster DNS pods
+      k8s-app: kube-dns
+  workersInternetEgress: false # let a worker connect to public addresses; set it for `network: on`
+  clusterCidrs: [] # the pod and Service CIDRs of the cluster, blocked with RFC1918, link-local, and carrier-grade NAT when workersInternetEgress is true; set them
+  ingressFrom: [] # raw `from` peers for `port`; empty means every pod in gatewayNamespaces
+  gatewayNamespaces: [] # the namespaces that can call `port`; empty means every namespace
