@@ -18,11 +18,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import inspect
+from sqlalchemy import Date, String, Text, inspect
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from sqlalchemy.types import TypeEngine
 
-from .models import Base
+from .models import Base, UTCDateTime
 
 
 @dataclass(frozen=True)
@@ -42,11 +42,25 @@ class Migration:
     type_: TypeEngine
     references: str | None = None
     constraint_name: str | None = None
+    # ``server_default`` is a SQL literal (quote a string yourself). A column
+    # with ``nullable=False`` must give one, so existing rows get a value.
+    server_default: str | None = None
+    nullable: bool = True
 
 
-# Ordered oldest to newest. Empty: the first schema is whatever ``create_all``
-# builds. Append one ``Migration`` per column added after a release.
-ADDITIVE_MIGRATIONS: list[Migration] = []
+# Ordered oldest to newest. The first release's schema is whatever
+# ``create_all`` builds. Append one ``Migration`` per column added after it.
+ADDITIVE_MIGRATIONS: list[Migration] = [
+    # Goals, phases, and task details (issue #37).
+    Migration("projects", "goal", Text()),
+    Migration("projects", "target_date", Date()),
+    Migration("projects", "status", String(16), server_default="'active'", nullable=False),
+    Migration("projects", "completed_at", UTCDateTime()),
+    Migration("groups", "target_date", Date()),
+    Migration("tasks", "size", String(4)),
+    Migration("tasks", "due_date", Date()),
+    Migration("tasks", "assignee", Text()),
+]
 
 
 async def _existing_columns(conn: AsyncConnection, table: str) -> set[str]:
@@ -71,6 +85,10 @@ async def run_migrations(engine: AsyncEngine) -> None:
                 continue
             compiled_type = migration.type_.compile(dialect=conn.dialect)
             stmt = f"ALTER TABLE {migration.table} ADD COLUMN {migration.column} {compiled_type}"
+            if migration.server_default is not None:
+                stmt += f" DEFAULT {migration.server_default}"
+            if not migration.nullable:
+                stmt += " NOT NULL"
             if migration.references:
                 if migration.constraint_name:
                     stmt += f" CONSTRAINT {migration.constraint_name}"

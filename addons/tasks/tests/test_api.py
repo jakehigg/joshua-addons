@@ -30,11 +30,21 @@ async def test_project_and_task_crud_flow(client) -> None:
         "id",
         "name",
         "slug",
+        "goal",
+        "target_date",
+        "status",
+        "completed_at",
         "created_at",
         "archived_at",
         "task_count",
         "done_count",
+        "open_count",
+        "percent",
+        "health",
+        "last_progress_at",
+        "next_task",
     }
+    assert project["status"] == "active" and project["goal"] is None
     assert project["archived_at"] is None and project["task_count"] == 0
     assert project["created_at"].endswith("Z")
 
@@ -53,6 +63,9 @@ async def test_project_and_task_crud_flow(client) -> None:
         "notes",
         "done",
         "done_at",
+        "size",
+        "due_date",
+        "assignee",
         "position",
         "created_at",
         "updated_at",
@@ -122,10 +135,12 @@ async def test_group_flow(client) -> None:
         "project_id",
         "name",
         "position",
+        "target_date",
         "created_at",
         "updated_at",
         "task_count",
         "done_count",
+        "percent",
     }
     g2 = (await client.post(f"/api/projects/{pid}/groups", json={"name": "Paint"})).json()
 
@@ -369,3 +384,90 @@ async def test_new_ids_are_valid_uuids(client) -> None:
 async def test_get_routes_answer_json(client, path) -> None:
     r = await client.get(path)
     assert r.headers["content-type"].startswith("application/json")
+
+
+# --- goals, status, and next steps (issue #37) ---------------------------------
+
+
+async def test_project_goal_status_and_percent(client) -> None:
+    r = await client.post(
+        "/api/projects", json={"name": "Hallway", "goal": "Painted", "target_date": "2030-01-31"}
+    )
+    assert r.status_code == 201
+    p = r.json()
+    assert (p["goal"], p["target_date"], p["health"]) == ("Painted", "2030-01-31", None)
+    pid = p["id"]
+    t1 = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "a"})).json()
+    await client.post(f"/api/projects/{pid}/tasks", json={"title": "b"})
+    await client.patch(f"/api/tasks/{t1['id']}", json={"done": True})
+
+    [listed] = (await client.get("/api/projects")).json()
+    assert (listed["percent"], listed["open_count"], listed["health"]) == (50, 1, "on_track")
+    assert listed["next_task"]["title"] == "b"
+    assert listed["last_progress_at"] is not None
+
+    # goal is presence-sensitive: a rename keeps it, an explicit null clears it
+    r = await client.patch(f"/api/projects/{pid}", json={"name": "Hall"})
+    assert r.json()["goal"] == "Painted" and r.json()["percent"] == 50
+    r = await client.patch(f"/api/projects/{pid}", json={"goal": None, "target_date": None})
+    assert r.json()["goal"] is None and r.json()["target_date"] is None
+
+    # done is refused while a task is open; closed is not
+    r = await client.patch(f"/api/projects/{pid}", json={"status": "done"})
+    assert r.status_code == 409 and "still open" in r.json()["detail"]
+    r = await client.patch(f"/api/projects/{pid}", json={"status": "closed"})
+    assert r.json()["status"] == "closed" and r.json()["completed_at"] is not None
+    r = await client.patch(f"/api/projects/{pid}", json={"status": "active"})
+    assert r.json()["status"] == "active" and r.json()["completed_at"] is None
+    r = await client.patch(f"/api/projects/{pid}", json={"status": "sideways"})
+    assert r.status_code == 422
+
+
+async def test_next_steps_endpoint(client) -> None:
+    pid = (await client.post("/api/projects", json={"name": "P"})).json()["id"]
+    await client.post(f"/api/projects/{pid}/tasks", json={"title": "backlog"})
+    g = (await client.post(f"/api/projects/{pid}/groups", json={"name": "Phase 1"})).json()
+    await client.post(f"/api/projects/{pid}/tasks", json={"title": "first", "group_id": g["id"]})
+    await client.post("/api/projects", json={"name": "Quiet"})
+
+    r = await client.get("/api/next-steps")
+    assert r.status_code == 200
+    [step] = r.json()
+    assert step["slug"] == "p" and [t["title"] for t in step["tasks"]] == ["first", "backlog"]
+    r = await client.get("/api/next-steps", params={"project": "quiet", "limit": "1"})
+    [quiet] = r.json()
+    assert quiet["slug"] == "quiet" and quiet["tasks"] == []
+    r = await client.get("/api/next-steps", params={"limit": "lots"})
+    assert r.status_code == 422
+    r = await client.get("/api/next-steps", params={"project": "nope"})
+    assert r.status_code == 404
+
+
+async def test_group_target_date_is_presence_sensitive(client) -> None:
+    pid = (await client.post("/api/projects", json={"name": "P"})).json()["id"]
+    g = (await client.post(f"/api/projects/{pid}/groups", json={"name": "Phase 1"})).json()
+    r = await client.patch(f"/api/groups/{g['id']}", json={"target_date": "2030-03-01"})
+    assert r.json()["target_date"] == "2030-03-01"
+    r = await client.patch(f"/api/groups/{g['id']}", json={"name": "Phase one"})
+    assert r.json()["target_date"] == "2030-03-01" and r.json()["name"] == "Phase one"
+    r = await client.patch(f"/api/groups/{g['id']}", json={"target_date": None})
+    assert r.json()["target_date"] is None
+
+
+async def test_task_size_due_date_and_assignee_over_rest(client) -> None:
+    pid = (await client.post("/api/projects", json={"name": "P"})).json()["id"]
+    r = await client.post(
+        f"/api/projects/{pid}/tasks",
+        json={"title": "t", "size": "L", "due_date": "2030-02-02", "assignee": "Sam"},
+    )
+    assert r.status_code == 201
+    t = r.json()
+    assert (t["size"], t["due_date"], t["assignee"]) == ("L", "2030-02-02", "Sam")
+    r = await client.patch(f"/api/tasks/{t['id']}", json={"title": "renamed"})
+    assert r.json()["size"] == "L" and r.json()["assignee"] == "Sam"
+    r = await client.patch(f"/api/tasks/{t['id']}", json={"size": None, "assignee": ""})
+    assert r.json()["size"] is None and r.json()["assignee"] is None
+    r = await client.post(f"/api/projects/{pid}/tasks", json={"title": "x", "size": "huge"})
+    assert r.status_code == 422
+    r = await client.patch(f"/api/tasks/{t['id']}", json={"due_date": "soon"})
+    assert r.status_code == 422

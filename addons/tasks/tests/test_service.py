@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from joshua_tasks import service as services
@@ -223,3 +224,157 @@ async def test_delete_project_unknown_and_move_unknown(db):
         await services.move_task(db, t.id, "nope")
     with pytest.raises(services.NotFoundError):
         await services.move_task(db, uuid.uuid4(), "p")
+
+
+# --- goals, health, and roadmap order (issue #37) -------------------------------
+
+
+async def _age(db, project, days: int) -> None:
+    """Pretend the project was created ``days`` ago."""
+    project.created_at = datetime.now(UTC) - timedelta(days=days)
+    await db.commit()
+
+
+async def test_list_without_goal_has_no_health(db):
+    p = await services.create_project(db, "Household")
+    await services.create_task(db, "household", "a")
+    await _age(db, p, 60)
+    [summary] = await services.list_projects(db)
+    assert summary["health"] is None and summary["goal"] is None
+    assert summary["next_task"].title == "a"
+
+
+async def test_goal_project_health_moves_with_progress_and_dates(db):
+    p = await services.create_project(db, "Hall", goal="  Painted  ")
+    assert p.goal == "Painted"
+    assert (await services.project_summary(db, "hall"))["health"] is None  # no tasks yet
+    a = await services.create_task(db, "hall", "a")
+    b = await services.create_task(db, "hall", "b")
+    assert (await services.project_summary(db, "hall"))["health"] == "on_track"
+    await _age(db, p, services.STALLED_AFTER_DAYS)
+    assert (await services.project_summary(db, "hall"))["health"] == "stalled"
+    await services.update_task(db, a.id, done=True)
+    summary = await services.project_summary(db, "hall")
+    assert summary["health"] == "on_track" and summary["percent"] == 50
+    assert summary["last_progress_at"] is not None
+    await services.update_project(db, "hall", target_date=date.today() - timedelta(days=1))
+    assert (await services.project_summary(db, "hall"))["health"] == "overdue"
+    await services.update_task(db, b.id, done=True)
+    summary = await services.project_summary(db, "hall")
+    assert summary["health"] == "ready_to_complete" and summary["percent"] == 100
+    assert summary["next_task"] is None
+    await services.complete_project(db, "hall")
+    assert (await services.project_summary(db, "hall"))["health"] == "done"
+
+
+async def test_target_date_alone_gives_health(db):
+    await services.create_project(db, "Trip", target_date=date.today() + timedelta(days=30))
+    # a project with no tasks has nothing to be on track about
+    assert (await services.project_summary(db, "trip"))["health"] is None
+    t = await services.create_task(db, "trip", "pack")
+    assert (await services.project_summary(db, "trip"))["health"] == "on_track"
+    await services.update_project(db, "trip", target_date=date.today() - timedelta(days=1))
+    assert (await services.project_summary(db, "trip"))["health"] == "overdue"
+    # overdue needs open work; without a goal there is no completion nudge either
+    await services.update_task(db, t.id, done=True)
+    assert (await services.project_summary(db, "trip"))["health"] == "on_track"
+
+
+async def test_update_project_goal_is_presence_sensitive(db):
+    p = await services.create_project(db, "P", goal="g", target_date=date(2030, 1, 1))
+    p = await services.update_project(db, "p", name="Q")
+    assert p.goal == "g" and p.target_date == date(2030, 1, 1)
+    p = await services.update_project(db, "p", goal="", target_date=None)
+    assert p.goal is None and p.target_date is None
+
+
+async def test_set_project_status_rules(db):
+    await services.create_project(db, "P")
+    t = await services.create_task(db, "p", "a")
+    with pytest.raises(services.ConflictError, match="1 task\\(s\\) are still open"):
+        await services.set_project_status(db, "p", "done")
+    with pytest.raises(services.InvalidError):
+        await services.set_project_status(db, "p", "finished")
+    p = await services.set_project_status(db, "p", "paused")
+    assert p.status == "paused" and p.completed_at is None
+    p = await services.set_project_status(db, "p", "closed")
+    assert p.status == "closed" and p.completed_at is not None
+    assert [x["slug"] for x in await services.list_projects(db, include_finished=False)] == []
+    assert [x["slug"] for x in await services.list_projects(db)] == ["p"]
+    p = await services.set_project_status(db, "p", "active")
+    assert p.status == "active" and p.completed_at is None
+    await services.update_task(db, t.id, done=True)
+    p = await services.complete_project(db, "p")
+    assert p.status == "done" and p.completed_at is not None
+
+
+async def test_roadmap_order_is_phases_then_backlog(db):
+    p = await services.create_project(db, "P")
+    late = await services.create_task(db, "p", "backlog")
+    g1 = await services.create_group(db, "p", "Phase 1")
+    g2 = await services.create_group(db, "p", "Phase 2")
+    second = await services.create_task(db, "p", "p2", group=g2.id)
+    first = await services.create_task(db, "p", "p1", group=g1.id)
+    tasks = await services.list_tasks(db, p.id)
+    groups = [g1, g2]
+    assert [t.title for t in services.roadmap_order(tasks, groups)] == ["p1", "p2", "backlog"]
+    await services.reorder_groups(db, p.id, [g2.id, g1.id])
+    await db.refresh(g1)
+    await db.refresh(g2)
+    tasks = await services.list_tasks(db, p.id)
+    assert [t.title for t in services.roadmap_order(tasks, groups)] == ["p2", "p1", "backlog"]
+    assert (await services.project_summary(db, "p"))["next_task"].id == second.id
+    await services.update_task(db, second.id, done=True)
+    assert (await services.project_summary(db, "p"))["next_task"].id == first.id
+    await services.update_task(db, first.id, done=True)
+    assert (await services.project_summary(db, "p"))["next_task"].id == late.id
+
+
+async def test_next_steps_filters_and_limits(db):
+    await services.create_project(db, "Go")
+    await services.create_project(db, "Paused")
+    await services.create_project(db, "Empty")
+    await services.create_project(db, "Hidden")
+    for title in ("a", "b", "c", "d"):
+        await services.create_task(db, "go", title)
+    await services.create_task(db, "paused", "x")
+    await services.create_task(db, "hidden", "y")
+    await services.set_project_status(db, "paused", "paused")
+    await services.update_project(db, "hidden", archived=True)
+    steps = await services.next_steps(db, limit=2)
+    assert [(s["slug"], [t.title for t in s["tasks"]]) for s in steps] == [("go", ["a", "b"])]
+    [named] = await services.next_steps(db, "paused")
+    assert named["status"] == "paused" and [t.title for t in named["tasks"]] == ["x"]
+    [none] = await services.next_steps(db, "go", limit=0)
+    assert none["tasks"] == []
+
+
+async def test_task_size_due_date_assignee_rules(db):
+    await services.create_project(db, "P")
+    t = await services.create_task(
+        db, "p", "t", size=" l ", due_date=date(2030, 2, 2), assignee="  Sam "
+    )
+    assert (t.size, t.due_date, t.assignee) == ("L", date(2030, 2, 2), "Sam")
+    t = await services.update_task(db, t.id, title="renamed")
+    assert (t.size, t.due_date, t.assignee) == ("L", date(2030, 2, 2), "Sam")
+    t = await services.update_task(db, t.id, size=None, due_date=None, assignee="")
+    assert (t.size, t.due_date, t.assignee) == (None, None, None)
+    with pytest.raises(services.InvalidError, match="size must be one of"):
+        await services.update_task(db, t.id, size="huge")
+    with pytest.raises(services.InvalidError):
+        await services.create_task(db, "p", "x", size="tiny")
+    assert services.normalize_size("") is None and services.normalize_size("xs") == "XS"
+    assert repr(services.UNSET) == "UNSET"
+
+
+async def test_group_target_date(db):
+    await services.create_project(db, "P")
+    g = await services.create_group(db, "p", "Phase 1")
+    g = await services.update_group(db, g.id, target_date=date(2030, 3, 1))
+    assert g.target_date == date(2030, 3, 1)
+    g = await services.update_group(db, g.id, name="Phase one")
+    assert g.target_date == date(2030, 3, 1) and g.name == "Phase one"
+    [listed] = await services.list_groups(db, "p")
+    assert listed["target_date"] == date(2030, 3, 1) and listed["percent"] == 0
+    g = await services.update_group(db, g.id, target_date=None)
+    assert g.target_date is None
