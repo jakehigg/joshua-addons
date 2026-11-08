@@ -105,6 +105,17 @@ def _summary_dict(s: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _task_ref_dict(ref: dict[str, Any]) -> dict[str, Any]:
+    """One end of a blocking link: enough of that task to name it."""
+    project = ref["project"]
+    return {
+        "id": str(ref["id"]),
+        "title": ref["title"],
+        "done": ref["done"],
+        "project": project["slug"] if project else None,
+    }
+
+
 def _task_dict(t: Task) -> dict[str, Any]:
     return {
         "id": str(t.id),
@@ -116,6 +127,9 @@ def _task_dict(t: Task) -> dict[str, Any]:
         "assignee": t.assignee,
         "position": t.position,
         "group_id": str(t.group_id) if t.group_id else None,
+        "blocked": t.blocked,
+        "blockers": [_task_ref_dict(r) for r in t.blockers],
+        "blocking": [_task_ref_dict(r) for r in t.blocking],
     }
 
 
@@ -132,6 +146,8 @@ def _found_task_dict(found: dict[str, Any]) -> dict[str, Any]:
         "assignee": task.assignee,
         "project": {"name": found["project"]["name"], "slug": found["project"]["slug"]},
         "group": {"id": str(group.id), "name": group.name} if group else None,
+        "blocked": task.blocked,
+        "blockers": [_task_ref_dict(r) for r in task.blockers],
     }
 
 
@@ -193,11 +209,15 @@ async def list_projects(include_finished: bool = False) -> list[dict[str, Any]]:
     next_task (the first open task in roadmap order, or null).
 
     health is one of: on_track, stalled (a goal project with no task done
-    in 14 days), overdue (past target_date with open tasks),
-    ready_to_complete (every task done: call complete_project), or the
-    status for a paused, done, or closed project. A list without a goal or
-    a date has health null, and so does a project with no tasks yet. Use
-    the slug to name a project in other tools.
+    in 14 days, or one whose every open task waits for a blocker), overdue
+    (past target_date with open tasks), ready_to_complete (every task done:
+    call complete_project), or the status for a paused, done, or closed
+    project. A list without a goal or a date has health null, and so does a
+    project with no tasks yet. Use the slug to name a project in other
+    tools.
+
+    A blocked task is never the next_task. A project whose whole remaining
+    work is blocked has next_task null and health stalled.
 
     Args:
         include_finished: Set true to also see done and closed projects.
@@ -297,6 +317,11 @@ async def next_steps(project: str | None = None, limit: int = 3) -> list[dict[st
     Each entry is a project summary (see list_projects) plus tasks, the
     next open tasks. A paused or finished project is left out unless named.
 
+    A task that waits for an open blocker is not a next step and is left
+    out. A project whose whole remaining work waits keeps its place in the
+    answer, with an empty tasks list and the health stalled: say that the
+    project waits, and name the blockers from list_tasks.
+
     Args:
         project: Project slug or id, to ask about one project only.
         limit: How many tasks per project (default 3).
@@ -342,6 +367,10 @@ async def list_tasks(project: str, include_done: bool = True) -> dict[str, Any]:
     done_count/task_count/percent and an optional target_date, so you can
     report progress ("2/5 done"). A project without groups has an empty
     "groups" list and everything in "backlog".
+
+    Each task also carries blocked (true while it waits for an open task),
+    blockers (the tasks it waits for), and blocking (the tasks that wait for
+    it). Set a link with block_task.
 
     Args:
         project: Project slug or id.
@@ -526,13 +555,66 @@ async def set_task_done(task_id: str, done: bool) -> dict[str, Any]:
     """
     Mark a task done, or un-done (done=false) to undo a mistake.
 
+    The result also holds "unblocked", the tasks that are free to start now
+    because this task was the last blocker they waited for, and "warning",
+    which is set when the task went done while a blocker of its own is still
+    open. The task is never refused: tell the person about the warning, and
+    ask whether the blocker is in fact done too.
+
     Args:
         task_id: The task's id (from list_tasks).
         done: true to complete, false to reopen.
     """
     tid = _uuid(task_id, "task_id")
     async with _tool_session() as session:
-        return _task_dict(await service.update_task(session, tid, done=done))
+        report = await service.set_task_done(session, tid, done)
+    return {
+        **_task_dict(report["task"]),
+        "unblocked": [_task_ref_dict(r) for r in report["unblocked"]],
+        "warning": report["warning"],
+    }
+
+
+@mcp.tool()
+async def block_task(task_id: str, blocker_id: str) -> dict[str, Any]:
+    """
+    Make a task wait for another task: task_id cannot start before
+    blocker_id is done. Use it when a person says "X is blocked on Y".
+
+    While a blocker is open, the task is blocked: it never comes back from
+    next_steps and it is never a project's next_task. The task unblocks
+    itself as soon as the last open blocker is done — there is nothing to
+    clear by hand. The blocker can be in another project.
+
+    A task cannot block itself, and a link that makes a loop is refused with
+    an error that names the tasks in the loop.
+
+    Args:
+        task_id: The id of the task that waits.
+        blocker_id: The id of the task it waits for.
+    """
+    tid = _uuid(task_id, "task_id")
+    bid = _uuid(blocker_id, "blocker_id")
+    async with _tool_session() as session:
+        return _task_dict(await service.block_task(session, tid, bid))
+
+
+@mcp.tool()
+async def unblock_task(task_id: str, blocker_id: str) -> dict[str, Any]:
+    """
+    Remove one blocking link, because the two tasks are not in fact related.
+    A done blocker needs no removal: set_task_done unblocks the task.
+
+    A link that is not there is no error.
+
+    Args:
+        task_id: The id of the task that waits.
+        blocker_id: The id of the task it waited for.
+    """
+    tid = _uuid(task_id, "task_id")
+    bid = _uuid(blocker_id, "blocker_id")
+    async with _tool_session() as session:
+        return _task_dict(await service.unblock_task(session, tid, bid))
 
 
 @mcp.tool()
@@ -575,10 +657,11 @@ async def search_tasks(
     The result keeps the two kinds apart: "projects", the project summaries
     (see list_projects), and "tasks", the matching tasks. Each task carries
     its id, title, done, size, due_date, assignee, its project (name and
-    slug), and its group (name and id, or null when the task is in the
-    backlog). The projects come oldest first. The tasks come project by
-    project, in that same project order, and in roadmap order inside a
-    project (the phases in order, then the backlog).
+    slug), its group (name and id, or null when the task is in the
+    backlog), blocked, and blockers (the tasks it waits for). The projects
+    come oldest first. The tasks come project by project, in that same
+    project order, and in roadmap order inside a project (the phases in
+    order, then the backlog).
 
     An archived project, and every task in it, is never searched. An empty
     query matches nothing.

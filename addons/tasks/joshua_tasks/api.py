@@ -65,6 +65,27 @@ class ProjectUpdate(BaseModel):
     status: ProjectStatus | None = None
 
 
+class ProjectRefOut(BaseModel):
+    """Enough of a project to name a linked task's home and to open it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    slug: str
+
+
+class TaskRefOut(BaseModel):
+    """One end of a blocking link: enough of that task to show it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    done: bool
+    # null only for a link whose other task lost its project.
+    project: ProjectRefOut | None = None
+
+
 class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,6 +102,10 @@ class TaskOut(BaseModel):
     position: float
     created_at: datetime
     updated_at: datetime
+    # Computed from the blocking links on every read, never stored.
+    blocked: bool = False
+    blockers: list[TaskRefOut] = []
+    blocking: list[TaskRefOut] = []
 
 
 class ProjectOut(BaseModel):
@@ -159,6 +184,10 @@ class TaskUpdate(BaseModel):
     size: TaskSize | None = None
     due_date: date | None = None
     assignee: str | None = Field(default=None, max_length=200)
+
+
+class BlockerCreate(BaseModel):
+    blocker_id: uuid.UUID
 
 
 class TaskOrder(BaseModel):
@@ -515,6 +544,24 @@ async def delete_task(request: Request) -> Response:
     return Response(status_code=204)
 
 
+async def add_blocker(request: Request) -> Response:
+    """Make the task wait for the task in the body. 409 on a loop or on itself."""
+    task_id = _path_uuid(request, "task_id")
+    body = await _body(request, BlockerCreate)
+    async with _session() as session:
+        task = await service.block_task(session, task_id, body.blocker_id)
+    return _json(TaskOut, task, 201)
+
+
+async def remove_blocker(request: Request) -> Response:
+    """Remove one blocking link. A link that is not there is no error."""
+    task_id = _path_uuid(request, "task_id")
+    blocker_id = _path_uuid(request, "blocker_id")
+    async with _session() as session:
+        task = await service.unblock_task(session, task_id, blocker_id)
+    return _json(TaskOut, task)
+
+
 # --- search ------------------------------------------------------------------
 
 
@@ -566,6 +613,8 @@ def _routes() -> list[Route]:
         route("/projects/{project_id}/tasks/order", reorder_tasks, "PUT"),
         route("/tasks/{task_id}", update_task, "PATCH"),
         route("/tasks/{task_id}", delete_task, "DELETE"),
+        route("/tasks/{task_id}/blockers", add_blocker, "POST"),
+        route("/tasks/{task_id}/blockers/{blocker_id}", remove_blocker, "DELETE"),
     ]
 
 
