@@ -99,7 +99,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   gap: 12px;
 }
 .project-goal { cursor: text; font-size: 17px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
-.project-goal.empty { color: var(--j-faint); font-weight: 500; }
+.project-goal.unset { color: var(--j-faint); font-weight: 500; }
 .project-goal-input { width: 100%; font-size: 16px; font-weight: 600; }
 
 .project-progress { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -158,13 +158,15 @@ main.finished .group-add { display: none; }
 .group-count.complete { color: var(--j-accent); background: var(--j-accent-soft); }
 
 .group-target { margin-left: auto; color: var(--j-muted); font-size: 12.5px; cursor: pointer; white-space: nowrap; }
-.group-target.empty { opacity: 0; color: var(--j-faint); }
-.group-header:hover .group-target.empty { opacity: 1; }
+/* "no-date", not "empty": .empty is the page-level empty-state block */
+.group-target.no-date { opacity: 0; color: var(--j-faint); }
+.group-header:hover .group-target.no-date { opacity: 1; }
 
 /* the task lists render as one card of rows */
 .group-tasks,
 #task-list {
   list-style: none;
+  margin: 0;
   background: var(--j-surface);
   border: 1px solid var(--j-line-soft);
   border-radius: var(--j-radius);
@@ -216,8 +218,18 @@ main.finished .group-add { display: none; }
   border: solid var(--j-accent-ink); border-width: 0 0 2.5px 2.5px; transform: rotate(-45deg);
 }
 
-.task .title { flex: 1; min-width: 0; font-weight: 500; overflow-wrap: anywhere; cursor: text; }
-.task-title-input { flex: 1; min-width: 0; height: 32px; padding: 0 8px; font-size: 16px; }
+/* The title and its badges share one column. The title keeps at least
+   ~18ch before the badges wrap under it; it never breaks per character. */
+.task-body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.task .title { flex: 1 1 auto; min-width: min(100%, 18ch); font-weight: 500; overflow-wrap: anywhere; cursor: text; }
+.task-title-input { flex: 1 1 100%; min-width: 0; height: 32px; padding: 0 8px; font-size: 16px; }
+.task-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 100%; }
+.task-tags:empty { display: none; }
+.task-actions { display: flex; align-items: center; gap: 4px; flex: none; margin-left: auto; }
+.task-details-actions { display: none; align-items: center; gap: 6px; margin-left: auto; }
+.task-details-actions button { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.task-details-actions .delete-action:hover,
+.task-details-actions .delete-action.confirming { color: var(--j-bad); background: var(--j-bad-soft); }
 
 .task.done .title { text-decoration: line-through; color: var(--j-faint); }
 .task.done .task-meta { opacity: .5; }
@@ -310,6 +322,15 @@ main.finished .group-add { display: none; }
   .details-toggle { opacity: 1; }
   .task-notes,
   .task-details { padding-left: 8px; }
+}
+@media (max-width: 560px) {
+  /* badges always on their own line under the title on a phone */
+  .task .title { flex-basis: 100%; }
+  /* the row keeps only "⋯"; note and delete move into the details row */
+  .task-actions .note-toggle,
+  .task-actions .delete { display: none; }
+  .task-details-actions { display: flex; }
+  .task-row { gap: 8px; }
 }
 @media (max-width: 420px) {
   #add-project .label { display: none; }

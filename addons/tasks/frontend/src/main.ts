@@ -273,7 +273,7 @@ function renderProjectHeader() {
   const p = currentProject();
   if (!p) return;
   projectGoal.textContent = p.goal ?? "Set a goal for this project…";
-  projectGoal.classList.toggle("empty", !p.goal);
+  projectGoal.classList.toggle("unset", !p.goal);
   progressFill.style.width = `${p.percent}%`;
   progressText.textContent = `${p.done_count}/${p.task_count} · ${p.percent}%`;
   projectHealth.textContent = p.health ? p.health.replaceAll("_", " ") : "";
@@ -612,15 +612,47 @@ function taskRow(task: Task): HTMLLIElement {
   del.className = "delete";
   del.textContent = "×";
   del.title = "Delete task";
-  twoTapConfirm(del, "×", async () => {
+  async function deleteTask() {
     const ul = li.parentElement;
     await api.deleteTask(task.id);
     li.remove();
     taskChanged(ul);
     updateEmptyState();
-  });
+  }
+  twoTapConfirm(del, "×", deleteTask);
 
-  row.append(handle, checkbox, title, nextBadge, meta, noteBtn, detailsBtn, del);
+  // On a phone the row keeps only the "⋯" button; the note and delete
+  // actions live in the details row instead (the stylesheet swaps them).
+  const detailsActions = document.createElement("span");
+  detailsActions.className = "task-details-actions";
+  const noteAction = document.createElement("button");
+  noteAction.type = "button";
+  noteAction.className = "ghost";
+  noteAction.textContent = "Note";
+  noteAction.addEventListener("click", () => {
+    editTitle();
+    editNotes();
+  });
+  const deleteAction = document.createElement("button");
+  deleteAction.type = "button";
+  deleteAction.className = "ghost delete-action";
+  deleteAction.textContent = "Delete";
+  twoTapConfirm(deleteAction, "Delete", deleteTask);
+  detailsActions.append(noteAction, deleteAction);
+  details.append(detailsActions);
+
+  // The title and its badges share one flexible column, so the badges wrap
+  // under the title on a narrow screen instead of squeezing it.
+  const tags = document.createElement("span");
+  tags.className = "task-tags";
+  tags.append(nextBadge, meta);
+  const body = document.createElement("div");
+  body.className = "task-body";
+  body.append(title, tags);
+  const actions = document.createElement("span");
+  actions.className = "task-actions";
+  actions.append(noteBtn, detailsBtn, del);
+  row.append(handle, checkbox, body, actions);
   li.append(row, notes, details);
   renderNotes();
   renderMeta();
@@ -708,7 +740,7 @@ function groupSection(group: Group, tasks: Task[]): HTMLElement {
   target.className = "group-target";
   const renderTarget = () => {
     target.textContent = group.target_date ?? "set date";
-    target.classList.toggle("empty", !group.target_date);
+    target.classList.toggle("no-date", !group.target_date);
   };
   target.addEventListener("click", () => {
     const input = document.createElement("input");
