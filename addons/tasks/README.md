@@ -31,9 +31,32 @@ tracks progress toward it.
 
 The computed fields are not stored. `percent` is done tasks over all tasks.
 `health` is one of `on_track`, `stalled` (a goal project with no task done in
-14 days), `overdue`, `ready_to_complete` (every task done), or the status of a
-paused, done, or closed project. A project with no tasks, or a list with no
-goal and no date, has no health.
+14 days, or a project whose every open task waits for a blocker), `overdue`,
+`ready_to_complete` (every task done), or the status of a paused, done, or
+closed project. A project with no tasks, or a list with no goal and no date,
+has no health.
+
+## Blocking
+
+A task can wait for other tasks. `block_task` makes one link: the task cannot
+start before the blocker is done. A task can wait for any number of tasks and
+any number of tasks can wait for it, and a blocker can be in another project.
+
+- `blocked` is true while at least one blocker is open. `blockers` and
+  `blocking` are the tasks on each side, with the id, the title, the done
+  state, and the project of each. All three are computed on every read and
+  never stored, so the last open blocker going done unblocks the task. There
+  is nothing to clear by hand.
+- A **blocked task is never a next step**: it never comes back from
+  `next_steps` and it is never a project's `next_task`. A project whose whole
+  remaining work waits keeps its place in `next_steps`, with no task and the
+  health `stalled`. A passed target date is louder: such a project reads as
+  `overdue`.
+- A task cannot block itself, and a link that makes a loop is refused with an
+  error that names the tasks in the loop.
+- `set_task_done` reports the tasks it unblocked. A task that goes done while
+  a blocker of its own is still open is accepted, with a warning that names
+  the open blockers: the work sometimes runs ahead of the links.
 
 ## Tools
 
@@ -51,7 +74,9 @@ goal and no date, has no health.
 | `list_tasks` | The tasks of one project in roadmap order: each group with its tasks, then the backlog. |
 | `create_task` | Adds a task to a project, at the end of the backlog or of a group, with an optional size, due date, and assignee. |
 | `update_task` | Changes the title, notes, size, due date, or assignee of a task. |
-| `set_task_done` | Marks a task done or not done. |
+| `set_task_done` | Marks a task done or not done. Reports the tasks it unblocked, and warns when a blocker of its own is still open. |
+| `block_task` | Makes a task wait for another task. The blocker can be in another project. |
+| `unblock_task` | Removes one blocking link. |
 | `reorder_tasks` | Sets the order of the tasks in one list (the backlog or one group). |
 | `move_task` | Moves a task to another project. |
 | `create_group` | Adds a group to a project. |
@@ -61,8 +86,9 @@ goal and no date, has no health.
 | `set_task_group` | Moves a task into a group, or out of all groups. |
 
 A project argument takes the project id, its slug, or its name. A group
-argument takes the group id or its name (case does not matter). A date
-argument is `YYYY-MM-DD`; an empty string clears a date.
+argument takes the group id or its name (case does not matter). A task
+argument, and a blocker argument, takes the task id, which `list_tasks`
+gives. A date argument is `YYYY-MM-DD`; an empty string clears a date.
 
 `search_tasks` matches a substring, and case does not matter. A project
 matches on its name or its goal, and a task on its title or its notes. The
@@ -73,6 +99,11 @@ searched, until `include_done` is true. An archived project is never
 searched. `project` keeps the task match in one project, and `limit` caps
 each list. The same search is at `GET /api/search`, with `query`,
 `include_done`, `project`, and `limit` as query parameters.
+
+The REST API has the links as well: `POST /api/tasks/<task_id>/blockers` with
+`{"blocker_id": "<id>"}` makes one link, and
+`DELETE /api/tasks/<task_id>/blockers/<blocker_id>` removes it. Both answer
+with the task, and every task carries `blocked`, `blockers`, and `blocking`.
 
 ## Run it
 
@@ -107,10 +138,15 @@ Search link in the bar goes back to the box.
 A project page shows the goal (click it to edit), the progress bar, the
 health, the target date, and the status; the Complete button is enabled when
 every task is done. Phases come first, then the backlog. The first open task
-carries an "up next" mark. Drag a task by its handle to reorder it, or drag
-it into a group. Click a title or a note to edit it in place; the "⋯" button
-on a task opens its size, due date, and assignee. Done tasks sink to the
-bottom of their list.
+that waits for nothing carries an "up next" mark. Drag a task by its handle
+to reorder it, or drag it into a group. Click a title or a note to edit it in
+place; the "⋯" button on a task opens its size, due date, and assignee. Done
+tasks sink to the bottom of their list.
+
+A task that waits carries a "blocked" mark and names the tasks it waits for,
+each a link to that task in its own project. A task also names the tasks that
+wait for it. The "×" on a blocker removes that link. Joshua makes a link, with
+`block_task`.
 
 The web UI and its REST API under `/api` have no login. Keep the port on a
 trusted network, or put an ingress with its own access control in front.

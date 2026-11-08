@@ -69,8 +69,12 @@ async def test_project_and_task_crud_flow(client) -> None:
         "position",
         "created_at",
         "updated_at",
+        "blocked",
+        "blockers",
+        "blocking",
     }
     assert t1["project_id"] == pid and t1["group_id"] is None and t1["notes"] == ""
+    assert t1["blocked"] is False and t1["blockers"] == [] and t1["blocking"] == []
     t2 = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "Tape edges"})).json()
 
     r = await client.get(f"/api/projects/{pid}/tasks")
@@ -533,3 +537,68 @@ async def test_search_endpoint_bad_parameters(client) -> None:
     assert r.json()["detail"][0]["loc"] == ["query", "include_done"]
     r = await client.get("/api/search", params={"query": "x", "project": "nope"})
     assert r.status_code == 404
+
+
+# --- blocking (issue #52) ------------------------------------------------------
+
+
+async def test_blocker_endpoints_over_rest(client) -> None:
+    hall = (
+        await client.post("/api/projects", json={"name": "Hallway", "goal": "Hallway painted"})
+    ).json()
+    garage = (await client.post("/api/projects", json={"name": "Garage"})).json()
+    trim = (
+        await client.post(f"/api/projects/{hall['id']}/tasks", json={"title": "Paint the trim"})
+    ).json()
+    keys = (
+        await client.post(f"/api/projects/{garage['id']}/tasks", json={"title": "Collect the keys"})
+    ).json()
+
+    r = await client.post(f"/api/tasks/{trim['id']}/blockers", json={"blocker_id": keys["id"]})
+    assert r.status_code == 201
+    blocked = r.json()
+    assert blocked["blocked"] is True
+    assert [b["title"] for b in blocked["blockers"]] == ["Collect the keys"]
+    assert blocked["blockers"][0]["project"] == {"name": "Garage", "slug": "garage"}
+
+    # the other side reads the link as well, and a blocked task is not next
+    [other] = (await client.get(f"/api/projects/{garage['id']}/tasks")).json()
+    assert other["blocked"] is False
+    assert [b["title"] for b in other["blocking"]] == ["Paint the trim"]
+    projects = (await client.get("/api/projects")).json()
+    [summary] = [p for p in projects if p["slug"] == "hallway"]
+    assert summary["next_task"] is None and summary["health"] == "stalled"
+
+    # the last blocker going done unblocks the task
+    await client.patch(f"/api/tasks/{keys['id']}", json={"done": True})
+    [waiting] = (await client.get(f"/api/projects/{hall['id']}/tasks")).json()
+    assert waiting["blocked"] is False
+
+    r = await client.delete(f"/api/tasks/{trim['id']}/blockers/{keys['id']}")
+    assert r.status_code == 200 and r.json()["blockers"] == []
+    # a link that is not there is no error
+    again = await client.delete(f"/api/tasks/{trim['id']}/blockers/{keys['id']}")
+    assert again.status_code == 200
+
+
+async def test_blocker_endpoints_refuse_a_loop_and_a_bad_id(client) -> None:
+    pid = (await client.post("/api/projects", json={"name": "P"})).json()["id"]
+    a = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "a"})).json()
+    b = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "b"})).json()
+    assert (
+        await client.post(f"/api/tasks/{b['id']}/blockers", json={"blocker_id": a["id"]})
+    ).status_code == 201
+
+    r = await client.post(f"/api/tasks/{a['id']}/blockers", json={"blocker_id": b["id"]})
+    assert r.status_code == 409
+    assert r.json()["detail"] == "this link makes a loop: a blocks b blocks a"
+
+    r = await client.post(f"/api/tasks/{a['id']}/blockers", json={"blocker_id": a["id"]})
+    assert r.status_code == 409 and "cannot block itself" in r.json()["detail"]
+
+    r = await client.post(f"/api/tasks/{a['id']}/blockers", json={"blocker_id": str(uuid.uuid4())})
+    assert r.status_code == 404
+    r = await client.post(f"/api/tasks/{a['id']}/blockers", json={"blocker_id": "nope"})
+    assert r.status_code == 422
+    r = await client.delete(f"/api/tasks/nope/blockers/{a['id']}")
+    assert r.status_code == 422

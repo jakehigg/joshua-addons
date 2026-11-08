@@ -28,6 +28,8 @@ TOOL_NAMES = {
     "next_steps",
     "set_group_target_date",
     "search_tasks",
+    "block_task",
+    "unblock_task",
 }
 
 
@@ -63,9 +65,9 @@ async def call_error(session, name: str, args: dict) -> str:
 
 
 @with_session
-async def test_tool_names_are_exactly_the_twenty(session) -> None:
+async def test_tool_names_are_exactly_the_twenty_two(session) -> None:
     names = [t.name for t in (await session.list_tools()).tools]
-    assert len(names) == 20
+    assert len(names) == 22
     assert set(names) == TOOL_NAMES
 
 
@@ -105,6 +107,8 @@ async def test_tools_declare_their_arguments(session) -> None:
         "next_steps": ({"project", "limit"}, set()),
         "set_group_target_date": ({"group_id", "target_date"}, {"group_id", "target_date"}),
         "search_tasks": ({"query", "include_done", "project", "limit"}, {"query"}),
+        "block_task": ({"task_id", "blocker_id"}, {"task_id", "blocker_id"}),
+        "unblock_task": ({"task_id", "blocker_id"}, {"task_id", "blocker_id"}),
     }
 
 
@@ -190,6 +194,7 @@ async def test_set_task_done_and_back(session) -> None:
     t = await call(session, "create_task", {"project": "p", "title": "t"})
     done = await call(session, "set_task_done", {"task_id": t["id"], "done": True})
     assert done["done"] is True
+    assert done["unblocked"] == [] and done["warning"] is None
     reopened = await call(session, "set_task_done", {"task_id": t["id"], "done": False})
     assert reopened["done"] is False
 
@@ -515,6 +520,8 @@ async def test_search_tasks_finds_projects_and_tasks(session) -> None:
         "assignee": "Sam",
         "project": {"name": "Hallway", "slug": "hallway"},
         "group": {"id": g["id"], "name": "Prep"},
+        "blocked": False,
+        "blockers": [],
     }
     assert found["tasks"][1]["group"] is None
     assert found["tasks"][1]["project"]["slug"] == "garden"
@@ -552,4 +559,77 @@ async def test_search_tasks_done_archived_limit_and_no_match(session) -> None:
     }
     assert "project not found" in await call_error(
         session, "search_tasks", {"query": "paint", "project": "nope"}
+    )
+
+
+# --- blocking (issue #52) ------------------------------------------------------
+
+
+@with_session
+async def test_block_task_and_the_tools_that_read_the_links(session) -> None:
+    await call(session, "create_project", {"name": "Hallway", "goal": "Hallway painted"})
+    await call(session, "create_project", {"name": "Garage"})
+    trim = await call(session, "create_task", {"project": "hallway", "title": "Paint the trim"})
+    keys = await call(session, "create_task", {"project": "garage", "title": "Collect the keys"})
+
+    blocked = await call(session, "block_task", {"task_id": trim["id"], "blocker_id": keys["id"]})
+    assert blocked["blocked"] is True
+    assert blocked["blockers"] == [
+        {"id": keys["id"], "title": "Collect the keys", "done": False, "project": "garage"}
+    ]
+
+    listing = await call(session, "list_tasks", {"project": "hallway"})
+    assert listing["backlog"][0]["blocked"] is True
+    assert listing["project"]["next_task"] is None and listing["project"]["health"] == "stalled"
+    other = await call(session, "list_tasks", {"project": "garage"})
+    assert other["backlog"][0]["blocking"][0]["title"] == "Paint the trim"
+
+    # a blocked task is not a next step, and its project keeps its place
+    [hallway] = [s for s in (await call(session, "next_steps"))["result"] if s["slug"] == "hallway"]
+    assert hallway["tasks"] == [] and hallway["health"] == "stalled"
+
+    found = await call(session, "search_tasks", {"query": "trim"})
+    assert found["tasks"][0]["blocked"] is True
+    assert found["tasks"][0]["blockers"][0]["title"] == "Collect the keys"
+
+    # the last blocker going done unblocks the task, and says so
+    report = await call(session, "set_task_done", {"task_id": keys["id"], "done": True})
+    assert [u["title"] for u in report["unblocked"]] == ["Paint the trim"]
+    assert report["warning"] is None
+    [hallway] = [s for s in (await call(session, "next_steps"))["result"] if s["slug"] == "hallway"]
+    assert [t["title"] for t in hallway["tasks"]] == ["Paint the trim"]
+
+    free = await call(session, "unblock_task", {"task_id": trim["id"], "blocker_id": keys["id"]})
+    assert free["blocked"] is False and free["blockers"] == []
+
+
+@with_session
+async def test_set_task_done_warns_while_a_blocker_is_open(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    paint = await call(session, "create_task", {"project": "p", "title": "Buy the paint"})
+    trim = await call(session, "create_task", {"project": "p", "title": "Paint the trim"})
+    await call(session, "block_task", {"task_id": trim["id"], "blocker_id": paint["id"]})
+
+    report = await call(session, "set_task_done", {"task_id": trim["id"], "done": True})
+    assert report["done"] is True  # the work is never refused
+    assert report["warning"] == "this task went done while it still waits for: Buy the paint"
+
+
+@with_session
+async def test_block_task_refuses_a_loop_and_itself(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    a = await call(session, "create_task", {"project": "p", "title": "a"})
+    b = await call(session, "create_task", {"project": "p", "title": "b"})
+    await call(session, "block_task", {"task_id": b["id"], "blocker_id": a["id"]})
+    assert "this link makes a loop: a blocks b blocks a" in await call_error(
+        session, "block_task", {"task_id": a["id"], "blocker_id": b["id"]}
+    )
+    assert "a task cannot block itself: a" in await call_error(
+        session, "block_task", {"task_id": a["id"], "blocker_id": a["id"]}
+    )
+    assert "blocker_id is not a valid id: junk" in await call_error(
+        session, "block_task", {"task_id": a["id"], "blocker_id": "junk"}
+    )
+    assert "task not found" in await call_error(
+        session, "unblock_task", {"task_id": a["id"], "blocker_id": str(uuid.uuid4())}
     )

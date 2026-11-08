@@ -1,4 +1,4 @@
-"""``run_migrations`` creates the three tables, adds missing columns, and is idempotent."""
+"""``run_migrations`` creates every table, adds missing columns, and is idempotent."""
 
 from __future__ import annotations
 
@@ -31,8 +31,30 @@ async def test_run_migrations_is_idempotent(tmp_path) -> None:
         ("tasks", "due_date"),
         ("tasks", "assignee"),
     ]
-    assert set(Base.metadata.tables) == {"projects", "groups", "tasks"}
-    assert tables == {"projects", "groups", "tasks"}
+    assert set(Base.metadata.tables) == {"projects", "groups", "tasks", "task_blockers"}
+    assert tables == {"projects", "groups", "tasks", "task_blockers"}
+
+
+async def test_a_database_without_the_blockers_table_gets_it(tmp_path) -> None:
+    """A database from before issue #52 gains ``task_blockers`` on the next start."""
+    engine = build_engine(f"sqlite+aiosqlite:///{tmp_path / 'old.db'}")
+    try:
+        await run_migrations(engine)
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP TABLE task_blockers"))
+        async with engine.connect() as conn:
+            before = await conn.run_sync(lambda c: set(inspect(c).get_table_names()))
+        assert "task_blockers" not in before
+
+        await run_migrations(engine)
+
+        async with engine.connect() as conn:
+            after = await conn.run_sync(lambda c: set(inspect(c).get_table_names()))
+            columns = await conn.run_sync(lambda c: _columns(c, "task_blockers"))
+    finally:
+        await engine.dispose()
+    assert "task_blockers" in after
+    assert columns == {"task_id", "blocker_id", "created_at"}
 
 
 async def test_a_first_release_database_gets_the_new_columns(tmp_path) -> None:
