@@ -108,9 +108,11 @@ jobs:
           digest='${{ steps.build.outputs.digest }}'
           echo "digest ${digest}"
           touch "/tmp/digests/${digest#sha256:}"
+      # Two dashes end the addon name. With one dash, the pattern of the
+      # merge job for `developer` also took the digests of `developer-worker`.
       - uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ matrix.member }}-${{ matrix.platform.arch }}
+          name: digest-${{ matrix.member }}--${{ matrix.platform.arch }}
           path: /tmp/digests/*
           retention-days: 1
           if-no-files-found: error
@@ -133,7 +135,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/download-artifact@v4
         with:
-          pattern: digest-${{ matrix.member }}-*
+          pattern: digest-${{ matrix.member }}--*
           merge-multiple: true
           path: /tmp/digests
       - name: make the manifest list
