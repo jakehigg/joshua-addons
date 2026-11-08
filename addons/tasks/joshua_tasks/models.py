@@ -1,4 +1,4 @@
-"""SQLAlchemy models for the tasks addon: projects, groups, and tasks.
+"""SQLAlchemy models for the tasks addon: projects, groups, tasks, and blockers.
 
 Ported from the v3 tasks app (``tasks/backend/app/models.py``). The columns
 and their meaning are the same. Two storage changes make the schema run
@@ -9,9 +9,9 @@ unchanged on SQLite and Postgres:
 * Timestamps use ``UTCDateTime`` and are set from Python, so a value on
   SQLite is timezone-aware UTC with microseconds, as on Postgres.
 
-``ON DELETE CASCADE`` (project to groups and tasks) and ``ON DELETE SET
-NULL`` (group to tasks) rely on the foreign-key pragma that ``database.py``
-turns on for SQLite.
+``ON DELETE CASCADE`` (project to groups and tasks, task to its blocking
+links) and ``ON DELETE SET NULL`` (group to tasks) rely on the foreign-key
+pragma that ``database.py`` turns on for SQLite.
 """
 
 from __future__ import annotations
@@ -177,3 +177,32 @@ class Task(Base):
 
     project: Mapped[Project] = relationship(back_populates="tasks")
     group: Mapped[Group | None] = relationship(back_populates="tasks")
+
+    # The blocking links, computed by ``service.attach_blocks`` and never
+    # stored. They stay unmapped (no annotation), so SQLAlchemy leaves them
+    # alone; the class values are what a task that nothing annotated reads as.
+    blocked = False
+    blockers = ()
+    blocking = ()
+
+
+class TaskBlocker(Base):
+    """One blocking link: ``task_id`` waits for ``blocker_id``.
+
+    The pair is the primary key, so the same link is never stored twice. The
+    two tasks can be in different projects. Each side cascades with the task
+    it names, so deleting a task also deletes its links.
+    """
+
+    __tablename__ = "task_blockers"
+    __table_args__ = (Index("ix_task_blockers_blocker_id", "blocker_id"),)
+
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    blocker_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=_now, server_default=func.now()
+    )
