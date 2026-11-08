@@ -200,6 +200,11 @@ releases, with the images and the packaged chart, are at
 
 ### Changed
 
+- `tasks`, `chores`, `pantry`: each web UI has its own icon in the browser tab and
+  on a phone home screen, instead of the Joshua elephant. Each is one icon in
+  its own color on the Joshua navy tile: a violet checklist for tasks, green
+  repeat arrows for chores, and an orange box for pantry. The app bar keeps
+  the Joshua logo.
 - `scripts/check_test_policy.py` and the CI test job change a dash in an
   addon directory name to an underscore in the package name, so an addon
   such as `developer-worker` gets its test policy and its coverage.
