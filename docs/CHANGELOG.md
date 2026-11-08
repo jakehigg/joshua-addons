@@ -31,6 +31,14 @@ releases, with the images and the packaged chart, are at
   projects are searched, until `include_done` is true, and an archived
   project is never searched. `GET /api/search` gives the same result to the
   web UI.
+- `tasks`: the web UI opens on a dashboard. The home page is one card for
+  each project, with the percent done, the counts, the health, the target
+  date, and the next task; the project that needs a person comes first.
+  "Show finished" adds the done and the closed projects. A search box finds
+  a project by its name or its goal and a task by its title or its notes,
+  and keeps the two kinds apart; "Include done" adds the done tasks and the
+  finished projects. A project is at `/p/<slug>`, and a found task opens its
+  project page at the task.
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes
