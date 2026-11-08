@@ -13,6 +13,16 @@ releases, with the images and the packaged chart, are at
   tools, and people use a web UI on the same port that updates live.
   SQLite by default, or Postgres with `DATABASE_URL`.
   `addons/tasks/README.md` has the tools and the settings.
+- `tasks`: goals and phases. A project can have a goal, a target date, and a
+  status (`active`, `paused`, `done`, `closed`). Groups are the phases of a
+  project and can have a target date; the ungrouped tasks are the backlog
+  and come after the phases. A task can have a size (`XS` to `XL`), a due
+  date, and an assignee. `list_projects` returns the percent done, a health
+  signal, and the next task. Five new tools: `set_project_goal`,
+  `complete_project` (refuses while a task is open), `set_project_status`,
+  `next_steps`, and `set_group_target_date`. `list_tasks` returns `backlog`
+  in place of `ungrouped`. The new columns are added to an existing
+  database on start; nothing is dropped.
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes

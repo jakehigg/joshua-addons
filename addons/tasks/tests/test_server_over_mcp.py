@@ -22,6 +22,11 @@ TOOL_NAMES = {
     "rename_group",
     "delete_group",
     "set_task_group",
+    "set_project_goal",
+    "complete_project",
+    "set_project_status",
+    "next_steps",
+    "set_group_target_date",
 }
 
 
@@ -57,26 +62,32 @@ async def call_error(session, name: str, args: dict) -> str:
 
 
 @with_session
-async def test_tool_names_are_exactly_the_fourteen(session) -> None:
+async def test_tool_names_are_exactly_the_nineteen(session) -> None:
     names = [t.name for t in (await session.list_tools()).tools]
-    assert len(names) == 14
+    assert len(names) == 19
     assert set(names) == TOOL_NAMES
 
 
 @with_session
-async def test_tools_declare_the_old_arguments(session) -> None:
+async def test_tools_declare_their_arguments(session) -> None:
     tools = {t.name: t.input_schema for t in (await session.list_tools()).tools}
     props = {
         n: (set(s.get("properties", {})), set(s.get("required", []))) for n, s in tools.items()
     }
     assert props == {
-        "list_projects": (set(), set()),
-        "create_project": ({"name"}, {"name"}),
+        "list_projects": ({"include_finished"}, set()),
+        "create_project": ({"name", "goal", "target_date"}, {"name"}),
         "rename_project": ({"project", "name"}, {"project", "name"}),
         "archive_project": ({"project"}, {"project"}),
         "list_tasks": ({"project", "include_done"}, {"project"}),
-        "create_task": ({"project", "title", "notes", "group"}, {"project", "title"}),
-        "update_task": ({"task_id", "title", "notes"}, {"task_id"}),
+        "create_task": (
+            {"project", "title", "notes", "group", "size", "due_date", "assignee"},
+            {"project", "title"},
+        ),
+        "update_task": (
+            {"task_id", "title", "notes", "size", "due_date", "assignee"},
+            {"task_id"},
+        ),
         "set_task_done": ({"task_id", "done"}, {"task_id", "done"}),
         "reorder_tasks": (
             {"project", "ordered_task_ids", "group"},
@@ -87,6 +98,11 @@ async def test_tools_declare_the_old_arguments(session) -> None:
         "rename_group": ({"group_id", "name"}, {"group_id", "name"}),
         "delete_group": ({"group_id"}, {"group_id"}),
         "set_task_group": ({"task_id", "group"}, {"task_id"}),
+        "set_project_goal": ({"project", "goal", "target_date"}, {"project", "goal"}),
+        "complete_project": ({"project"}, {"project"}),
+        "set_project_status": ({"project", "status"}, {"project", "status"}),
+        "next_steps": ({"project", "limit"}, set()),
+        "set_group_target_date": ({"group_id", "target_date"}, {"group_id", "target_date"}),
     }
 
 
@@ -102,8 +118,15 @@ async def test_create_project_and_list_projects(session) -> None:
                 "id": created["id"],
                 "name": "Paint the hallway",
                 "slug": "paint-the-hallway",
+                "goal": None,
+                "target_date": None,
+                "status": "active",
                 "task_count": 0,
                 "done_count": 0,
+                "open_count": 0,
+                "percent": 0,
+                "health": None,
+                "next_task": None,
             }
         ]
     }
@@ -132,7 +155,7 @@ async def test_create_task_and_list_tasks(session) -> None:
     assert task["done"] is False and task["group_id"] is None and task["position"] == 1024.0
     await call(session, "create_task", {"project": "p", "title": "Tape"})
     listing = await call(session, "list_tasks", {"project": "p"})
-    assert [t["title"] for t in listing["ungrouped"]] == ["Buy paint", "Tape"]
+    assert [t["title"] for t in listing["backlog"]] == ["Buy paint", "Tape"]
     assert listing["groups"] == []
 
 
@@ -148,7 +171,7 @@ async def test_list_tasks_include_done_false_and_group_counts(session) -> None:
     [group] = listing["groups"]
     assert (group["task_count"], group["done_count"]) == (2, 1)
     assert [t["title"] for t in group["tasks"]] == ["b"]
-    assert [t["title"] for t in listing["ungrouped"]] == ["loose"]
+    assert [t["title"] for t in listing["backlog"]] == ["loose"]
 
 
 @with_session
@@ -179,7 +202,7 @@ async def test_reorder_tasks_and_stale_error(session) -> None:
     )
     assert result == {"ok": True, "order": [b["id"], a["id"]]}
     listing = await call(session, "list_tasks", {"project": "p"})
-    assert [t["title"] for t in listing["ungrouped"]] == ["b", "a"]
+    assert [t["title"] for t in listing["backlog"]] == ["b", "a"]
     message = await call_error(
         session, "reorder_tasks", {"project": "p", "ordered_task_ids": [a["id"]]}
     )
@@ -196,7 +219,7 @@ async def test_reorder_tasks_into_a_group(session) -> None:
     )
     assert result["order"] == [a["id"]]
     listing = await call(session, "list_tasks", {"project": "p"})
-    assert listing["ungrouped"] == []
+    assert listing["backlog"] == []
     assert [t["title"] for t in listing["groups"][0]["tasks"]] == ["a"]
 
 
@@ -207,9 +230,9 @@ async def test_move_task_to_another_project(session) -> None:
     t = await call(session, "create_task", {"project": "src", "title": "roaming"})
     moved = await call(session, "move_task", {"task_id": t["id"], "to_project": "dst"})
     assert moved["id"] == t["id"]
-    assert (await call(session, "list_tasks", {"project": "src"}))["ungrouped"] == []
+    assert (await call(session, "list_tasks", {"project": "src"}))["backlog"] == []
     assert [
-        x["title"] for x in (await call(session, "list_tasks", {"project": "dst"}))["ungrouped"]
+        x["title"] for x in (await call(session, "list_tasks", {"project": "dst"}))["backlog"]
     ] == ["roaming"]
 
 
@@ -226,7 +249,7 @@ async def test_rename_group(session) -> None:
     await call(session, "create_project", {"name": "P"})
     g = await call(session, "create_group", {"project": "p", "name": "Old"})
     renamed = await call(session, "rename_group", {"group_id": g["id"], "name": "New"})
-    assert renamed == {"id": g["id"], "name": "New", "position": 1024.0}
+    assert renamed == {"id": g["id"], "name": "New", "position": 1024.0, "target_date": None}
 
 
 @with_session
@@ -237,7 +260,7 @@ async def test_delete_group_ungroups_tasks(session) -> None:
     assert await call(session, "delete_group", {"group_id": g["id"]}) == {"ok": True}
     listing = await call(session, "list_tasks", {"project": "p"})
     assert listing["groups"] == []
-    assert [t["title"] for t in listing["ungrouped"]] == ["a"]
+    assert [t["title"] for t in listing["backlog"]] == ["a"]
 
 
 @with_session
@@ -310,3 +333,145 @@ async def test_session_factory_is_unset_outside_the_lifespan() -> None:
 
     with pytest.raises(RuntimeError, match="not ready"):
         server._session_factory()
+
+
+# --- goals, status, and next steps (issue #37) ---------------------------------
+
+
+@with_session
+async def test_create_project_with_goal_and_list_shows_progress(session) -> None:
+    created = await call(
+        session,
+        "create_project",
+        {"name": "Hallway", "goal": "Hallway painted", "target_date": "2030-01-31"},
+    )
+    assert created["goal"] == "Hallway painted" and created["target_date"] == "2030-01-31"
+    assert created["status"] == "active"
+    a = await call(session, "create_task", {"project": "hallway", "title": "Buy paint"})
+    await call(session, "create_task", {"project": "hallway", "title": "Paint"})
+    await call(session, "set_task_done", {"task_id": a["id"], "done": True})
+    [p] = (await call(session, "list_projects"))["result"]
+    assert (p["percent"], p["open_count"], p["health"]) == (50, 1, "on_track")
+    assert p["next_task"]["title"] == "Paint"
+
+
+@with_session
+async def test_set_project_goal_and_clear_it(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    p = await call(
+        session, "set_project_goal", {"project": "p", "goal": "Done!", "target_date": "2030-05-01"}
+    )
+    assert p["goal"] == "Done!" and p["target_date"] == "2030-05-01" and p["health"] is None
+    p = await call(session, "set_project_goal", {"project": "p", "goal": "Still"})
+    assert p["target_date"] == "2030-05-01"  # omitted: kept
+    p = await call(session, "set_project_goal", {"project": "p", "goal": "", "target_date": ""})
+    assert p["goal"] is None and p["target_date"] is None and p["health"] is None
+    assert "YYYY-MM-DD" in await call_error(
+        session, "set_project_goal", {"project": "p", "goal": "g", "target_date": "soon"}
+    )
+
+
+@with_session
+async def test_complete_project_refuses_open_tasks_and_close_does_not(session) -> None:
+    await call(session, "create_project", {"name": "P", "goal": "g"})
+    t = await call(session, "create_task", {"project": "p", "title": "open"})
+    message = await call_error(session, "complete_project", {"project": "p"})
+    assert "1 task(s) are still open" in message and "close the project" in message
+    closed = await call(session, "set_project_status", {"project": "p", "status": "closed"})
+    assert closed["status"] == "closed" and closed["health"] == "closed"
+    assert (await call(session, "list_projects")) == {"result": []}
+    [p] = (await call(session, "list_projects", {"include_finished": True}))["result"]
+    assert p["status"] == "closed"
+
+    back = await call(session, "set_project_status", {"project": "p", "status": "active"})
+    assert back["status"] == "active"
+    await call(session, "set_task_done", {"task_id": t["id"], "done": True})
+    [p] = (await call(session, "list_projects"))["result"]
+    assert p["health"] == "ready_to_complete"
+    done = await call(session, "complete_project", {"project": "p"})
+    assert done["status"] == "done" and done["percent"] == 100
+
+
+@with_session
+async def test_paused_project_is_out_of_next_steps(session) -> None:
+    await call(session, "create_project", {"name": "Go"})
+    await call(session, "create_project", {"name": "Wait"})
+    await call(session, "create_project", {"name": "Empty"})
+    await call(session, "create_task", {"project": "go", "title": "g1"})
+    await call(session, "create_task", {"project": "wait", "title": "w1"})
+    paused = await call(session, "set_project_status", {"project": "wait", "status": "paused"})
+    assert paused["health"] == "paused"
+    steps = (await call(session, "next_steps"))["result"]
+    assert [(s["slug"], [t["title"] for t in s["tasks"]]) for s in steps] == [("go", ["g1"])]
+    named = (await call(session, "next_steps", {"project": "wait"}))["result"]
+    assert [s["slug"] for s in named] == ["wait"] and named[0]["status"] == "paused"
+
+
+@with_session
+async def test_next_steps_follow_roadmap_order_and_limit(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    await call(session, "create_task", {"project": "p", "title": "backlog item"})
+    g = await call(session, "create_group", {"project": "p", "name": "Phase 1"})
+    await call(session, "create_group", {"project": "p", "name": "Phase 2"})
+    await call(session, "create_task", {"project": "p", "title": "p2 a", "group": "Phase 2"})
+    first = await call(
+        session, "create_task", {"project": "p", "title": "p1 a", "group": "Phase 1"}
+    )
+    await call(session, "create_task", {"project": "p", "title": "p1 b", "group": g["id"]})
+    await call(session, "set_task_done", {"task_id": first["id"], "done": True})
+    [steps] = (await call(session, "next_steps", {"limit": 2}))["result"]
+    assert [t["title"] for t in steps["tasks"]] == ["p1 b", "p2 a"]
+    assert steps["next_task"]["title"] == "p1 b"
+    listing = await call(session, "list_tasks", {"project": "p"})
+    assert listing["project"]["next_task"]["title"] == "p1 b"
+    assert [g["name"] for g in listing["groups"]] == ["Phase 1", "Phase 2"]
+    assert listing["groups"][0]["percent"] == 50
+    assert [t["title"] for t in listing["backlog"]] == ["backlog item"]
+
+
+@with_session
+async def test_set_group_target_date_and_clear(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    g = await call(session, "create_group", {"project": "p", "name": "Phase 1"})
+    dated = await call(
+        session, "set_group_target_date", {"group_id": g["id"], "target_date": "2030-03-01"}
+    )
+    assert dated["target_date"] == "2030-03-01"
+    [group] = (await call(session, "list_tasks", {"project": "p"}))["groups"]
+    assert group["target_date"] == "2030-03-01"
+    cleared = await call(session, "set_group_target_date", {"group_id": g["id"], "target_date": ""})
+    assert cleared["target_date"] is None
+    assert "YYYY-MM-DD" in await call_error(
+        session, "set_group_target_date", {"group_id": g["id"], "target_date": "March"}
+    )
+    assert "not a valid id" in await call_error(
+        session, "set_group_target_date", {"group_id": "junk", "target_date": ""}
+    )
+
+
+@with_session
+async def test_task_size_due_date_and_assignee(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    t = await call(
+        session,
+        "create_task",
+        {"project": "p", "title": "t", "size": "m", "due_date": "2030-02-02", "assignee": " Sam "},
+    )
+    assert (t["size"], t["due_date"], t["assignee"]) == ("M", "2030-02-02", "Sam")
+    kept = await call(session, "update_task", {"task_id": t["id"], "title": "renamed"})
+    assert (kept["size"], kept["due_date"], kept["assignee"]) == ("M", "2030-02-02", "Sam")
+    cleared = await call(
+        session, "update_task", {"task_id": t["id"], "size": "", "due_date": "", "assignee": ""}
+    )
+    assert (cleared["size"], cleared["due_date"], cleared["assignee"]) == (None, None, None)
+    sized = await call(session, "update_task", {"task_id": t["id"], "size": "xl"})
+    assert sized["size"] == "XL"
+    assert "size must be one of XS, S, M, L, XL" in await call_error(
+        session, "update_task", {"task_id": t["id"], "size": "huge"}
+    )
+    assert "size must be one of" in await call_error(
+        session, "create_task", {"project": "p", "title": "x", "size": "tiny"}
+    )
+    assert "due_date must be a date" in await call_error(
+        session, "create_task", {"project": "p", "title": "x", "due_date": "tomorrow"}
+    )

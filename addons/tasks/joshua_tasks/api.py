@@ -20,8 +20,8 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import datetime
-from typing import Any
+from datetime import date, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from starlette.applications import Starlette
@@ -33,6 +33,10 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import joshua_tasks.server as server
 from joshua_tasks import service
 from joshua_tasks.events import broadcaster, current_origin
+from joshua_tasks.models import PROJECT_STATUSES, TASK_SIZES
+
+ProjectStatus = Literal[PROJECT_STATUSES]  # type: ignore[valid-type]
+TaskSize = Literal[TASK_SIZES]  # type: ignore[valid-type]
 
 # nginx-ingress cuts an idle stream at 60 s; a comment line every 25 s keeps it open.
 KEEPALIVE_SECONDS = 25.0
@@ -45,63 +49,19 @@ _UUID = TypeAdapter(uuid.UUID)
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    goal: str | None = Field(default=None, max_length=2000)
+    target_date: date | None = None
 
 
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     archived: bool | None = None
-
-
-class ProjectOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    name: str
-    slug: str
-    created_at: datetime
-    archived_at: datetime | None
-    task_count: int = 0
-    done_count: int = 0
-
-
-class GroupCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-
-
-class GroupUpdate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-
-
-class GroupOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    project_id: uuid.UUID
-    name: str
-    position: float
-    created_at: datetime
-    updated_at: datetime
-    task_count: int = 0
-    done_count: int = 0
-
-
-class GroupOrder(BaseModel):
-    ordered_ids: list[uuid.UUID]
-
-
-class TaskCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=1000)
-    notes: str = ""
-    group_id: uuid.UUID | None = None
-
-
-class TaskUpdate(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=1000)
-    notes: str | None = None
-    done: bool | None = None
-    # Presence-sensitive: ``group_id: null`` ungroups, omitting it leaves the
-    # task alone (checked through ``model_fields_set``).
-    group_id: uuid.UUID | None = None
+    # Presence-sensitive: ``goal: null`` clears the goal, omitting it leaves
+    # it alone (checked through ``model_fields_set``). Same for target_date.
+    goal: str | None = Field(default=None, max_length=2000)
+    target_date: date | None = None
+    # ``done`` is refused with a 409 while a task is open.
+    status: ProjectStatus | None = None
 
 
 class TaskOut(BaseModel):
@@ -114,9 +74,90 @@ class TaskOut(BaseModel):
     notes: str
     done: bool
     done_at: datetime | None
+    size: str | None = None
+    due_date: date | None = None
+    assignee: str | None = None
     position: float
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectOut(BaseModel):
+    """A project summary: the stored fields plus the computed ones."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    slug: str
+    goal: str | None = None
+    target_date: date | None = None
+    status: str = "active"
+    completed_at: datetime | None = None
+    created_at: datetime
+    archived_at: datetime | None
+    task_count: int = 0
+    done_count: int = 0
+    open_count: int = 0
+    percent: int = 0
+    health: str | None = None
+    last_progress_at: datetime | None = None
+    next_task: TaskOut | None = None
+
+
+class NextStepsOut(ProjectOut):
+    tasks: list[TaskOut] = []
+
+
+class GroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class GroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    # Presence-sensitive, as ``ProjectUpdate.target_date``.
+    target_date: date | None = None
+
+
+class GroupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    name: str
+    position: float
+    target_date: date | None = None
+    created_at: datetime
+    updated_at: datetime
+    task_count: int = 0
+    done_count: int = 0
+    percent: int = 0
+
+
+class GroupOrder(BaseModel):
+    ordered_ids: list[uuid.UUID]
+
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=1000)
+    notes: str = ""
+    group_id: uuid.UUID | None = None
+    size: TaskSize | None = None
+    due_date: date | None = None
+    assignee: str | None = Field(default=None, max_length=200)
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=1000)
+    notes: str | None = None
+    done: bool | None = None
+    # Presence-sensitive: ``group_id: null`` ungroups, omitting it leaves the
+    # task alone (checked through ``model_fields_set``). ``size``,
+    # ``due_date``, and ``assignee`` clear on ``null`` the same way.
+    group_id: uuid.UUID | None = None
+    size: TaskSize | None = None
+    due_date: date | None = None
+    assignee: str | None = Field(default=None, max_length=200)
 
 
 class TaskOrder(BaseModel):
@@ -198,6 +239,8 @@ def _guarded(handler: Handler) -> Handler:
             return _detail(404, str(exc))
         except service.ConflictError as exc:
             return _detail(409, str(exc))
+        except service.InvalidError as exc:
+            return _detail(422, str(exc))
 
     wrapper.__name__ = handler.__name__
     wrapper.__doc__ = handler.__doc__
@@ -282,18 +325,44 @@ async def list_projects(request: Request) -> Response:
 async def create_project(request: Request) -> Response:
     body = await _body(request, ProjectCreate)
     async with _session() as session:
-        project = await service.create_project(session, body.name)
-    return _json(ProjectOut, project, 201)
+        project = await service.create_project(
+            session, body.name, goal=body.goal, target_date=body.target_date
+        )
+        summary = await service.project_summary(session, project.id)
+    return _json(ProjectOut, summary, 201)
 
 
 async def update_project(request: Request) -> Response:
     project_id = _path_uuid(request, "project_id")
     body = await _body(request, ProjectUpdate)
+    given = body.model_fields_set
     async with _session() as session:
-        project = await service.update_project(
-            session, project_id, name=body.name, archived=body.archived
+        await service.update_project(
+            session,
+            project_id,
+            name=body.name,
+            archived=body.archived,
+            goal=body.goal if "goal" in given else service.UNSET,
+            target_date=body.target_date if "target_date" in given else service.UNSET,
         )
-    return _json(ProjectOut, project)
+        if body.status is not None:
+            await service.set_project_status(session, project_id, body.status)
+        summary = await service.project_summary(session, project_id)
+    return _json(ProjectOut, summary)
+
+
+async def next_steps(request: Request) -> Response:
+    """``?project=<id|slug>`` narrows to one project; ``?limit=`` caps the tasks (default 3)."""
+    project = request.query_params.get("project") or None
+    try:
+        limit = int(request.query_params.get("limit", "3"))
+    except ValueError:
+        raise _Invalid(
+            [{"type": "int_parsing", "loc": ["query", "limit"], "msg": "must be an integer"}]
+        ) from None
+    async with _session() as session:
+        steps = await service.next_steps(session, project, limit=limit)
+    return _json_list(NextStepsOut, steps)
 
 
 async def delete_project(request: Request) -> Response:
@@ -321,11 +390,17 @@ async def create_group(request: Request) -> Response:
     return _json(GroupOut, group, 201)
 
 
-async def rename_group(request: Request) -> Response:
+async def update_group(request: Request) -> Response:
     group_id = _path_uuid(request, "group_id")
     body = await _body(request, GroupUpdate)
+    given = body.model_fields_set
     async with _session() as session:
-        group = await service.rename_group(session, group_id, body.name)
+        group = await service.update_group(
+            session,
+            group_id,
+            name=body.name,
+            target_date=body.target_date if "target_date" in given else service.UNSET,
+        )
     return _json(GroupOut, group)
 
 
@@ -359,7 +434,14 @@ async def create_task(request: Request) -> Response:
     body = await _body(request, TaskCreate)
     async with _session() as session:
         task = await service.create_task(
-            session, project_id, body.title, body.notes, group=body.group_id
+            session,
+            project_id,
+            body.title,
+            body.notes,
+            group=body.group_id,
+            size=body.size,
+            due_date=body.due_date,
+            assignee=body.assignee,
         )
     return _json(TaskOut, task, 201)
 
@@ -377,9 +459,17 @@ async def reorder_tasks(request: Request) -> Response:
 async def update_task(request: Request) -> Response:
     task_id = _path_uuid(request, "task_id")
     body = await _body(request, TaskUpdate)
+    given = body.model_fields_set
     async with _session() as session:
         task = await service.update_task(
-            session, task_id, title=body.title, notes=body.notes, done=body.done
+            session,
+            task_id,
+            title=body.title,
+            notes=body.notes,
+            done=body.done,
+            size=body.size if "size" in given else service.UNSET,
+            due_date=body.due_date if "due_date" in given else service.UNSET,
+            assignee=body.assignee if "assignee" in given else service.UNSET,
         )
         if "group_id" in body.model_fields_set:
             task = await service.set_task_group(session, task_id, body.group_id)
@@ -402,12 +492,13 @@ def _routes() -> list[Route]:
         route("/events", events, "GET"),
         route("/projects", list_projects, "GET"),
         route("/projects", create_project, "POST"),
+        route("/next-steps", next_steps, "GET"),
         route("/projects/{project_id}", update_project, "PATCH"),
         route("/projects/{project_id}", delete_project, "DELETE"),
         route("/projects/{project_id}/groups", list_groups, "GET"),
         route("/projects/{project_id}/groups", create_group, "POST"),
         route("/projects/{project_id}/groups/order", reorder_groups, "PUT"),
-        route("/groups/{group_id}", rename_group, "PATCH"),
+        route("/groups/{group_id}", update_group, "PATCH"),
         route("/groups/{group_id}", delete_group, "DELETE"),
         route("/projects/{project_id}/tasks", list_tasks, "GET"),
         route("/projects/{project_id}/tasks", create_task, "POST"),

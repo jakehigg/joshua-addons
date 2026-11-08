@@ -15,7 +15,8 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from datetime import date
+from typing import Any, Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -69,12 +70,38 @@ async def lifespan(server: MCPServer) -> AsyncIterator[dict[str, Any]]:
 mcp = MCPServer(name="tasks", lifespan=lifespan)
 
 
+def _iso(value: date | None) -> str | None:
+    return value.isoformat() if value else None
+
+
 def _project_dict(p: Project) -> dict[str, Any]:
     return {
         "id": str(p.id),
         "name": p.name,
         "slug": p.slug,
+        "goal": p.goal,
+        "target_date": _iso(p.target_date),
+        "status": p.status,
         "archived": p.archived_at is not None,
+    }
+
+
+def _summary_dict(s: dict[str, Any]) -> dict[str, Any]:
+    """A project summary from ``service`` as the tools return it."""
+    nt = s["next_task"]
+    return {
+        "id": str(s["id"]),
+        "name": s["name"],
+        "slug": s["slug"],
+        "goal": s["goal"],
+        "target_date": _iso(s["target_date"]),
+        "status": s["status"],
+        "task_count": s["task_count"],
+        "done_count": s["done_count"],
+        "open_count": s["open_count"],
+        "percent": s["percent"],
+        "health": s["health"],
+        "next_task": {"id": str(nt.id), "title": nt.title} if nt else None,
     }
 
 
@@ -84,13 +111,21 @@ def _task_dict(t: Task) -> dict[str, Any]:
         "title": t.title,
         "notes": t.notes,
         "done": t.done,
+        "size": t.size,
+        "due_date": _iso(t.due_date),
+        "assignee": t.assignee,
         "position": t.position,
         "group_id": str(t.group_id) if t.group_id else None,
     }
 
 
 def _group_dict(g: Group) -> dict[str, Any]:
-    return {"id": str(g.id), "name": g.name, "position": g.position}
+    return {
+        "id": str(g.id),
+        "name": g.name,
+        "position": g.position,
+        "target_date": _iso(g.target_date),
+    }
 
 
 def _uuid(value: str, what: str) -> uuid.UUID:
@@ -101,49 +136,158 @@ def _uuid(value: str, what: str) -> uuid.UUID:
         raise ToolError(f"{what} is not a valid id: {value}") from None
 
 
+def _date(value: str | None, what: str) -> date | None:
+    """Parse a ``YYYY-MM-DD`` argument. ``None`` or an empty string is no date."""
+    if value is None or not value.strip():
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        raise ToolError(f"{what} must be a date as YYYY-MM-DD: {value}") from None
+
+
+def _date_change(value: str | None, what: str) -> date | None:
+    """For an edit: not passed keeps the date, an empty string clears it."""
+    return service.UNSET if value is None else _date(value, what)
+
+
+def _text_change(value: str | None) -> str | None:
+    """For an edit: not passed keeps the text, an empty string clears it."""
+    return service.UNSET if value is None else value
+
+
 @asynccontextmanager
 async def _tool_session() -> AsyncIterator[AsyncSession]:
     """Open a session; a lookup or conflict error becomes a ``ToolError``."""
     async with _session_factory()() as session:
         try:
             yield session
-        except (service.NotFoundError, service.ConflictError) as exc:
+        except (service.NotFoundError, service.ConflictError, service.InvalidError) as exc:
             raise ToolError(str(exc)) from None
 
 
 @mcp.tool()
-async def list_projects() -> list[dict[str, Any]]:
+async def list_projects(include_finished: bool = False) -> list[dict[str, Any]]:
     """
-    List all active (non-archived) projects with task counts.
+    List the projects that are not archived, with progress. Call it first.
 
-    Returns each project's id, name, slug, task_count (all tasks) and
-    done_count (completed tasks). Use the slug to reference a project in
-    the other tools.
+    Each project has its id, name, slug, goal (null for a plain list),
+    target_date, status (active, paused, done, closed), task_count,
+    done_count, open_count, percent (done over all tasks), health, and
+    next_task (the first open task in roadmap order, or null).
+
+    health is one of: on_track, stalled (a goal project with no task done
+    in 14 days), overdue (past target_date with open tasks),
+    ready_to_complete (every task done: call complete_project), or the
+    status for a paused, done, or closed project. A list without a goal or
+    a date has health null, and so does a project with no tasks yet. Use
+    the slug to name a project in other tools.
+
+    Args:
+        include_finished: Set true to also see done and closed projects.
     """
     async with _tool_session() as session:
-        projects = await service.list_projects(session)
-    return [
-        {
-            "id": str(p["id"]),
-            "name": p["name"],
-            "slug": p["slug"],
-            "task_count": p["task_count"],
-            "done_count": p["done_count"],
-        }
-        for p in projects
-    ]
+        projects = await service.list_projects(session, include_finished=include_finished)
+    return [_summary_dict(p) for p in projects]
 
 
 @mcp.tool()
-async def create_project(name: str) -> dict[str, Any]:
+async def create_project(
+    name: str, goal: str | None = None, target_date: str | None = None
+) -> dict[str, Any]:
     """
-    Create a new project. A url-safe unique slug is derived from the name.
+    Create a project. A url-safe unique slug is derived from the name.
+
+    A project with a goal is meant to be completed: its tasks are the steps
+    to the goal, and it gets a health signal. A project without a goal is a
+    plain list, for example a backlog or a household list.
 
     Args:
         name: Human-readable project name, e.g. "Paint the hallway".
+        goal: The outcome the tasks work toward, e.g. "Hallway painted and furniture back".
+        target_date: When it should be done, as YYYY-MM-DD. Optional.
     """
     async with _tool_session() as session:
-        return _project_dict(await service.create_project(session, name))
+        project = await service.create_project(
+            session, name, goal=goal, target_date=_date(target_date, "target_date")
+        )
+        return _project_dict(project)
+
+
+@mcp.tool()
+async def set_project_goal(
+    project: str, goal: str, target_date: str | None = None
+) -> dict[str, Any]:
+    """
+    Set or change a project's goal and target date.
+
+    Args:
+        project: Project slug or id.
+        goal: The outcome the tasks work toward. An empty string removes the goal.
+        target_date: YYYY-MM-DD. Omit to keep the current date; pass "" to clear it.
+    """
+    async with _tool_session() as session:
+        await service.update_project(
+            session,
+            project,
+            goal=goal,
+            target_date=_date_change(target_date, "target_date"),
+        )
+        return _summary_dict(await service.project_summary(session, project))
+
+
+@mcp.tool()
+async def complete_project(project: str) -> dict[str, Any]:
+    """
+    Mark a project done. Refused while any task is open: finish, move, or
+    delete the open tasks first, or use set_project_status(closed) to end the
+    project with open tasks.
+
+    Args:
+        project: Project slug or id.
+    """
+    async with _tool_session() as session:
+        await service.complete_project(session, project)
+        return _summary_dict(await service.project_summary(session, project))
+
+
+@mcp.tool()
+async def set_project_status(
+    project: str, status: Literal["active", "paused", "closed"]
+) -> dict[str, Any]:
+    """
+    Pause, close, or reactivate a project. Use complete_project for done.
+
+    paused keeps the project out of next_steps and out of the health
+    nudges. closed ends a project that still has open tasks. active brings
+    a paused, closed, or done project back.
+
+    Args:
+        project: Project slug or id.
+        status: active, paused, or closed.
+    """
+    async with _tool_session() as session:
+        await service.set_project_status(session, project, status)
+        return _summary_dict(await service.project_summary(session, project))
+
+
+@mcp.tool()
+async def next_steps(project: str | None = None, limit: int = 3) -> list[dict[str, Any]]:
+    """
+    What to do next: the first open tasks of every active project, in
+    roadmap order (phases in order, then the backlog). Use it for "what
+    should I work on", a morning brief, or a check-in on a project.
+
+    Each entry is a project summary (see list_projects) plus tasks, the
+    next open tasks. A paused or finished project is left out unless named.
+
+    Args:
+        project: Project slug or id, to ask about one project only.
+        limit: How many tasks per project (default 3).
+    """
+    async with _tool_session() as session:
+        steps = await service.next_steps(session, project, limit=limit)
+    return [{**_summary_dict(s), "tasks": [_task_dict(t) for t in s["tasks"]]} for s in steps]
 
 
 @mcp.tool()
@@ -176,54 +320,78 @@ async def archive_project(project: str) -> dict[str, Any]:
 @mcp.tool()
 async def list_tasks(project: str, include_done: bool = True) -> dict[str, Any]:
     """
-    List a project's tasks in display order: the ungrouped list first, then
-    each group with its tasks. Groups carry done_count/task_count so you can
-    report progress ("2/5 done"). Projects without groups just have an empty
-    "groups" list — everything else works the same.
+    A project's tasks in roadmap order: each group (a phase) with its tasks,
+    then the backlog (tasks in no group). The order is the order to do them
+    in; project.next_task is the first open one. A group carries
+    done_count/task_count/percent and an optional target_date, so you can
+    report progress ("2/5 done"). A project without groups has an empty
+    "groups" list and everything in "backlog".
 
     Args:
         project: Project slug or id.
         include_done: Set false to only see open tasks (counts still include done).
     """
     async with _tool_session() as session:
+        summary = await service.project_summary(session, project)
         tasks = await service.list_tasks(session, project, include_done=include_done)
         groups = await service.list_groups(session, project)
     by_group: dict[str, list[dict[str, Any]]] = {}
-    ungrouped: list[dict[str, Any]] = []
+    backlog: list[dict[str, Any]] = []
     for t in tasks:
-        target = by_group.setdefault(str(t.group_id), []) if t.group_id else ungrouped
+        target = by_group.setdefault(str(t.group_id), []) if t.group_id else backlog
         target.append(_task_dict(t))
     return {
-        "ungrouped": ungrouped,
+        "project": _summary_dict(summary),
         "groups": [
             {
                 "id": str(g["id"]),
                 "name": g["name"],
+                "target_date": _iso(g["target_date"]),
                 "task_count": g["task_count"],
                 "done_count": g["done_count"],
+                "percent": g["percent"],
                 "tasks": by_group.get(str(g["id"]), []),
             }
             for g in groups
         ],
+        "backlog": backlog,
     }
 
 
 @mcp.tool()
 async def create_task(
-    project: str, title: str, notes: str | None = None, group: str | None = None
+    project: str,
+    title: str,
+    notes: str | None = None,
+    group: str | None = None,
+    size: str | None = None,
+    due_date: str | None = None,
+    assignee: str | None = None,
 ) -> dict[str, Any]:
     """
-    Add a task at the end of a project's list — or at the end of a group,
-    if one is given.
+    Add a task at the end of a project's backlog, or at the end of a group
+    if one is given. Use reorder_tasks after, if it belongs earlier.
 
     Args:
         project: Project slug or id.
         title: Short task title, e.g. "Buy paint and supplies".
         notes: Optional longer markdown notes.
         group: Optional group name or id to add the task into.
+        size: Optional T-shirt size: XS, S, M, L, or XL.
+        due_date: Optional date as YYYY-MM-DD.
+        assignee: Optional name of the person who will do it.
     """
     async with _tool_session() as session:
-        t = await service.create_task(session, project, title, notes or "", group=group)
+        t = await service.create_task(
+            session,
+            project,
+            title,
+            notes or "",
+            group=group,
+            size=size,
+            due_date=_date(due_date, "due_date"),
+            assignee=assignee,
+        )
         return _task_dict(t)
 
 
@@ -240,6 +408,22 @@ async def create_group(project: str, name: str) -> dict[str, Any]:
     """
     async with _tool_session() as session:
         return _group_dict(await service.create_group(session, project, name))
+
+
+@mcp.tool()
+async def set_group_target_date(group_id: str, target_date: str) -> dict[str, Any]:
+    """
+    Set the target date of a group, which makes it a milestone of the
+    project's roadmap.
+
+    Args:
+        group_id: The group's id (from list_tasks).
+        target_date: YYYY-MM-DD, or an empty string to clear the date.
+    """
+    gid = _uuid(group_id, "group_id")
+    async with _tool_session() as session:
+        g = await service.update_group(session, gid, target_date=_date(target_date, "target_date"))
+        return _group_dict(g)
 
 
 @mcp.tool()
@@ -288,19 +472,37 @@ async def set_task_group(task_id: str, group: str | None = None) -> dict[str, An
 
 @mcp.tool()
 async def update_task(
-    task_id: str, title: str | None = None, notes: str | None = None
+    task_id: str,
+    title: str | None = None,
+    notes: str | None = None,
+    size: str | None = None,
+    due_date: str | None = None,
+    assignee: str | None = None,
 ) -> dict[str, Any]:
     """
-    Edit a task's title and/or notes. Use set_task_done to complete a task.
+    Edit a task. Only the arguments you pass change; an empty string clears
+    size, due_date, or assignee. Use set_task_done to complete a task.
 
     Args:
         task_id: The task's id (from list_tasks).
         title: New title, if changing.
         notes: New notes, if changing (replaces the old notes).
+        size: T-shirt size: XS, S, M, L, or XL. "" removes it.
+        due_date: YYYY-MM-DD. "" removes it.
+        assignee: The person's name. "" removes it.
     """
     tid = _uuid(task_id, "task_id")
     async with _tool_session() as session:
-        return _task_dict(await service.update_task(session, tid, title=title, notes=notes))
+        task = await service.update_task(
+            session,
+            tid,
+            title=title,
+            notes=notes,
+            size=_text_change(size),
+            due_date=_date_change(due_date, "due_date"),
+            assignee=_text_change(assignee),
+        )
+        return _task_dict(task)
 
 
 @mcp.tool()

@@ -17,9 +17,9 @@ turns on for SQLite.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -78,12 +78,30 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+# A project's lifecycle. ``done`` is reached through ``complete_project``,
+# which refuses while a task is open; ``closed`` ends a project with open
+# tasks; ``paused`` keeps a project out of the next-steps list.
+PROJECT_STATUSES = ("active", "paused", "done", "closed")
+FINISHED_STATUSES = ("done", "closed")
+
+# T-shirt sizes for a task, smallest first.
+TASK_SIZES = ("XS", "S", "M", "L", "XL")
+
+
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    # The outcome the tasks work toward. NULL = a plain list that never
+    # completes and gets no health signal.
+    goal: Mapped[str | None] = mapped_column(Text, default=None)
+    target_date: Mapped[date | None] = mapped_column(Date, default=None)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default="active"
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, default=_now, server_default=func.now()
     )
@@ -113,6 +131,8 @@ class Group(Base):
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     position: Mapped[float] = mapped_column(Float, nullable=False)
+    # A group is a phase of the project's roadmap; the date is its milestone.
+    target_date: Mapped[date | None] = mapped_column(Date, default=None)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, default=_now, server_default=func.now()
     )
@@ -140,6 +160,11 @@ class Task(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     done: Mapped[bool] = mapped_column(nullable=False, default=False)
     done_at: Mapped[datetime | None] = mapped_column(default=None)
+    # One of TASK_SIZES, or NULL when not sized.
+    size: Mapped[str | None] = mapped_column(String(4), default=None)
+    due_date: Mapped[date | None] = mapped_column(Date, default=None)
+    # A person's name as given; the addon keeps no roster.
+    assignee: Mapped[str | None] = mapped_column(Text, default=None)
     # Order within a container (the root list or one group); smaller = higher.
     # A reorder rewrites its container's positions as (index+1)*1024.
     position: Mapped[float] = mapped_column(Float, nullable=False)
