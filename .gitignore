@@ -31,3 +31,4 @@ charts/*/charts/
 # Frontend build artifacts (addons/*/frontend/)
 node_modules/
 dist/
+*.tsbuildinfo
