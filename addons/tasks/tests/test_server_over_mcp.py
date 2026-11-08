@@ -27,6 +27,7 @@ TOOL_NAMES = {
     "set_project_status",
     "next_steps",
     "set_group_target_date",
+    "search_tasks",
 }
 
 
@@ -62,9 +63,9 @@ async def call_error(session, name: str, args: dict) -> str:
 
 
 @with_session
-async def test_tool_names_are_exactly_the_nineteen(session) -> None:
+async def test_tool_names_are_exactly_the_twenty(session) -> None:
     names = [t.name for t in (await session.list_tools()).tools]
-    assert len(names) == 19
+    assert len(names) == 20
     assert set(names) == TOOL_NAMES
 
 
@@ -103,6 +104,7 @@ async def test_tools_declare_their_arguments(session) -> None:
         "set_project_status": ({"project", "status"}, {"project", "status"}),
         "next_steps": ({"project", "limit"}, set()),
         "set_group_target_date": ({"group_id", "target_date"}, {"group_id", "target_date"}),
+        "search_tasks": ({"query", "include_done", "project", "limit"}, {"query"}),
     }
 
 
@@ -474,4 +476,80 @@ async def test_task_size_due_date_and_assignee(session) -> None:
     )
     assert "due_date must be a date" in await call_error(
         session, "create_task", {"project": "p", "title": "x", "due_date": "tomorrow"}
+    )
+
+
+# --- search (issue #40) --------------------------------------------------------
+
+
+@with_session
+async def test_search_tasks_finds_projects_and_tasks(session) -> None:
+    await call(session, "create_project", {"name": "Hallway", "goal": "Hallway painted"})
+    await call(session, "create_project", {"name": "Garden"})
+    g = await call(session, "create_group", {"project": "hallway", "name": "Prep"})
+    await call(session, "create_task", {"project": "hallway", "title": "Tape edges"})
+    task = await call(
+        session,
+        "create_task",
+        {
+            "project": "hallway",
+            "title": "Buy PAINT",
+            "group": "Prep",
+            "size": "s",
+            "due_date": "2030-02-02",
+            "assignee": "Sam",
+        },
+    )
+    await call(session, "create_task", {"project": "garden", "title": "Dig", "notes": "paint pots"})
+
+    found = await call(session, "search_tasks", {"query": "paint"})
+    assert [p["slug"] for p in found["projects"]] == ["hallway"]
+    assert found["projects"][0]["goal"] == "Hallway painted"
+    assert [t["title"] for t in found["tasks"]] == ["Buy PAINT", "Dig"]
+    assert found["tasks"][0] == {
+        "id": task["id"],
+        "title": "Buy PAINT",
+        "done": False,
+        "size": "S",
+        "due_date": "2030-02-02",
+        "assignee": "Sam",
+        "project": {"name": "Hallway", "slug": "hallway"},
+        "group": {"id": g["id"], "name": "Prep"},
+    }
+    assert found["tasks"][1]["group"] is None
+    assert found["tasks"][1]["project"]["slug"] == "garden"
+
+    one = await call(session, "search_tasks", {"query": "paint", "project": "garden"})
+    assert [t["title"] for t in one["tasks"]] == ["Dig"]
+    assert [p["slug"] for p in one["projects"]] == ["hallway"]
+
+
+@with_session
+async def test_search_tasks_done_archived_limit_and_no_match(session) -> None:
+    await call(session, "create_project", {"name": "Paint", "goal": "g"})
+    done = await call(session, "create_task", {"project": "paint", "title": "paint a wall"})
+    await call(session, "create_task", {"project": "paint", "title": "paint a door"})
+    await call(session, "set_task_done", {"task_id": done["id"], "done": True})
+
+    open_only = await call(session, "search_tasks", {"query": "paint"})
+    assert [t["title"] for t in open_only["tasks"]] == ["paint a door"]
+    everything = await call(session, "search_tasks", {"query": "paint", "include_done": True})
+    assert [t["title"] for t in everything["tasks"]] == ["paint a wall", "paint a door"]
+    assert [t["done"] for t in everything["tasks"]] == [True, False]
+
+    capped = await call(
+        session, "search_tasks", {"query": "paint", "include_done": True, "limit": 1}
+    )
+    assert [t["title"] for t in capped["tasks"]] == ["paint a wall"]
+
+    assert await call(session, "search_tasks", {"query": "zebra"}) == {"projects": [], "tasks": []}
+    assert await call(session, "search_tasks", {"query": " "}) == {"projects": [], "tasks": []}
+
+    await call(session, "archive_project", {"project": "paint"})
+    assert await call(session, "search_tasks", {"query": "paint", "include_done": True}) == {
+        "projects": [],
+        "tasks": [],
+    }
+    assert "project not found" in await call_error(
+        session, "search_tasks", {"query": "paint", "project": "nope"}
     )

@@ -23,6 +23,14 @@ releases, with the images and the packaged chart, are at
   `next_steps`, and `set_group_target_date`. `list_tasks` returns `backlog`
   in place of `ungrouped`. The new columns are added to an existing
   database on start; nothing is dropped.
+- `tasks`: search. The new `search_tasks` tool, the twentieth, finds the
+  projects and the tasks that hold a word, so Joshua can look for a task
+  before it adds one. The match is a case-insensitive substring: a project
+  on its name or its goal, a task on its title or its notes. The result
+  keeps the projects and the tasks apart. Only open tasks and unfinished
+  projects are searched, until `include_done` is true, and an archived
+  project is never searched. `GET /api/search` gives the same result to the
+  web UI.
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes

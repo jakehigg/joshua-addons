@@ -119,6 +119,22 @@ def _task_dict(t: Task) -> dict[str, Any]:
     }
 
 
+def _found_task_dict(found: dict[str, Any]) -> dict[str, Any]:
+    """One task match from ``service.search``, with its project and its group."""
+    task: Task = found["task"]
+    group: Group | None = found["group"]
+    return {
+        "id": str(task.id),
+        "title": task.title,
+        "done": task.done,
+        "size": task.size,
+        "due_date": _iso(task.due_date),
+        "assignee": task.assignee,
+        "project": {"name": found["project"]["name"], "slug": found["project"]["slug"]},
+        "group": {"id": str(group.id), "name": group.name} if group else None,
+    }
+
+
 def _group_dict(g: Group) -> dict[str, Any]:
     return {
         "id": str(g.id),
@@ -539,6 +555,48 @@ async def reorder_tasks(
     async with _tool_session() as session:
         tasks = await service.reorder_tasks(session, project, ids, group=group)
     return {"ok": True, "order": [str(t.id) for t in tasks]}
+
+
+@mcp.tool()
+async def search_tasks(
+    query: str,
+    include_done: bool = False,
+    project: str | None = None,
+    limit: int = service.SEARCH_LIMIT,
+) -> dict[str, Any]:
+    """
+    Search the projects and the tasks for a word. Call it before
+    create_task, to see whether the task is there already.
+
+    query is matched as a substring, and case does not matter: "paint"
+    finds "Buy Paint". A project matches on its name or its goal, a task on
+    its title or its notes.
+
+    The result keeps the two kinds apart: "projects", the project summaries
+    (see list_projects), and "tasks", the matching tasks. Each task carries
+    its id, title, done, size, due_date, assignee, its project (name and
+    slug), and its group (name and id, or null when the task is in the
+    backlog). The projects come oldest first. The tasks come project by
+    project, in that same project order, and in roadmap order inside a
+    project (the phases in order, then the backlog).
+
+    An archived project, and every task in it, is never searched. An empty
+    query matches nothing.
+
+    Args:
+        query: The word or phrase to look for.
+        include_done: Set true to also match done tasks and done or closed projects.
+        project: Project slug or id, to match tasks in one project only.
+        limit: How many projects, and how many tasks, at most (default 20).
+    """
+    async with _tool_session() as session:
+        found = await service.search(
+            session, query, include_done=include_done, project=project, limit=limit
+        )
+    return {
+        "projects": [_summary_dict(p) for p in found["projects"]],
+        "tasks": [_found_task_dict(f) for f in found["tasks"]],
+    }
 
 
 @mcp.tool()
