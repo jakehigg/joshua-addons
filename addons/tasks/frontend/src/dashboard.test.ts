@@ -15,6 +15,7 @@ import {
   parseRoute,
   projectCardView,
   searchView,
+  taskHref,
 } from "./dashboard.ts";
 
 function project(fields: Partial<Project> & { name: string }): Project {
@@ -37,6 +38,7 @@ function project(fields: Partial<Project> & { name: string }): Project {
 
 function task(fields: Partial<Task> & { id: string; title: string }): Task {
   return {
+    number: 1,
     project_id: "a-project",
     group_id: null,
     notes: "",
@@ -247,9 +249,13 @@ test("a search shows the matching projects and the matching tasks apart", () => 
   const result: SearchResult = {
     projects: [hallway],
     tasks: [
-      { task: task({ id: "t1", title: "Buy the paint" }), project: hallway, group: group("Prep") },
       {
-        task: task({ id: "t2", title: "Paint the trim", done: true }),
+        task: task({ id: "t1", number: 24, title: "Buy the paint" }),
+        project: hallway,
+        group: group("Prep"),
+      },
+      {
+        task: task({ id: "t2", number: 25, title: "Paint the trim", done: true }),
         project: hallway,
         group: null,
       },
@@ -264,17 +270,23 @@ test("a search shows the matching projects and the matching tasks apart", () => 
   assert.deepEqual(view.tasks, [
     {
       id: "t1",
+      number: 24,
       title: "Buy the paint",
-      href: "/p/hallway#task-t1",
+      href: "/p/hallway#task-24",
       done: false,
       whereLabel: "Hallway · Prep",
     },
     {
       id: "t2",
+      number: 25,
       title: "Paint the trim",
-      href: "/p/hallway#task-t2",
+      href: "/p/hallway#task-25",
       done: true,
       whereLabel: "Hallway · backlog",
     },
   ]);
+});
+
+test("a task link holds the task number, so a person can read it", () => {
+  assert.equal(taskHref({ slug: "hallway" }, { number: 24 }), "/p/hallway#task-24");
 });

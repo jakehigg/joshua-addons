@@ -508,6 +508,7 @@ async def test_search_tasks_finds_projects_and_tasks(session) -> None:
     assert [t["title"] for t in found["tasks"]] == ["Buy PAINT", "Dig"]
     assert found["tasks"][0] == {
         "id": task["id"],
+        "number": task["number"],
         "title": "Buy PAINT",
         "done": False,
         "size": "S",
@@ -552,4 +553,67 @@ async def test_search_tasks_done_archived_limit_and_no_match(session) -> None:
     }
     assert "project not found" in await call_error(
         session, "search_tasks", {"query": "paint", "project": "nope"}
+    )
+
+
+@with_session
+async def test_every_result_with_a_task_carries_its_number(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    g = await call(session, "create_group", {"project": "p", "name": "Phase 1"})
+    first = await call(session, "create_task", {"project": "p", "title": "a", "group": g["id"]})
+    second = await call(session, "create_task", {"project": "p", "title": "b"})
+    assert (first["number"], second["number"]) == (1, 2)
+
+    listing = await call(session, "list_tasks", {"project": "p"})
+    assert [t["number"] for t in listing["groups"][0]["tasks"]] == [1]
+    assert [t["number"] for t in listing["backlog"]] == [2]
+    assert listing["project"]["next_task"]["number"] == 1
+
+    [steps] = (await call(session, "next_steps"))["result"]
+    assert [t["number"] for t in steps["tasks"]] == [1, 2]
+    assert steps["next_task"]["number"] == 1
+
+    found = await call(session, "search_tasks", {"query": "a"})
+    assert [t["number"] for t in found["tasks"]] == [1]
+    assert found["projects"] == []
+
+    projects = (await call(session, "list_projects"))["result"]
+    assert projects[0]["next_task"]["number"] == 1
+
+
+@with_session
+async def test_a_task_tool_takes_the_number_or_the_id(session) -> None:
+    await call(session, "create_project", {"name": "Src"})
+    await call(session, "create_project", {"name": "Dst"})
+    g = await call(session, "create_group", {"project": "src", "name": "G"})
+    task = await call(session, "create_task", {"project": "src", "title": "a"})
+    number = str(task["number"])
+
+    assert (await call(session, "update_task", {"task_id": number, "title": "b"}))["title"] == "b"
+    assert (await call(session, "set_task_done", {"task_id": number, "done": True}))["done"] is True
+    assert (await call(session, "set_task_done", {"task_id": task["id"], "done": False}))[
+        "done"
+    ] is False
+    grouped = await call(session, "set_task_group", {"task_id": number, "group": g["id"]})
+    assert grouped["group_id"] == g["id"]
+    reordered = await call(
+        session, "reorder_tasks", {"project": "src", "ordered_task_ids": [number], "group": "G"}
+    )
+    assert reordered["order"] == [task["id"]]
+    moved = await call(session, "move_task", {"task_id": number, "to_project": "dst"})
+    # The number is the same task, before and after every one of those calls.
+    assert (moved["id"], moved["number"]) == (task["id"], task["number"])
+
+
+@with_session
+async def test_a_number_no_task_has_is_a_clean_error(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    assert "task not found: 404" in await call_error(
+        session, "set_task_done", {"task_id": "404", "done": True}
+    )
+    assert "task not found: 404" in await call_error(
+        session, "update_task", {"task_id": "404", "title": "x"}
+    )
+    assert "task not found: 404" in await call_error(
+        session, "move_task", {"task_id": "404", "to_project": "p"}
     )

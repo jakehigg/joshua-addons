@@ -306,6 +306,11 @@ main.finished .group-add { display: none; }
 .task-body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .task .title { flex: 1 1 auto; min-width: min(100%, 18ch); font-weight: 500; overflow-wrap: anywhere; cursor: text; }
 .task-title-input { flex: 1 1 100%; min-width: 0; height: 32px; padding: 0 8px; font-size: 16px; }
+/* the task number: the short name a person says; selectable, so it can be copied */
+.task-number {
+  flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--j-faint);
+  user-select: text; cursor: text;
+}
 .task-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 100%; }
 .task-tags:empty { display: none; }
 .task-actions { display: flex; align-items: center; gap: 4px; flex: none; margin-left: auto; }

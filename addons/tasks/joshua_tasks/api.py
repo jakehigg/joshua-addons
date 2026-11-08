@@ -43,6 +43,7 @@ KEEPALIVE_SECONDS = 25.0
 
 _UUID = TypeAdapter(uuid.UUID)
 _BOOL = TypeAdapter(bool)
+_INT = TypeAdapter(int)
 
 
 # --- schemas ---------------------------------------------------------------
@@ -69,6 +70,8 @@ class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    # The short number a person says ("task 24"); unique over every project.
+    number: int
     project_id: uuid.UUID
     group_id: uuid.UUID | None
     title: str
@@ -207,6 +210,13 @@ def _errors(exc: ValidationError, *where: str) -> list[dict[str, Any]]:
 def _path_uuid(request: Request, name: str) -> uuid.UUID:
     try:
         return _UUID.validate_python(request.path_params[name])
+    except ValidationError as exc:
+        raise _Invalid(_errors(exc, "path", name)) from None
+
+
+def _path_int(request: Request, name: str) -> int:
+    try:
+        return _INT.validate_python(request.path_params[name])
     except ValidationError as exc:
         raise _Invalid(_errors(exc, "path", name)) from None
 
@@ -478,6 +488,18 @@ async def create_task(request: Request) -> Response:
     return _json(TaskOut, task, 201)
 
 
+async def task_by_number(request: Request) -> Response:
+    """``GET /api/tasks/by-number/{number}``: one task by its short number.
+
+    The number is the name a person says ("task 24"). A number no task has
+    answers ``404``.
+    """
+    number = _path_int(request, "number")
+    async with _session() as session:
+        task = await service.resolve_task(session, number)
+    return _json(TaskOut, task)
+
+
 async def reorder_tasks(request: Request) -> Response:
     project_id = _path_uuid(request, "project_id")
     body = await _body(request, TaskOrder)
@@ -564,6 +586,7 @@ def _routes() -> list[Route]:
         route("/projects/{project_id}/tasks", list_tasks, "GET"),
         route("/projects/{project_id}/tasks", create_task, "POST"),
         route("/projects/{project_id}/tasks/order", reorder_tasks, "PUT"),
+        route("/tasks/by-number/{number}", task_by_number, "GET"),
         route("/tasks/{task_id}", update_task, "PATCH"),
         route("/tasks/{task_id}", delete_task, "DELETE"),
     ]

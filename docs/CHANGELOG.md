@@ -31,6 +31,15 @@ releases, with the images and the packaged chart, are at
   projects are searched, until `include_done` is true, and an archived
   project is never searched. `GET /api/search` gives the same result to the
   web UI.
+- `tasks`: every task has a short number, for example `24`, so a person can
+  say which task they mean. One count runs over all the projects. The addon
+  gives the number when it makes the task; the number then never changes and
+  is never given to another task, not even after a delete. Every tool result
+  that holds a task gives its number, and every tool that takes a task takes
+  the number or the task id. The tool count stays 20. The REST field `number`
+  is new on a task, `GET /api/tasks/by-number/<number>` finds one task, and a
+  task link in the web UI is `/p/<slug>#task-<number>`. An existing database
+  gets the column on start, and its tasks are numbered oldest first.
 - `tasks`: the web UI opens on a dashboard. The home page is one card for
   each project, with the percent done, the counts, the health, the target
   date, and the next task; the project that needs a person comes first.

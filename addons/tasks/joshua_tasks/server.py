@@ -101,13 +101,14 @@ def _summary_dict(s: dict[str, Any]) -> dict[str, Any]:
         "open_count": s["open_count"],
         "percent": s["percent"],
         "health": s["health"],
-        "next_task": {"id": str(nt.id), "title": nt.title} if nt else None,
+        "next_task": {"id": str(nt.id), "number": nt.number, "title": nt.title} if nt else None,
     }
 
 
 def _task_dict(t: Task) -> dict[str, Any]:
     return {
         "id": str(t.id),
+        "number": t.number,
         "title": t.title,
         "notes": t.notes,
         "done": t.done,
@@ -125,6 +126,7 @@ def _found_task_dict(found: dict[str, Any]) -> dict[str, Any]:
     group: Group | None = found["group"]
     return {
         "id": str(task.id),
+        "number": task.number,
         "title": task.title,
         "done": task.done,
         "size": task.size,
@@ -150,6 +152,16 @@ def _uuid(value: str, what: str) -> uuid.UUID:
         return uuid.UUID(value)
     except ValueError:
         raise ToolError(f"{what} is not a valid id: {value}") from None
+
+
+def _task_ref(value: str, what: str) -> int | uuid.UUID:
+    """Parse a task argument: its short number ("24"), or its UUID.
+
+    A value that is neither is a ``ToolError``. A number that no task has is
+    a lookup the service refuses, with the number in the message.
+    """
+    text = value.strip()
+    return int(text) if text.isdigit() else _uuid(text, what)
 
 
 def _date(value: str | None, what: str) -> date | None:
@@ -190,7 +202,8 @@ async def list_projects(include_finished: bool = False) -> list[dict[str, Any]]:
     Each project has its id, name, slug, goal (null for a plain list),
     target_date, status (active, paused, done, closed), task_count,
     done_count, open_count, percent (done over all tasks), health, and
-    next_task (the first open task in roadmap order, or null).
+    next_task (the first open task in roadmap order, with its number, or
+    null).
 
     health is one of: on_track, stalled (a goal project with no task done
     in 14 days), overdue (past target_date with open tasks),
@@ -295,7 +308,8 @@ async def next_steps(project: str | None = None, limit: int = 3) -> list[dict[st
     should I work on", a morning brief, or a check-in on a project.
 
     Each entry is a project summary (see list_projects) plus tasks, the
-    next open tasks. A paused or finished project is left out unless named.
+    next open tasks, each with its number ("task 24"). A paused or finished
+    project is left out unless named.
 
     Args:
         project: Project slug or id, to ask about one project only.
@@ -343,6 +357,9 @@ async def list_tasks(project: str, include_done: bool = True) -> dict[str, Any]:
     report progress ("2/5 done"). A project without groups has an empty
     "groups" list and everything in "backlog".
 
+    Each task carries its number, the short name a person says ("task 24").
+    Every tool that takes a task_id takes that number as well.
+
     Args:
         project: Project slug or id.
         include_done: Set false to only see open tasks (counts still include done).
@@ -387,6 +404,9 @@ async def create_task(
     """
     Add a task at the end of a project's backlog, or at the end of a group
     if one is given. Use reorder_tasks after, if it belongs earlier.
+
+    The new task gets its number, the short name a person says ("task 24").
+    It is in the result, and it never changes.
 
     Args:
         project: Project slug or id.
@@ -478,10 +498,10 @@ async def set_task_group(task_id: str, group: str | None = None) -> dict[str, An
     The task lands at the end of the target list.
 
     Args:
-        task_id: The task's id (from list_tasks).
+        task_id: The task's number ("24") or its id. Both name the same task.
         group: Group name or id; omit to make the task ungrouped.
     """
-    tid = _uuid(task_id, "task_id")
+    tid = _task_ref(task_id, "task_id")
     async with _tool_session() as session:
         return _task_dict(await service.set_task_group(session, tid, group))
 
@@ -497,17 +517,18 @@ async def update_task(
 ) -> dict[str, Any]:
     """
     Edit a task. Only the arguments you pass change; an empty string clears
-    size, due_date, or assignee. Use set_task_done to complete a task.
+    size, due_date, or assignee. Use set_task_done to complete a task. An
+    edit never changes the task's number.
 
     Args:
-        task_id: The task's id (from list_tasks).
+        task_id: The task's number ("24") or its id. Both name the same task.
         title: New title, if changing.
         notes: New notes, if changing (replaces the old notes).
         size: T-shirt size: XS, S, M, L, or XL. "" removes it.
         due_date: YYYY-MM-DD. "" removes it.
         assignee: The person's name. "" removes it.
     """
-    tid = _uuid(task_id, "task_id")
+    tid = _task_ref(task_id, "task_id")
     async with _tool_session() as session:
         task = await service.update_task(
             session,
@@ -527,10 +548,10 @@ async def set_task_done(task_id: str, done: bool) -> dict[str, Any]:
     Mark a task done, or un-done (done=false) to undo a mistake.
 
     Args:
-        task_id: The task's id (from list_tasks).
+        task_id: The task's number ("24") or its id. Both name the same task.
         done: true to complete, false to reopen.
     """
-    tid = _uuid(task_id, "task_id")
+    tid = _task_ref(task_id, "task_id")
     async with _tool_session() as session:
         return _task_dict(await service.update_task(session, tid, done=done))
 
@@ -548,10 +569,10 @@ async def reorder_tasks(
 
     Args:
         project: Project slug or id.
-        ordered_task_ids: Every task id for that list, in the new order.
+        ordered_task_ids: Every task of that list, by number ("24") or by id, in the new order.
         group: Group name or id; omit for the ungrouped list.
     """
-    ids = [_uuid(i, "ordered_task_ids entry") for i in ordered_task_ids]
+    ids = [_task_ref(i, "ordered_task_ids entry") for i in ordered_task_ids]
     async with _tool_session() as session:
         tasks = await service.reorder_tasks(session, project, ids, group=group)
     return {"ok": True, "order": [str(t.id) for t in tasks]}
@@ -574,11 +595,11 @@ async def search_tasks(
 
     The result keeps the two kinds apart: "projects", the project summaries
     (see list_projects), and "tasks", the matching tasks. Each task carries
-    its id, title, done, size, due_date, assignee, its project (name and
-    slug), and its group (name and id, or null when the task is in the
-    backlog). The projects come oldest first. The tasks come project by
-    project, in that same project order, and in roadmap order inside a
-    project (the phases in order, then the backlog).
+    its id, its number ("task 24"), title, done, size, due_date, assignee,
+    its project (name and slug), and its group (name and id, or null when
+    the task is in the backlog). The projects come oldest first. The tasks
+    come project by project, in that same project order, and in roadmap
+    order inside a project (the phases in order, then the backlog).
 
     An archived project, and every task in it, is never searched. An empty
     query matches nothing.
@@ -603,12 +624,13 @@ async def search_tasks(
 async def move_task(task_id: str, to_project: str) -> dict[str, Any]:
     """
     Move a task to another project (appended at the end of that project).
+    The task keeps its number.
 
     Args:
-        task_id: The task's id.
+        task_id: The task's number ("24") or its id. Both name the same task.
         to_project: Destination project slug or id.
     """
-    tid = _uuid(task_id, "task_id")
+    tid = _task_ref(task_id, "task_id")
     async with _tool_session() as session:
         return _task_dict(await service.move_task(session, tid, to_project))
 
