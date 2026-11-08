@@ -325,6 +325,33 @@ main.finished .group-add { display: none; }
 }
 .task:not(.next) .next-badge { display: none; }
 
+/* blocked: a warn pill, and the links to the tasks on each side */
+.blocked-badge {
+  font-size: 11px; font-weight: 600; color: var(--j-warn); background: var(--j-warn-soft);
+  padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+}
+.task.blocked .title { color: var(--j-muted); }
+.task-links {
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 4px 0 2px; padding-left: 62px; padding-right: 8px;
+  font-size: 12.5px;
+}
+.task-link-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.task-link-label { color: var(--j-faint); font-weight: 600; }
+.task-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 4px 1px 8px; border-radius: 999px; background: var(--j-surface-2);
+}
+.task-link-title { color: var(--j-text); overflow-wrap: anywhere; }
+.task-link-project { color: var(--j-faint); }
+.task-link.done .task-link-title { text-decoration: line-through; color: var(--j-faint); }
+.task-link-drop {
+  width: 18px; height: 18px; padding: 0; flex: none; line-height: 1;
+  background: none; border: 0; border-radius: 999px; color: var(--j-faint); font-size: 13px;
+}
+.task-link-drop:hover { color: var(--j-bad); background: var(--j-bad-soft); }
+.found-task.blocked .found-title { color: var(--j-muted); }
+
 .task-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .meta-badge {
   font-size: 11.5px; font-weight: 600; color: var(--j-muted); background: var(--j-surface-2);
@@ -404,6 +431,7 @@ main.finished .group-add { display: none; }
   .note-toggle,
   .details-toggle { opacity: 1; }
   .task-notes,
+  .task-links,
   .task-details { padding-left: 8px; }
 }
 @media (max-width: 560px) {

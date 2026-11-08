@@ -19,9 +19,11 @@ import {
   projectCardView,
   projectHref,
   searchView,
+  taskLinksView,
   type CardView,
   type Route,
   type SearchTaskView,
+  type TaskLink,
 } from "./dashboard";
 
 const projectSelect = document.getElementById("project-select") as HTMLSelectElement;
@@ -384,7 +386,7 @@ function renderDashboard() {
 
 function searchTaskRow(view: SearchTaskView): HTMLElement {
   const li = document.createElement("li");
-  li.className = "found-task" + (view.done ? " done" : "");
+  li.className = "found-task" + (view.done ? " done" : "") + (view.blocked ? " blocked" : "");
   const link = document.createElement("a");
   link.href = view.href;
   const title = document.createElement("span");
@@ -398,6 +400,11 @@ function searchTaskRow(view: SearchTaskView): HTMLElement {
     const badge = document.createElement("span");
     badge.className = "health done";
     badge.textContent = "done";
+    link.append(badge);
+  } else if (view.blocked) {
+    const badge = document.createElement("span");
+    badge.className = "blocked-badge";
+    badge.textContent = "blocked";
     link.append(badge);
   }
   li.append(link);
@@ -631,10 +638,12 @@ completeBtn.addEventListener("click", () => patchProject({ status: "done" }));
 // --- the up-next marker --------------------------------------------------------
 // The first open task in display order (phases, then the backlog) is the
 // project's next step. Display order is roadmap order, so the DOM is enough.
+// A task that waits for an open blocker is never the next step, as on the
+// dashboard card and in next_steps.
 
 function markNext() {
   for (const li of main.querySelectorAll("li.task.next")) li.classList.remove("next");
-  const first = main.querySelector("li.task:not(.done)");
+  const first = main.querySelector("li.task:not(.done):not(.blocked)");
   if (first) first.classList.add("next");
 }
 
@@ -652,7 +661,7 @@ function isoToday(): string {
 
 function taskRow(task: Task): HTMLLIElement {
   const li = document.createElement("li");
-  li.className = "task" + (task.done ? " done" : "");
+  li.className = "task" + (task.done ? " done" : "") + (task.blocked ? " blocked" : "");
   li.dataset.id = task.id;
 
   const row = document.createElement("div");
@@ -675,6 +684,9 @@ function taskRow(task: Task): HTMLLIElement {
     taskChanged(ul);
     try {
       await api.setDone(task.id, checkbox.checked);
+      // The tasks that wait for this one are blocked no longer, or blocked
+      // again: their rows come from the server.
+      if (task.blocking.length > 0) await loadTasks();
     } catch {
       checkbox.checked = !checkbox.checked;
       li.classList.toggle("done", checkbox.checked);
@@ -687,6 +699,77 @@ function taskRow(task: Task): HTMLLIElement {
   const nextBadge = document.createElement("span");
   nextBadge.className = "next-badge";
   nextBadge.textContent = "up next";
+
+  // --- the blocking links -----------------------------------------------------
+  // What the task waits for, and what waits for it. Each linked task is a
+  // link to its own row, which can be in another project. The "×" on a
+  // blocker removes that link; a done blocker needs no removal.
+  const blockedBadge = document.createElement("span");
+  blockedBadge.className = "blocked-badge";
+  blockedBadge.textContent = "blocked";
+
+  const links = document.createElement("div");
+  links.className = "task-links";
+
+  function linkChip(ref: TaskLink, onRemove: (() => void) | null): HTMLElement {
+    const chip = document.createElement("span");
+    chip.className = "task-link" + (ref.done ? " done" : "");
+    const label = document.createElement(ref.href ? "a" : "span");
+    label.className = "task-link-title";
+    if (ref.href) (label as HTMLAnchorElement).href = ref.href;
+    label.textContent = ref.title;
+    chip.append(label);
+    if (ref.projectName) {
+      const where = document.createElement("span");
+      where.className = "task-link-project";
+      where.textContent = ref.projectName;
+      chip.append(where);
+    }
+    if (onRemove) {
+      const drop = document.createElement("button");
+      drop.type = "button";
+      drop.className = "task-link-drop";
+      drop.textContent = "×";
+      drop.title = "Remove this blocker";
+      drop.addEventListener("click", onRemove);
+      chip.append(drop);
+    }
+    return chip;
+  }
+
+  function renderLinks() {
+    const view = taskLinksView(task);
+    li.classList.toggle("blocked", view.blocked);
+    blockedBadge.hidden = !view.blocked;
+    links.replaceChildren();
+    const line = (text: string, refs: TaskLink[], cls: string, removable: boolean) => {
+      if (refs.length === 0) return;
+      const row = document.createElement("div");
+      row.className = `task-link-line ${cls}`;
+      const label = document.createElement("span");
+      label.className = "task-link-label";
+      label.textContent = text;
+      row.append(label);
+      for (const ref of refs) {
+        row.append(linkChip(ref, removable ? () => removeBlocker(ref.id) : null));
+      }
+      links.append(row);
+    };
+    line("blocked by", view.blockers, "blocked-by", true);
+    line("blocks", view.blocking, "blocks", false);
+    links.hidden = view.blockers.length === 0 && view.blocking.length === 0;
+  }
+
+  async function removeBlocker(blockerId: string) {
+    try {
+      const updated = await api.unblockTask(task.id, blockerId);
+      Object.assign(task, updated);
+    } catch {
+      /* keep the link on failure */
+    }
+    renderLinks();
+    markNext();
+  }
 
   // Size, due date, and assignee show as small badges when set. The "⋯"
   // button opens a details row with the three controls.
@@ -929,7 +1012,7 @@ function taskRow(task: Task): HTMLLIElement {
   // under the title on a narrow screen instead of squeezing it.
   const tags = document.createElement("span");
   tags.className = "task-tags";
-  tags.append(nextBadge, meta);
+  tags.append(nextBadge, blockedBadge, meta);
   const body = document.createElement("div");
   body.className = "task-body";
   body.append(title, tags);
@@ -937,9 +1020,10 @@ function taskRow(task: Task): HTMLLIElement {
   actions.className = "task-actions";
   actions.append(noteBtn, detailsBtn, del);
   row.append(handle, checkbox, body, actions);
-  li.append(row, notes, details);
+  li.append(row, links, notes, details);
   renderNotes();
   renderMeta();
+  renderLinks();
   return li;
 }
 

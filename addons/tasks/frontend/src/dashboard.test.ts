@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { Group, Project, SearchResult, Task } from "./api.ts";
+import type { Group, Project, SearchResult, Task, TaskRef } from "./api.ts";
 import {
   dashboardMessage,
   dashboardProjects,
@@ -15,6 +15,7 @@ import {
   parseRoute,
   projectCardView,
   searchView,
+  taskLinksView,
 } from "./dashboard.ts";
 
 function project(fields: Partial<Project> & { name: string }): Project {
@@ -46,6 +47,17 @@ function task(fields: Partial<Task> & { id: string; title: string }): Task {
     due_date: null,
     assignee: null,
     position: 1024,
+    blocked: false,
+    blockers: [],
+    blocking: [],
+    ...fields,
+  };
+}
+
+function ref(fields: Partial<TaskRef> & { id: string; title: string }): TaskRef {
+  return {
+    done: false,
+    project: { name: "Hallway", slug: "hallway" },
     ...fields,
   };
 }
@@ -267,6 +279,7 @@ test("a search shows the matching projects and the matching tasks apart", () => 
       title: "Buy the paint",
       href: "/p/hallway#task-t1",
       done: false,
+      blocked: false,
       whereLabel: "Hallway · Prep",
     },
     {
@@ -274,7 +287,78 @@ test("a search shows the matching projects and the matching tasks apart", () => 
       title: "Paint the trim",
       href: "/p/hallway#task-t2",
       done: true,
+      blocked: false,
       whereLabel: "Hallway · backlog",
     },
+  ]);
+});
+
+test("a found task that waits for an open blocker says it is blocked", () => {
+  const hallway = project({ name: "Hallway", task_count: 1, open_count: 1 });
+  const waiting = task({ id: "t1", title: "Paint the trim", blocked: true });
+  const view = searchView("paint", {
+    projects: [],
+    tasks: [{ task: waiting, project: hallway, group: null }],
+  });
+  assert.equal(view.tasks[0].blocked, true);
+});
+
+// --- the blocking links ---------------------------------------------------------
+
+test("a task with no links is not blocked and shows no link", () => {
+  assert.deepEqual(taskLinksView(task({ id: "t1", title: "Buy the paint" })), {
+    blocked: false,
+    blockers: [],
+    blocking: [],
+  });
+});
+
+test("a blocked task names each blocker, with a link to it", () => {
+  const view = taskLinksView(
+    task({
+      id: "t2",
+      title: "Paint the trim",
+      blocked: true,
+      blockers: [
+        ref({ id: "t1", title: "Buy the paint", done: true }),
+        ref({
+          id: "t9",
+          title: "Collect the keys",
+          project: { name: "Garage", slug: "garage" },
+        }),
+      ],
+    }),
+  );
+  assert.equal(view.blocked, true);
+  assert.deepEqual(view.blockers, [
+    {
+      id: "t1",
+      title: "Buy the paint",
+      done: true,
+      href: "/p/hallway#task-t1",
+      projectName: "Hallway",
+    },
+    {
+      id: "t9",
+      title: "Collect the keys",
+      done: false,
+      href: "/p/garage#task-t9",
+      projectName: "Garage",
+    },
+  ]);
+  assert.deepEqual(view.blocking, []);
+});
+
+test("a task says what waits for it, and a link with no project opens nothing", () => {
+  const view = taskLinksView(
+    task({
+      id: "t1",
+      title: "Buy the paint",
+      blocking: [ref({ id: "t2", title: "Paint the trim", project: null })],
+    }),
+  );
+  assert.equal(view.blocked, false);
+  assert.deepEqual(view.blocking, [
+    { id: "t2", title: "Paint the trim", done: false, href: null, projectName: null },
   ]);
 });
