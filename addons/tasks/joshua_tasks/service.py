@@ -128,14 +128,9 @@ async def _refs_by_id(
     if not task_ids:
         return {}
     tasks = list((await session.scalars(select(Task).where(Task.id.in_(task_ids)))).all())
-    projects = {
-        p.id: p
-        for p in (
-            await session.scalars(
-                select(Project).where(Project.id.in_({t.project_id for t in tasks}))
-            )
-        ).all()
-    }
+    project_ids = {t.project_id for t in tasks}
+    found = await session.scalars(select(Project).where(Project.id.in_(project_ids)))
+    projects = {p.id: p for p in found.all()}
     return {t.id: _task_ref(t, projects.get(t.project_id)) for t in tasks}
 
 
