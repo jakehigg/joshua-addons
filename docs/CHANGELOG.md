@@ -8,6 +8,11 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `tasks`, an addon for household task lists: projects, an ordered task
+  list, optional groups, notes, and done or not done. Joshua uses 14 MCP
+  tools, and people use a web UI on the same port that updates live.
+  SQLite by default, or Postgres with `DATABASE_URL`.
+  `addons/tasks/README.md` has the tools and the settings.
 - The chart sets `strategy: Recreate` for a Deployment that mounts the claim
   the chart makes. That claim is ReadWriteOnce, and a rolling update waited
   forever on a Multi-Attach error. The chart also takes

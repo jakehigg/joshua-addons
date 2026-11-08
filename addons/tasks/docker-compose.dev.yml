@@ -1,0 +1,20 @@
+# Build the image from this checkout instead of running a release. Use it
+# when you change the code:
+#
+#   docker compose -f addons/tasks/docker-compose.yml -f addons/tasks/docker-compose.dev.yml up -d --build
+#
+# or, with the root Makefile:
+#
+#   make up-dev ADDON=tasks
+#
+# The build is tagged `joshua-addons-tasks:dev`, so it never replaces a
+# release on your machine. `make up ADDON=tasks` still runs the release, and
+# `make up-dev ADDON=tasks` still runs your build. Nothing here changes
+# docker-compose.yml. The build context is the repo root, because the addon
+# depends on the workspace lockfile.
+services:
+  tasks:
+    image: joshua-addons-tasks:dev
+    build:
+      context: ../..
+      dockerfile: addons/tasks/Dockerfile

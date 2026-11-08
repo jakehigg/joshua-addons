@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Joshua Tasks</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="bg"></div>
+    <div class="wrap">
+      <header>
+        <h1 class="logo">TASKS</h1>
+        <div class="controls">
+          <select id="project-select" aria-label="Project"></select>
+          <button id="add-project" class="ghost" title="New project">+ Project</button>
+        </div>
+      </header>
+      <!-- inline (dialog-free — window.prompt is unreliable on mobile) -->
+      <form id="new-project-form" autocomplete="off" hidden>
+        <input
+          id="new-project-input"
+          type="text"
+          placeholder="New project name…"
+          maxlength="200"
+        />
+        <button type="submit">Create</button>
+        <button type="button" id="new-project-cancel" class="ghost">Cancel</button>
+      </form>
+      <main id="main" hidden>
+        <form id="add-task-form" autocomplete="off">
+          <input
+            id="add-task-input"
+            type="text"
+            placeholder="Add a task…"
+            maxlength="1000"
+          />
+        </form>
+        <ul id="task-list"></ul>
+        <div id="group-list"></div>
+        <div id="group-controls">
+          <button id="add-group" class="ghost">+ Group</button>
+          <form id="new-group-form" autocomplete="off" hidden>
+            <input
+              id="new-group-input"
+              type="text"
+              placeholder="New group name…"
+              maxlength="200"
+            />
+            <button type="submit">Create</button>
+            <button type="button" id="new-group-cancel" class="ghost">Cancel</button>
+          </form>
+        </div>
+        <p id="empty-tasks" class="empty" hidden>
+          Nothing here yet — add a task above.
+        </p>
+      </main>
+      <div id="empty-projects" class="empty-hero" hidden>
+        <p>No projects yet.</p>
+        <button id="create-first-project">Create your first project</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
