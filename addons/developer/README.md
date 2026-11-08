@@ -78,8 +78,10 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - `answer` on a `blocked` or `timed_out` task resumes it, when a worker of
   the task pushed the branch. The task keeps its id, and a new worker gets
   the answer and the summary of the last worker. `max_workers` and the lock
-  apply. When no worker pushed, the result is `not_resumable`: call
-  `develop` again. `task_output` shows the reports of the earlier workers in
+  apply. When no worker pushed and the manager has no saved commits of the
+  task, the result is `not_resumable`: call `develop` again.
+- `answer` on a `failed` task resumes it when the manager has saved commits
+  of the task (see [When a push fails](#when-a-push-fails)). `task_output` shows the reports of the earlier workers in
   `history`.
 - When the manager starts, each task that is `dispatched` or `running`
   changes to `failed` with the error `manager restarted`, and its report
@@ -246,7 +248,7 @@ applies before the value in the file.
 | `DEVELOPER_TOKENS` | empty | One bearer for each person, `alex=<token>,mia=<token>`. Each person must be in `people`. |
 | `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, and `list_personas` only. |
 | `DEVELOPER_CONFIG` | `/etc/joshua-addon/developer.yaml` | The path of `developer.yaml`. No file means the defaults. |
-| `DEVELOPER_DATA_DIR` | `/data` | The folder of `developer.db`. |
+| `DEVELOPER_DATA_DIR` | `/data` | The folder of `developer.db`, and of `bundles/`: the saved commits of failed pushes. |
 | `CHANNELS_URL` | empty | The address of joshua-ai channels. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
 | `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the manager sends to channels. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token of the forwarder. Without it, the forwarder answers 503. |
@@ -513,6 +515,33 @@ the scan is `partial`. A task that
 ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
 request. One `answer` call resumes it. A new `develop` with the same
 `branch` also continues the work, as a new task.
+
+## When a push fails
+
+A push can fail after a complete session: for example, the git token has no
+write access to the repository, or the token expired. The worker then does
+not lose the commits:
+
+1. The worker makes a git bundle of its commits after `clone_head`, and
+   sends it to the manager (`PUT /worker/bundle`) before the report.
+2. The manager keeps the bundle at `<DEVELOPER_DATA_DIR>/bundles/<task id>.bundle`.
+   The limit is 100 MiB.
+3. The task ends `failed`. The report has `bundle_saved: true`, and
+   `unpushed_status`: the status of the session before the push failed. The
+   error says that the commits are saved.
+4. Correct the cause, then call `answer` on the task. A new worker clones the
+   repository and restores the commits from the bundle on the task branch.
+   - When `unpushed_status` is `success`, the session was complete. The
+     worker pushes the commits and reports with the summary of the earlier
+     worker. It runs no session, so it uses no Claude tokens. Any answer
+     text does this, for example `push it`.
+   - Otherwise, the new worker runs a session on top of the restored
+     commits, with the answer.
+5. After a worker of the task pushes, the manager deletes the bundle. The
+   manager also deletes each bundle older than 14 days when it starts.
+
+When the bundle cannot be made or sent, the error says that the commits are
+lost, and `answer` returns `not_resumable`.
 
 ## The first run
 

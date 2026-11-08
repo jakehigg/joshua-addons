@@ -8,6 +8,13 @@
    ``DEADLINE_MARGIN_S`` of work. It pauses while ``ask`` waits for an
    answer, for up to ``ask_wait_s`` seconds in total for the task.
 5. Always: push the branch when the model made commits, and send the report.
+   When the push fails, store a bundle of the commits on the manager first,
+   so that an ``answer`` can resume the task from them.
+
+A resumed task whose brief has ``bundle`` restores the commits of the bundle
+on the branch after the checkout. With ``push_only``, the session of the
+earlier worker was complete: the worker pushes the commits and reports, with
+no session.
 
 The exit code is 0 when the manager accepted the report, or when the task
 had already ended. It is 1 only when the report could not be sent.
@@ -42,6 +49,14 @@ DEFAULT_MAX_TURNS = 80
 DEADLINE_MARGIN_S = 90
 MAX_REPORT_LOG = 64_000
 MAX_SUMMARY = 8_000
+# The bundle files, in the work directory and outside the checkout.
+SAVED_BUNDLE = "saved.bundle"
+RESTORED_BUNDLE = "restored.bundle"
+SAVED_NOTE = (
+    "The commits are saved on the developer manager. "
+    "Correct the cause, then call answer to push them."
+)
+LOST_NOTE = "The commits could not be saved on the developer manager, and are lost."
 START_PROMPT = "Do the task in your instructions. End with the structured result."
 
 
@@ -206,7 +221,9 @@ def finish(
         open_question = structured["blocked"]
     else:
         status = "success"
+    unpushed_status = None
     if push_failed:
+        unpushed_status = status if moved else None
         status = "failed"
 
     body = structured["summary"] if structured else result.text
@@ -238,10 +255,107 @@ def finish(
         clone_head=clone_head,
         created_branch=created_branch,
         commit_hash=new_head if moved else None,
+        unpushed_status=unpushed_status,
         error=error,
         input_tokens=usage.get("input_tokens"),
         output_tokens=usage.get("output_tokens"),
         estimated_cost=result.cost_usd,
+        log=log_.text()[-MAX_REPORT_LOG:],
+    )
+
+
+async def save_work(
+    dest: Path,
+    workdir: Path,
+    branch: str,
+    report: Report,
+    client: ManagerClient,
+    log_: session.SessionLog,
+) -> Report:
+    """Store a bundle of the commits that the push did not send. Returns the report.
+
+    A report with ``unpushed_status`` has commits after ``clone_head`` that
+    are not on the remote. The manager keeps the bundle, so that an
+    ``answer`` resumes the task from these commits. When the bundle cannot be
+    made or stored, the report says that the commits are lost.
+    """
+    if report.unpushed_status is None or not report.clone_head:
+        return report
+    path = workdir / SAVED_BUNDLE
+    try:
+        with step("save_bundle", client.task_id):
+            git.bundle(dest, report.clone_head, branch, path)
+            await client.save_bundle(path.read_bytes())
+    except TaskEnded:
+        raise
+    except (git.GitError, ManagerError, httpx.HTTPError, OSError) as exc:
+        detail = git.scrub(f"the bundle was not saved: {type(exc).__name__}: {exc}")[:500]
+        log_.add(detail)
+        logger.error(
+            {
+                "message": "the bundle was not saved",
+                "task_id": client.task_id,
+                "error_type": type(exc).__name__,
+            }
+        )
+        return report.model_copy(
+            update={"error": f"{report.error}. {LOST_NOTE}", "log": log_.text()[-MAX_REPORT_LOG:]}
+        )
+    log_.add("the bundle of the commits that were not pushed is saved")
+    return report.model_copy(
+        update={
+            "bundle_saved": True,
+            "error": f"{report.error}. {SAVED_NOTE}",
+            "log": log_.text()[-MAX_REPORT_LOG:],
+        }
+    )
+
+
+async def restore_work(dest: Path, workdir: Path, branch: str, client: ManagerClient) -> str:
+    """Restore the commits of the bundle of an earlier worker. Returns the new head."""
+    path = workdir / RESTORED_BUNDLE
+    path.write_bytes(await client.bundle())
+    return git.restore(dest, path, branch)
+
+
+def push_saved(
+    dest: Path,
+    brief: dict[str, Any],
+    clone_head: str,
+    created_branch: bool,
+    log_: session.SessionLog,
+) -> Report:
+    """Push the restored commits of a complete session, with no new session.
+
+    The summary, the files, and the tests come from the report of the
+    earlier worker (``saved`` in the brief).
+    """
+    branch = str(brief["branch"])
+    saved = brief.get("saved") or {}
+    new_head = git.head(dest)
+    pushed, push_error = git.push(dest, branch)
+    files = list(saved.get("files_changed") or [])
+    if not files:
+        with contextlib.suppress(git.GitError):
+            files = git.changed_files(dest, clone_head)
+    error = None
+    if not pushed:
+        error = f"the push of {branch} failed: {push_error}"
+        log_.add(error)
+    else:
+        log_.add(f"pushed the saved commits of {branch}")
+    return Report(
+        status="success" if pushed else "failed",
+        summary=str(saved.get("summary") or "")[:MAX_SUMMARY],
+        files_changed=files,
+        tests_run=list(saved.get("tests_run") or []),
+        pushed=pushed,
+        head=branch if pushed else None,
+        clone_head=clone_head,
+        created_branch=created_branch,
+        commit_hash=new_head,
+        unpushed_status=None if pushed else "success",
+        error=error,
         log=log_.text()[-MAX_REPORT_LOG:],
     )
 
@@ -289,10 +403,23 @@ async def _work(
                 branch,
                 brief.get("base_branch"),
                 # A rework, or a resumed task, works on a branch that exists.
-                create_if_missing=brief.get("task_type") != "rework" and not brief.get("resumed"),
+                # A task with a bundle can resume a branch that was never pushed.
+                create_if_missing=bool(brief.get("bundle"))
+                or (brief.get("task_type") != "rework" and not brief.get("resumed")),
             )
-    except git.GitError as exc:
-        return Report(status="failed", error=str(exc), log=log_.text())
+        if brief.get("bundle"):
+            with step("restore_bundle", task_id):
+                await restore_work(dest, workdir, branch, client)
+    except (git.GitError, ManagerError, OSError) as exc:
+        error = str(exc)
+        if brief.get("bundle"):
+            error = f"the saved commits were not restored: {git.scrub(error)}"
+        return Report(status="failed", error=error, log=log_.text())
+
+    if brief.get("bundle") and brief.get("push_only"):
+        with step("push_saved", task_id):
+            report = push_saved(dest, brief, clone_head, created_branch, log_)
+        return await save_work(dest, workdir, branch, report, client, log_)
 
     claude_md = read_claude_md(dest)
     with step("running", task_id):
@@ -316,7 +443,8 @@ async def _work(
     with step("session", task_id):
         result = await session.run(options, START_PROMPT, clock, **kwargs)
     with step("finish", task_id):
-        return finish(dest, brief, clone_head, result, asker, log_, created_branch)
+        report = finish(dest, brief, clone_head, result, asker, log_, created_branch)
+    return await save_work(dest, workdir, branch, report, client, log_)
 
 
 async def run_task(

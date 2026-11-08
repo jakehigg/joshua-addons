@@ -22,6 +22,10 @@ projects). ``blocked``, ``blockers``, and ``blocking`` are computed from those
 links on every read, so a task unblocks itself the moment the last open
 blocker is done. A blocked task is never the next task and never reaches
 ``next_steps``.
+
+Task numbers: every task also carries a short ``number``, from one sequence
+for the whole addon (``models.TaskNumber``). ``resolve_task`` takes the
+number or the UUID, so the two name the same task everywhere.
 """
 
 import re
@@ -37,14 +41,19 @@ from .events import broadcaster
 from .models import (
     FINISHED_STATUSES,
     PROJECT_STATUSES,
+    TASK_NUMBER_ID,
     TASK_SIZES,
     Group,
     Project,
     Task,
     TaskBlocker,
+    TaskNumber,
 )
 
 POSITION_STEP = 1024.0
+
+# How a caller names a task: its short number (``24`` or ``"24"``), or its UUID.
+TaskRef = str | int | uuid.UUID
 
 # A goal project with no task done for this many days is ``stalled``.
 STALLED_AFTER_DAYS: Final = 14
@@ -115,6 +124,7 @@ def _task_ref(task: Task, project: Project | None) -> dict[str, Any]:
     """Enough of a linked task to show it and to open it."""
     return {
         "id": task.id,
+        "number": task.number,
         "title": task.title,
         "done": task.done,
         "project": {"name": project.name, "slug": project.slug} if project else None,
@@ -235,14 +245,15 @@ def _publish_tasks(project_ids: Iterable[str]) -> None:
         broadcaster.publish("tasks", project_id)
 
 
-async def block_task(session: AsyncSession, task_id: uuid.UUID, blocker_id: uuid.UUID) -> Task:
+async def block_task(session: AsyncSession, task_id: TaskRef, blocker_id: TaskRef) -> Task:
     """Make a task wait for another task. The blocker can be in another project.
 
-    A task cannot block itself, and a link that makes a loop is refused with
-    an error that names the tasks in it. The same link twice changes nothing.
+    Each task takes its number or its UUID. A task cannot block itself, and a
+    link that makes a loop is refused with an error that names the tasks in
+    it. The same link twice changes nothing.
     """
-    task = await get_task(session, task_id)
-    blocker = await get_task(session, blocker_id)
+    task = await resolve_task(session, task_id)
+    blocker = await resolve_task(session, blocker_id)
     if task.id == blocker.id:
         raise ConflictError(f"a task cannot block itself: {task.title}")
     await _reject_cycle(session, task, blocker)
@@ -259,10 +270,13 @@ async def block_task(session: AsyncSession, task_id: uuid.UUID, blocker_id: uuid
     return (await attach_blocks(session, [task]))[0]
 
 
-async def unblock_task(session: AsyncSession, task_id: uuid.UUID, blocker_id: uuid.UUID) -> Task:
-    """Remove a blocking link. A link that is not there is no error."""
-    task = await get_task(session, task_id)
-    blocker = await get_task(session, blocker_id)
+async def unblock_task(session: AsyncSession, task_id: TaskRef, blocker_id: TaskRef) -> Task:
+    """Remove a blocking link. Each task takes its number or its UUID.
+
+    A link that is not there is no error.
+    """
+    task = await resolve_task(session, task_id)
+    blocker = await resolve_task(session, blocker_id)
     existing = await session.scalar(
         select(TaskBlocker).where(
             TaskBlocker.task_id == task.id, TaskBlocker.blocker_id == blocker.id
@@ -276,7 +290,7 @@ async def unblock_task(session: AsyncSession, task_id: uuid.UUID, blocker_id: uu
     return (await attach_blocks(session, [task]))[0]
 
 
-async def set_task_done(session: AsyncSession, task_id: uuid.UUID, done: bool) -> dict[str, Any]:
+async def set_task_done(session: AsyncSession, task_id: TaskRef, done: bool) -> dict[str, Any]:
     """Mark a task done, or open, and say what that did to the links.
 
     The result holds the ``task``, ``unblocked`` (the tasks that now wait for
@@ -285,11 +299,11 @@ async def set_task_done(session: AsyncSession, task_id: uuid.UUID, done: bool) -
     still open; it names those blockers). A still-blocked task is never
     refused: the work sometimes runs ahead of the links.
     """
-    task = await get_task(session, task_id)
+    task = await resolve_task(session, task_id)
     await attach_blocks(session, [task])
     open_blockers = [ref for ref in task.blockers if not ref["done"]]
     waiting = list(task.blocking)
-    task = await update_task(session, task_id, done=done)
+    task = await update_task(session, task.id, done=done)
     unblocked: list[dict[str, Any]] = []
     if done and waiting:
         still_blocked = await blocked_ids(session, [ref["id"] for ref in waiting])
@@ -790,6 +804,44 @@ async def get_task(session: AsyncSession, task_id: uuid.UUID) -> Task:
     return task
 
 
+async def resolve_task(session: AsyncSession, ref: TaskRef) -> Task:
+    """Resolve a task by its number (``24``, or ``"24"``) or by its UUID.
+
+    The two forms name the same task and are interchangeable. Anything else
+    is a task that is not there.
+    """
+    if isinstance(ref, uuid.UUID):
+        return await get_task(session, ref)
+    if isinstance(ref, str):
+        text = ref.strip()
+        if not text.isdigit():
+            try:
+                return await get_task(session, uuid.UUID(text))
+            except ValueError:
+                raise NotFoundError(f"task not found: {ref}") from None
+        ref = int(text)
+    task = await session.scalar(select(Task).where(Task.number == ref))
+    if task is None:
+        raise NotFoundError(f"task not found: {ref}")
+    return task
+
+
+async def _next_task_number(session: AsyncSession) -> int:
+    """Take the next number from the one task-number sequence.
+
+    The row is locked for the transaction (Postgres; SQLite serializes its
+    writers), so two tasks can never get the same number, and a number that
+    is given is never given again.
+    """
+    counter = await session.get(TaskNumber, TASK_NUMBER_ID, with_for_update=True)
+    if counter is None:
+        counter = TaskNumber(id=TASK_NUMBER_ID, last_number=0)
+        session.add(counter)
+    counter.last_number += 1
+    await session.flush()
+    return counter.last_number
+
+
 async def _next_position(
     session: AsyncSession, project_id: uuid.UUID, group_id: uuid.UUID | None = None
 ) -> float:
@@ -818,6 +870,7 @@ async def create_task(
     task = Task(
         project_id=project.id,
         group_id=group_id,
+        number=await _next_task_number(session),
         title=title.strip(),
         notes=notes,
         size=normalize_size(size),
@@ -833,10 +886,10 @@ async def create_task(
 
 
 async def set_task_group(
-    session: AsyncSession, task_id: uuid.UUID, group: str | uuid.UUID | None
+    session: AsyncSession, task_id: TaskRef, group: str | uuid.UUID | None
 ) -> Task:
     """Move a task into a group (or out, with group=None); appended at the end."""
-    task = await get_task(session, task_id)
+    task = await resolve_task(session, task_id)
     group_id = (
         (await resolve_group(session, task.project_id, group)).id if group is not None else None
     )
@@ -851,7 +904,7 @@ async def set_task_group(
 
 async def update_task(
     session: AsyncSession,
-    task_id: uuid.UUID,
+    task_id: TaskRef,
     title: str | None = None,
     notes: str | None = None,
     done: bool | None = None,
@@ -861,11 +914,12 @@ async def update_task(
 ) -> Task:
     """Edit a task. ``size``, ``due_date``, and ``assignee`` clear on ``None``.
 
-    A change of ``done`` also tells the projects of the tasks that wait for
-    this one: their blocked state is computed from it. Use ``set_task_done``
-    to get that list back as well.
+    The number of the task never changes, whatever the edit. A change of
+    ``done`` also tells the projects of the tasks that wait for this one:
+    their blocked state is computed from it. Use ``set_task_done`` to get
+    that list back as well.
     """
-    task = await get_task(session, task_id)
+    task = await resolve_task(session, task_id)
     if title is not None:
         task.title = title.strip()
     if notes is not None:
@@ -888,8 +942,9 @@ async def update_task(
     return (await attach_blocks(session, [task]))[0]
 
 
-async def delete_task(session: AsyncSession, task_id: uuid.UUID) -> None:
-    task = await get_task(session, task_id)
+async def delete_task(session: AsyncSession, task_id: TaskRef) -> None:
+    """Delete a task. Its number stays spent: no later task takes it."""
+    task = await resolve_task(session, task_id)
     project_id = str(task.project_id)
     await session.delete(task)
     await session.commit()
@@ -899,16 +954,17 @@ async def delete_task(session: AsyncSession, task_id: uuid.UUID) -> None:
 async def reorder_tasks(
     session: AsyncSession,
     ref: str | uuid.UUID,
-    ordered_ids: list[uuid.UUID],
+    ordered_ids: list[uuid.UUID | int],
     group: str | uuid.UUID | None = None,
 ) -> list[Task]:
     """Authoritative reorder of ONE container (the root list, or one group).
 
-    ordered_ids becomes the container's complete content, in order. Listed
-    tasks currently in another container are moved in (this is how a drag
-    into a group lands in a single call). A task currently in the container
-    but missing from the list is a conflict — a stale client (missing a task
-    another client just added) must refetch instead of silently dropping it.
+    ordered_ids becomes the container's complete content, in order, and
+    names each task by its number or by its UUID. Listed tasks currently in
+    another container are moved in (this is how a drag into a group lands in
+    a single call). A task currently in the container but missing from the
+    list is a conflict — a stale client (missing a task another client just
+    added) must refetch instead of silently dropping it.
 
     For a project with no groups this is identical to the original whole-
     project reorder.
@@ -919,14 +975,18 @@ async def reorder_tasks(
         t.id: t
         for t in (await session.scalars(select(Task).where(Task.project_id == project.id))).all()
     }
-    unknown = [i for i in ordered_ids if i not in tasks]
-    if unknown or len(set(ordered_ids)) != len(ordered_ids):
+    by_number = {t.number: t.id for t in tasks.values()}
+    # A number of this project becomes its UUID; anything else stays as it
+    # came and falls into the "unknown" check below.
+    ordered = [by_number.get(i, i) if isinstance(i, int) else i for i in ordered_ids]
+    unknown = [i for i in ordered if i not in tasks]
+    if unknown or len(set(ordered)) != len(ordered):
         raise ConflictError("ordered_ids must be distinct task ids of this project")
     current_members = {i for i, t in tasks.items() if t.group_id == group_id}
-    missing = current_members - set(ordered_ids)
+    missing = current_members - set(ordered)
     if missing:
         raise ConflictError("ordered_ids must include every task currently in this container")
-    for index, task_id in enumerate(ordered_ids):
+    for index, task_id in enumerate(ordered):
         tasks[task_id].group_id = group_id
         tasks[task_id].position = (index + 1) * POSITION_STEP
     project_id = project.id
@@ -949,9 +1009,13 @@ async def reorder_tasks(
     return await attach_blocks(session, list(reordered))
 
 
-async def move_task(session: AsyncSession, task_id: uuid.UUID, to_project: str | uuid.UUID) -> Task:
-    """Move a task to the end of another project's root list (ungrouped)."""
-    task = await get_task(session, task_id)
+async def move_task(session: AsyncSession, task_id: TaskRef, to_project: str | uuid.UUID) -> Task:
+    """Move a task to the end of another project's root list (ungrouped).
+
+    The number of the task goes with it, because the sequence is one for the
+    whole addon.
+    """
+    task = await resolve_task(session, task_id)
     project = await get_project(session, to_project)
     source_project_id = str(task.project_id)
     task.project_id = project.id

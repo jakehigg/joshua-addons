@@ -6,6 +6,8 @@ export const TASK_SIZES: TaskSize[] = ["XS", "S", "M", "L", "XL"];
 // project is null only when the linked task lost its project.
 export interface TaskRef {
   id: string;
+  // The short number a person says ("task 24").
+  number: number;
   title: string;
   done: boolean;
   project: { name: string; slug: string } | null;
@@ -13,6 +15,9 @@ export interface TaskRef {
 
 export interface Task {
   id: string;
+  // The short number a person says ("task 24"), unique over every project.
+  // It is given at creation and never changes.
+  number: number;
   project_id: string;
   group_id: string | null;
   title: string;

@@ -15,6 +15,7 @@ import {
   parseRoute,
   projectCardView,
   searchView,
+  taskHref,
   taskLinksView,
 } from "./dashboard.ts";
 
@@ -38,6 +39,7 @@ function project(fields: Partial<Project> & { name: string }): Project {
 
 function task(fields: Partial<Task> & { id: string; title: string }): Task {
   return {
+    number: 1,
     project_id: "a-project",
     group_id: null,
     notes: "",
@@ -56,6 +58,7 @@ function task(fields: Partial<Task> & { id: string; title: string }): Task {
 
 function ref(fields: Partial<TaskRef> & { id: string; title: string }): TaskRef {
   return {
+    number: 1,
     done: false,
     project: { name: "Hallway", slug: "hallway" },
     ...fields,
@@ -259,9 +262,13 @@ test("a search shows the matching projects and the matching tasks apart", () => 
   const result: SearchResult = {
     projects: [hallway],
     tasks: [
-      { task: task({ id: "t1", title: "Buy the paint" }), project: hallway, group: group("Prep") },
       {
-        task: task({ id: "t2", title: "Paint the trim", done: true }),
+        task: task({ id: "t1", number: 24, title: "Buy the paint" }),
+        project: hallway,
+        group: group("Prep"),
+      },
+      {
+        task: task({ id: "t2", number: 25, title: "Paint the trim", done: true }),
         project: hallway,
         group: null,
       },
@@ -276,16 +283,18 @@ test("a search shows the matching projects and the matching tasks apart", () => 
   assert.deepEqual(view.tasks, [
     {
       id: "t1",
+      number: 24,
       title: "Buy the paint",
-      href: "/p/hallway#task-t1",
+      href: "/p/hallway#task-24",
       done: false,
       blocked: false,
       whereLabel: "Hallway · Prep",
     },
     {
       id: "t2",
+      number: 25,
       title: "Paint the trim",
-      href: "/p/hallway#task-t2",
+      href: "/p/hallway#task-25",
       done: true,
       blocked: false,
       whereLabel: "Hallway · backlog",
@@ -320,9 +329,10 @@ test("a blocked task names each blocker, with a link to it", () => {
       title: "Paint the trim",
       blocked: true,
       blockers: [
-        ref({ id: "t1", title: "Buy the paint", done: true }),
+        ref({ id: "t1", number: 24, title: "Buy the paint", done: true }),
         ref({
           id: "t9",
+          number: 9,
           title: "Collect the keys",
           project: { name: "Garage", slug: "garage" },
         }),
@@ -333,16 +343,18 @@ test("a blocked task names each blocker, with a link to it", () => {
   assert.deepEqual(view.blockers, [
     {
       id: "t1",
+      number: 24,
       title: "Buy the paint",
       done: true,
-      href: "/p/hallway#task-t1",
+      href: "/p/hallway#task-24",
       projectName: "Hallway",
     },
     {
       id: "t9",
+      number: 9,
       title: "Collect the keys",
       done: false,
-      href: "/p/garage#task-t9",
+      href: "/p/garage#task-9",
       projectName: "Garage",
     },
   ]);
@@ -354,11 +366,15 @@ test("a task says what waits for it, and a link with no project opens nothing", 
     task({
       id: "t1",
       title: "Buy the paint",
-      blocking: [ref({ id: "t2", title: "Paint the trim", project: null })],
+      blocking: [ref({ id: "t2", number: 25, title: "Paint the trim", project: null })],
     }),
   );
   assert.equal(view.blocked, false);
   assert.deepEqual(view.blocking, [
-    { id: "t2", title: "Paint the trim", done: false, href: null, projectName: null },
+    { id: "t2", number: 25, title: "Paint the trim", done: false, href: null, projectName: null },
   ]);
+});
+
+test("a task link holds the task number, so a person can read it", () => {
+  assert.equal(taskHref({ slug: "hallway" }, { number: 24 }), "/p/hallway#task-24");
 });

@@ -28,6 +28,11 @@ tracks progress toward it.
   the project's **next task**.
 - A task can have a **size** (`XS`, `S`, `M`, `L`, `XL`), a **due date**, and
   an **assignee** (a name; the addon keeps no roster). All three are optional.
+- Each task has a **number**, for example `24`, that a person can say out
+  loud. One count runs over all the projects. The addon gives the number when
+  it makes the task, and the number then never changes and is never given to
+  another task. A task keeps its number when it moves to another group or to
+  another project.
 
 The computed fields are not stored. `percent` is done tasks over all tasks.
 `health` is one of `on_track`, `stalled` (a goal project with no task done in
@@ -39,14 +44,16 @@ has no health.
 ## Blocking
 
 A task can wait for other tasks. `block_task` makes one link: the task cannot
-start before the blocker is done. A task can wait for any number of tasks and
-any number of tasks can wait for it, and a blocker can be in another project.
+start before the blocker is done. It takes the number of each task, or its id,
+so a person can say "27 is blocked by 24". A task can wait for any number of
+tasks and any number of tasks can wait for it, and a blocker can be in another
+project.
 
 - `blocked` is true while at least one blocker is open. `blockers` and
-  `blocking` are the tasks on each side, with the id, the title, the done
-  state, and the project of each. All three are computed on every read and
-  never stored, so the last open blocker going done unblocks the task. There
-  is nothing to clear by hand.
+  `blocking` are the tasks on each side, with the number, the id, the title,
+  the done state, and the project of each. All three are computed on every
+  read and never stored, so the last open blocker going done unblocks the
+  task. There is nothing to clear by hand.
 - A **blocked task is never a next step**: it never comes back from
   `next_steps` and it is never a project's `next_task`. A project whose whole
   remaining work waits keeps its place in `next_steps`, with no task and the
@@ -87,8 +94,10 @@ any number of tasks can wait for it, and a blocker can be in another project.
 
 A project argument takes the project id, its slug, or its name. A group
 argument takes the group id or its name (case does not matter). A task
-argument, and a blocker argument, takes the task id, which `list_tasks`
-gives. A date argument is `YYYY-MM-DD`; an empty string clears a date.
+argument, and a blocker argument, takes the task number (`24`) or the task
+id. A date argument is `YYYY-MM-DD`; an empty string clears a date. Every
+result that holds a task gives its number. The REST API finds a task by its
+number at `GET /api/tasks/by-number/<number>`.
 
 `search_tasks` matches a substring, and case does not matter. A project
 matches on its name or its goal, and a task on its title or its notes. The
@@ -144,9 +153,14 @@ place; the "⋯" button on a task opens its size, due date, and assignee. Done
 tasks sink to the bottom of their list.
 
 A task that waits carries a "blocked" mark and names the tasks it waits for,
-each a link to that task in its own project. A task also names the tasks that
+each with its number and a link to that task in its own project. A task also names the tasks that
 wait for it. The "×" on a blocker removes that link. Joshua makes a link, with
 `block_task`.
+
+Each task row shows its number before the title. Select the number to copy
+it. A link to a task is `/p/<slug>#task-<number>`, for example
+`/p/hallway#task-24`, and it opens the project page at that task. A link
+that holds the task id in place of the number still opens the same task.
 
 The web UI and its REST API under `/api` have no login. Keep the port on a
 trusted network, or put an ingress with its own access control in front.

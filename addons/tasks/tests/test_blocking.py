@@ -23,6 +23,7 @@ async def test_block_and_unblock_one_task(db):
     blocked = await services.block_task(db, trim.id, paint.id)
     assert blocked.blocked is True
     assert [r["title"] for r in blocked.blockers] == ["Buy the paint"]
+    assert blocked.blockers[0]["number"] == paint.number
     assert blocked.blockers[0]["project"] == {"name": "Hall", "slug": "hall"}
 
     [other] = [t for t in await services.list_tasks(db, "hall") if t.id == paint.id]
@@ -32,6 +33,24 @@ async def test_block_and_unblock_one_task(db):
     free = await services.unblock_task(db, trim.id, paint.id)
     assert free.blocked is False and free.blockers == []
     assert await _link_count(db) == 0
+
+
+async def test_a_number_names_either_end_of_a_link(db):
+    """Each argument takes the number or the id, as a person says it: 27 is blocked by 24."""
+    await services.create_project(db, "Hall")
+    paint = await services.create_task(db, "hall", "Buy the paint")
+    trim = await services.create_task(db, "hall", "Paint the trim")
+
+    blocked = await services.block_task(db, trim.number, paint.number)
+    assert blocked.id == trim.id and blocked.blocked is True
+    assert [r["number"] for r in blocked.blockers] == [paint.number]
+
+    free = await services.unblock_task(db, str(trim.number), str(paint.number))
+    assert free.id == trim.id and free.blockers == []
+    assert await _link_count(db) == 0
+
+    report = await services.set_task_done(db, str(paint.number), True)
+    assert report["task"].id == paint.id and report["task"].done is True
 
 
 async def test_the_same_link_twice_stores_one_and_unknown_removal_is_quiet(db):

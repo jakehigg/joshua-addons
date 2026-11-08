@@ -57,6 +57,7 @@ async def test_project_and_task_crud_flow(client) -> None:
     t1 = r.json()
     assert set(t1) == {
         "id",
+        "number",
         "project_id",
         "group_id",
         "title",
@@ -115,6 +116,27 @@ async def test_task_notes_and_title_patch(client) -> None:
     assert t["notes"] == "n"
     r = await client.patch(f"/api/tasks/{t['id']}", json={"title": " b ", "notes": "see https://x"})
     assert r.json()["title"] == "b" and r.json()["notes"] == "see https://x"
+
+
+async def test_a_task_carries_its_number_and_is_found_by_it(client) -> None:
+    pid = (await client.post("/api/projects", json={"name": "P"})).json()["id"]
+    first = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "a"})).json()
+    second = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "b"})).json()
+    assert [first["number"], second["number"]] == [1, 2]
+
+    r = await client.get(f"/api/tasks/by-number/{second['number']}")
+    assert r.status_code == 200
+    assert r.json() == second
+
+    # the number never changes, and the task keeps it
+    patched = (await client.patch(f"/api/tasks/{first['id']}", json={"done": True})).json()
+    assert patched["number"] == first["number"]
+
+    r = await client.get("/api/tasks/by-number/404")
+    assert r.status_code == 404 and r.json() == {"detail": "task not found: 404"}
+    r = await client.get("/api/tasks/by-number/many")
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"] == ["path", "number"]
 
 
 async def test_project_patch_rename_and_archive(client) -> None:
@@ -559,6 +581,7 @@ async def test_blocker_endpoints_over_rest(client) -> None:
     blocked = r.json()
     assert blocked["blocked"] is True
     assert [b["title"] for b in blocked["blockers"]] == ["Collect the keys"]
+    assert [b["number"] for b in blocked["blockers"]] == [keys["number"]]
     assert blocked["blockers"][0]["project"] == {"name": "Garage", "slug": "garage"}
 
     # the other side reads the link as well, and a blocked task is not next

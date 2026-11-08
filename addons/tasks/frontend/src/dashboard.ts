@@ -50,9 +50,13 @@ export function projectHref(project: { slug: string }): string {
   return `/p/${encodeURIComponent(project.slug)}`;
 }
 
-/** A task in its own project page, at the task. */
-export function taskHref(project: { slug: string }, taskId: string): string {
-  return `${projectHref(project)}#task-${taskId}`;
+/**
+ * A task in its own project page, at the task. The link holds the task
+ * number, so a person can read it; the older links that hold the task id
+ * still open the same task.
+ */
+export function taskHref(project: { slug: string }, task: { number: number }): string {
+  return `${projectHref(project)}#task-${task.number}`;
 }
 
 // --- the order of the projects -------------------------------------------------
@@ -174,6 +178,8 @@ function badgeOf(project: Project): Badge | null {
 
 export interface TaskLink {
   id: string;
+  // The task number, shown on the chip and held by the link.
+  number: number;
   title: string;
   done: boolean;
   // The linked task in its own project page, or null when that task lost its
@@ -195,9 +201,10 @@ export interface TaskLinksView {
 function taskLink(ref: TaskRef): TaskLink {
   return {
     id: ref.id,
+    number: ref.number,
     title: ref.title,
     done: ref.done,
-    href: ref.project ? taskHref(ref.project, ref.id) : null,
+    href: ref.project ? taskHref(ref.project, ref) : null,
     projectName: ref.project ? ref.project.name : null,
   };
 }
@@ -215,6 +222,8 @@ export function taskLinksView(task: Task): TaskLinksView {
 
 export interface SearchTaskView {
   id: string;
+  // The task number, shown on the row and held by the link.
+  number: number;
   title: string;
   href: string;
   done: boolean;
@@ -234,8 +243,9 @@ export interface SearchView {
 export function searchTaskView(found: SearchTask): SearchTaskView {
   return {
     id: found.task.id,
+    number: found.task.number,
     title: found.task.title,
-    href: taskHref(found.project, found.task.id),
+    href: taskHref(found.project, found.task),
     done: found.task.done,
     blocked: found.task.blocked,
     whereLabel: `${found.project.name} · ${found.group ? found.group.name : "backlog"}`,
