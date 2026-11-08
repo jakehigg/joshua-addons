@@ -16,6 +16,8 @@
       <img class="j-logo" src="/logo-64.png" alt="" />
       <a class="j-appbar-title" href="/"><small>Joshua</small><strong>Tasks</strong></a>
       <div class="controls">
+        <!-- on a project page only: the search box lives on the home page -->
+        <a id="search-link" class="ghost-link" href="/?q=" hidden>Search</a>
         <select id="project-select" aria-label="Project"></select>
         <button id="add-project" class="ghost" title="New project" aria-label="New project">+<span class="label"> Project</span></button>
       </div>
@@ -38,6 +40,45 @@
         <button type="submit">Create</button>
         <button type="button" id="new-project-cancel" class="ghost">Cancel</button>
       </form>
+      <!-- The home page: the search, then one card for each project. -->
+      <section id="dashboard" hidden>
+        <form id="search-form" class="search" role="search" autocomplete="off">
+          <input
+            id="search-input"
+            type="search"
+            placeholder="Search projects and tasks…"
+            aria-label="Search projects and tasks"
+            maxlength="200"
+          />
+          <label class="toggle">
+            <input id="search-done" type="checkbox" />
+            Include done
+          </label>
+        </form>
+        <section id="search-results" hidden>
+          <p id="search-message" class="empty" hidden></p>
+          <!-- The two kinds of match, apart: the projects, then the tasks. -->
+          <section id="found-projects" class="found" hidden>
+            <h2 class="section-label">Projects</h2>
+            <div id="found-project-cards" class="cards"></div>
+          </section>
+          <section id="found-tasks" class="found" hidden>
+            <h2 class="section-label">Tasks</h2>
+            <ul id="found-task-list" class="found-list"></ul>
+          </section>
+        </section>
+        <section id="dashboard-projects">
+          <header class="dashboard-header">
+            <h2 class="section-label">Projects</h2>
+            <label class="toggle">
+              <input id="show-finished" type="checkbox" />
+              Show finished
+            </label>
+          </header>
+          <div id="project-cards" class="cards"></div>
+          <p id="dashboard-message" class="empty" hidden></p>
+        </section>
+      </section>
       <main id="main" hidden>
         <!-- The project header: goal, progress, target date, status. -->
         <section id="project-header">

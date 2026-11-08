@@ -6,14 +6,26 @@ import {
   type Group,
   type Project,
   type ProjectStatus,
+  type SearchResult,
   type Task,
   type TaskPatch,
   type TaskSize,
 } from "./api";
-
-const LAST_PROJECT_KEY = "joshua-tasks.last-project";
+import {
+  dashboardMessage,
+  dashboardProjects,
+  homeHref,
+  parseRoute,
+  projectCardView,
+  projectHref,
+  searchView,
+  type CardView,
+  type Route,
+  type SearchTaskView,
+} from "./dashboard";
 
 const projectSelect = document.getElementById("project-select") as HTMLSelectElement;
+const searchLink = document.getElementById("search-link") as HTMLAnchorElement;
 const addProjectBtn = document.getElementById("add-project") as HTMLButtonElement;
 const createFirstBtn = document.getElementById("create-first-project") as HTMLButtonElement;
 const newProjectForm = document.getElementById("new-project-form") as HTMLFormElement;
@@ -39,9 +51,25 @@ const addGroupBtn = document.getElementById("add-group") as HTMLButtonElement;
 const newGroupForm = document.getElementById("new-group-form") as HTMLFormElement;
 const newGroupInput = document.getElementById("new-group-input") as HTMLInputElement;
 const newGroupCancel = document.getElementById("new-group-cancel") as HTMLButtonElement;
+const dashboard = document.getElementById("dashboard") as HTMLElement;
+const dashboardProjectList = document.getElementById("dashboard-projects") as HTMLElement;
+const projectCards = document.getElementById("project-cards") as HTMLElement;
+const dashboardNote = document.getElementById("dashboard-message") as HTMLParagraphElement;
+const showFinished = document.getElementById("show-finished") as HTMLInputElement;
+const searchForm = document.getElementById("search-form") as HTMLFormElement;
+const searchInput = document.getElementById("search-input") as HTMLInputElement;
+const searchDone = document.getElementById("search-done") as HTMLInputElement;
+const searchResults = document.getElementById("search-results") as HTMLElement;
+const searchNote = document.getElementById("search-message") as HTMLParagraphElement;
+const foundProjects = document.getElementById("found-projects") as HTMLElement;
+const foundProjectCards = document.getElementById("found-project-cards") as HTMLElement;
+const foundTasks = document.getElementById("found-tasks") as HTMLElement;
+const foundTaskList = document.getElementById("found-task-list") as HTMLUListElement;
 
 let projects: Project[] = [];
 let currentProjectId: string | null = null;
+// "/" is the dashboard, "/p/<slug>" is one project; see dashboard.ts.
+let route: Route = parseRoute(location.pathname + location.search);
 
 function currentProject(): Project | undefined {
   return projects.find((p) => p.id === currentProjectId);
@@ -90,7 +118,11 @@ async function runRefresh() {
   const withProjects = refreshProjects;
   refreshProjects = false;
   try {
-    if (withProjects) await loadProjects();
+    // The dashboard is one view of the project list, so any change refetches it.
+    if (!currentProjectId) {
+      await loadProjects();
+      await runSearch();
+    } else if (withProjects) await loadProjects();
     else await loadTasks();
   } catch {
     /* transient — the next event or visibility change retries */
@@ -120,7 +152,8 @@ function connectEvents() {
       origin: string | null;
     };
     if (ev.origin === clientId) return; // our own write — DOM already updated
-    if (ev.scope === "projects") scheduleRefresh(true);
+    // On the dashboard every change can move a card, so none is ignored.
+    if (ev.scope === "projects" || !currentProjectId) scheduleRefresh(true);
     else if (ev.project_id === currentProjectId) scheduleRefresh(false);
   };
   // onerror: EventSource reconnects on its own; onopen does the catch-up.
@@ -249,6 +282,7 @@ function projectLabel(p: Project): string {
   return parts.join(" · ");
 }
 
+// The app bar's project picker, on a project page.
 function renderProjects() {
   const ordered = [...projects].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
   projectSelect.replaceChildren(
@@ -260,11 +294,260 @@ function renderProjects() {
     }),
   );
   if (currentProjectId) projectSelect.value = currentProjectId;
+}
 
-  const hasProjects = projects.length > 0;
-  main.hidden = !hasProjects;
-  emptyProjects.hidden = hasProjects;
-  projectSelect.hidden = !hasProjects;
+// --- the dashboard: one card for each project --------------------------------
+
+function projectCard(view: CardView): HTMLElement {
+  const card = document.createElement("a");
+  card.className = "card" + (view.finished ? " finished" : "");
+  card.href = view.href;
+
+  const head = document.createElement("div");
+  head.className = "card-head";
+  const name = document.createElement("span");
+  name.className = "card-name";
+  name.textContent = view.name;
+  head.append(name);
+  if (view.badge) {
+    const badge = document.createElement("span");
+    badge.className = `health ${view.badge.kind}`;
+    badge.textContent = view.badge.text;
+    head.append(badge);
+  }
+
+  const progress = document.createElement("div");
+  progress.className = "card-progress";
+  const bar = document.createElement("div");
+  bar.className = "progress-bar";
+  const fill = document.createElement("div");
+  fill.className = "progress-fill";
+  fill.style.width = `${view.percent}%`;
+  bar.append(fill);
+  const percent = document.createElement("span");
+  percent.className = "progress-text";
+  percent.textContent = view.percentLabel;
+  progress.append(bar, percent);
+
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
+  const count = document.createElement("span");
+  count.textContent = view.countLabel;
+  meta.append(count);
+  if (view.targetLabel) {
+    const target = document.createElement("span");
+    target.className = "card-target";
+    target.textContent = view.targetLabel;
+    meta.append(target);
+  }
+
+  card.append(head);
+  if (view.goal) {
+    const goal = document.createElement("p");
+    goal.className = "card-goal";
+    goal.textContent = view.goal;
+    card.append(goal);
+  }
+  card.append(progress, meta);
+  if (view.nextTitle) {
+    const next = document.createElement("div");
+    next.className = "card-next";
+    const label = document.createElement("span");
+    label.className = "next-badge";
+    label.textContent = "up next";
+    const title = document.createElement("span");
+    title.className = "card-next-title";
+    title.textContent = view.nextTitle;
+    next.append(label, title);
+    card.append(next);
+  }
+  return card;
+}
+
+// The search area is open while the box has text, or while a person is in it.
+let searchOpen = false;
+
+function renderDashboard() {
+  const shown = dashboardProjects(projects, route.showFinished);
+  projectCards.replaceChildren(...shown.map((p) => projectCard(projectCardView(p))));
+  const note = dashboardMessage(projects, shown, route.showFinished);
+  dashboardNote.textContent = note ?? "";
+  dashboardNote.hidden = note === null;
+  showFinished.checked = route.showFinished;
+  searchResults.hidden = !searchOpen;
+  // While a search runs, the full project list steps aside.
+  dashboardProjectList.hidden = searchOpen && route.query.trim() !== "";
+}
+
+// --- the search: matching projects, then matching tasks ----------------------
+
+function searchTaskRow(view: SearchTaskView): HTMLElement {
+  const li = document.createElement("li");
+  li.className = "found-task" + (view.done ? " done" : "");
+  const link = document.createElement("a");
+  link.href = view.href;
+  const title = document.createElement("span");
+  title.className = "found-title";
+  title.textContent = view.title;
+  const where = document.createElement("span");
+  where.className = "found-where";
+  where.textContent = view.whereLabel;
+  link.append(title, where);
+  if (view.done) {
+    const badge = document.createElement("span");
+    badge.className = "health done";
+    badge.textContent = "done";
+    link.append(badge);
+  }
+  li.append(link);
+  return li;
+}
+
+function renderSearch(result: SearchResult | null) {
+  const view = searchView(route.query, result);
+  searchNote.textContent = view.message ?? "";
+  searchNote.hidden = view.message === null;
+  foundProjectCards.replaceChildren(...view.projects.map(projectCard));
+  foundProjects.hidden = view.projects.length === 0;
+  foundTaskList.replaceChildren(...view.tasks.map(searchTaskRow));
+  foundTasks.hidden = view.tasks.length === 0;
+}
+
+// One request at a time wins: a slow answer to an old query is dropped.
+let searchSeq = 0;
+let searchTimer: number | undefined;
+
+async function runSearch() {
+  if (!searchOpen) return;
+  const text = route.query.trim();
+  const seq = ++searchSeq;
+  renderSearch(null);
+  if (!text) return;
+  try {
+    const result = await api.search(text, route.includeDone);
+    if (seq === searchSeq) renderSearch(result);
+  } catch {
+    if (seq !== searchSeq) return;
+    searchNote.textContent = "The search failed. Try again.";
+    searchNote.hidden = false;
+  }
+}
+
+// The search text and the two toggles live in the URL, so a search is a link
+// a person can keep. Typing replaces the entry instead of pushing a new one.
+function setSearchRoute(patch: Partial<Route>) {
+  route = { ...route, ...patch };
+  history.replaceState({}, "", homeHref(route));
+}
+
+function openSearch() {
+  searchOpen = true;
+  renderDashboard();
+}
+
+function closeSearch() {
+  searchOpen = false;
+  renderDashboard();
+}
+
+searchInput.addEventListener("focus", openSearch);
+searchInput.addEventListener("blur", () => {
+  if (!searchInput.value.trim()) closeSearch();
+});
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    setSearchRoute({ query: searchInput.value });
+    openSearch();
+    runSearch();
+  }, 250);
+});
+searchForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  clearTimeout(searchTimer);
+  setSearchRoute({ query: searchInput.value });
+  openSearch();
+  runSearch();
+});
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  searchInput.value = "";
+  setSearchRoute({ query: "" });
+  closeSearch();
+});
+// The same checkbox decides whether done tasks match and whether the done
+// and the closed projects are searched: one "include done" for the search.
+searchDone.addEventListener("change", () => {
+  setSearchRoute({ includeDone: searchDone.checked });
+  runSearch();
+});
+showFinished.addEventListener("change", () => {
+  setSearchRoute({ showFinished: showFinished.checked });
+  renderDashboard();
+});
+
+// --- routing: the dashboard, or one project ----------------------------------
+
+function navigate(href: string) {
+  history.pushState({}, "", href);
+  applyRoute();
+}
+
+// Every in-app link (a card, a found task, the app bar) moves the view
+// without a page load. An external link, and a note link in a new tab, pass
+// through.
+document.addEventListener("click", (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  const link = (e.target as HTMLElement).closest("a");
+  if (!link || link.target || link.origin !== location.origin) return;
+  e.preventDefault();
+  navigate(link.pathname + link.search + link.hash);
+});
+
+window.addEventListener("popstate", () => applyRoute());
+
+// A task link is "/p/<slug>#task-<id>": mark the task and bring it into view.
+function revealLinkedTask() {
+  const id = /^#task-(.+)$/.exec(location.hash)?.[1];
+  if (!id) return;
+  const li = main.querySelector(`li.task[data-id="${CSS.escape(id)}"]`);
+  if (!li) return;
+  li.scrollIntoView({ block: "center" });
+  li.classList.add("linked");
+  window.setTimeout(() => li.classList.remove("linked"), 2500);
+}
+
+async function applyRoute() {
+  route = parseRoute(location.pathname + location.search);
+  let project = route.project ? projects.find((p) => p.slug === route.project) : undefined;
+  if (route.project && !project) {
+    // A slug no project has (a renamed or a deleted project): show the home page.
+    history.replaceState({}, "", "/");
+    route = parseRoute("/");
+    project = undefined;
+  }
+  currentProjectId = project?.id ?? null;
+  const onProject = project !== undefined;
+  main.hidden = !onProject;
+  projectSelect.hidden = !onProject;
+  searchLink.hidden = !onProject;
+  dashboard.hidden = onProject || projects.length === 0;
+  emptyProjects.hidden = onProject || projects.length > 0;
+  if (!onProject) {
+    // "/?q=" (the app bar's Search link, from a project page) opens the box.
+    const wantsSearch = new URLSearchParams(location.search).has("q");
+    searchOpen = wantsSearch || route.query.trim() !== "";
+    searchInput.value = route.query;
+    searchDone.checked = route.includeDone;
+    renderDashboard();
+    if (wantsSearch) searchInput.focus();
+    await runSearch();
+    return;
+  }
+  renderProjects();
+  renderProjectHeader();
+  await loadTasks();
+  revealLinkedTask();
 }
 
 // --- project header: goal, progress, target date, status ---------------------
@@ -853,21 +1136,19 @@ async function loadTasks() {
   renderTasks(tasks, groups);
 }
 
-async function selectProject(id: string) {
-  currentProjectId = id;
-  localStorage.setItem(LAST_PROJECT_KEY, id);
-  projectSelect.value = id;
-  renderProjectHeader();
-  await loadTasks();
+/** Go to one project's page. */
+function openProject(id: string) {
+  const project = projects.find((p) => p.id === id);
+  if (project) navigate(projectHref(project));
 }
 
+// ``GET /api/projects`` returns every project that is not archived, the done
+// and the closed ones too; the dashboard toggle filters them here.
 async function loadProjects() {
   projects = await api.listProjects();
-  const remembered = localStorage.getItem(LAST_PROJECT_KEY);
-  currentProjectId =
-    projects.find((p) => p.id === remembered)?.id ?? projects[0]?.id ?? null;
   renderProjects();
-  if (currentProjectId) await selectProject(currentProjectId);
+  renderDashboard();
+  if (currentProjectId) renderProjectHeader();
 }
 
 // --- new project (inline, dialog-free) ----------------------------------------
@@ -883,7 +1164,7 @@ function hideNewProjectForm() {
   newProjectGoal.value = "";
 }
 
-projectSelect.addEventListener("change", () => selectProject(projectSelect.value));
+projectSelect.addEventListener("change", () => openProject(projectSelect.value));
 addProjectBtn.addEventListener("click", showNewProjectForm);
 createFirstBtn.addEventListener("click", showNewProjectForm);
 newProjectCancel.addEventListener("click", hideNewProjectForm);
@@ -899,7 +1180,7 @@ newProjectForm.addEventListener("submit", async (e) => {
   projects.push(project);
   hideNewProjectForm();
   renderProjects();
-  await selectProject(project.id);
+  openProject(project.id);
 });
 
 // --- new group (inline, dialog-free) -------------------------------------------
@@ -969,5 +1250,15 @@ new Sortable(groupList, {
   },
 });
 
-loadProjects();
+// The project list comes first: the route names a project by its slug.
+async function start() {
+  try {
+    await loadProjects();
+  } catch {
+    /* the next event or visibility change retries */
+  }
+  await applyRoute();
+}
+
+start();
 connectEvents();
