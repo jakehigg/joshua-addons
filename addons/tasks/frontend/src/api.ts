@@ -1,19 +1,6 @@
-export interface Project {
-  id: string;
-  name: string;
-  slug: string;
-  task_count: number;
-  done_count: number;
-}
-
-export interface Group {
-  id: string;
-  project_id: string;
-  name: string;
-  position: number;
-  task_count: number;
-  done_count: number;
-}
+export type ProjectStatus = "active" | "paused" | "done" | "closed";
+export type TaskSize = "XS" | "S" | "M" | "L" | "XL";
+export const TASK_SIZES: TaskSize[] = ["XS", "S", "M", "L", "XL"];
 
 export interface Task {
   id: string;
@@ -23,7 +10,54 @@ export interface Task {
   notes: string;
   done: boolean;
   done_at: string | null;
+  size: TaskSize | null;
+  due_date: string | null;
+  assignee: string | null;
   position: number;
+}
+
+// A project summary: the stored fields plus the computed ones. percent,
+// health, and next_task are computed by the server on every read.
+export interface Project {
+  id: string;
+  name: string;
+  slug: string;
+  goal: string | null;
+  target_date: string | null;
+  status: ProjectStatus;
+  completed_at: string | null;
+  task_count: number;
+  done_count: number;
+  open_count: number;
+  percent: number;
+  health: string | null;
+  next_task: Task | null;
+}
+
+export interface ProjectPatch {
+  name?: string;
+  goal?: string | null;
+  target_date?: string | null;
+  status?: ProjectStatus;
+}
+
+export interface Group {
+  id: string;
+  project_id: string;
+  name: string;
+  position: number;
+  target_date: string | null;
+  task_count: number;
+  done_count: number;
+  percent: number;
+}
+
+export interface TaskPatch {
+  title?: string;
+  notes?: string;
+  size?: TaskSize | null;
+  due_date?: string | null;
+  assignee?: string | null;
 }
 
 // Per-tab id sent with every request; the server echoes it in /api/events
@@ -46,8 +80,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   listProjects: () => request<Project[]>("GET", "/api/projects"),
-  createProject: (name: string) =>
-    request<Project>("POST", "/api/projects", { name }),
+  createProject: (name: string, goal?: string | null, targetDate?: string | null) =>
+    request<Project>("POST", "/api/projects", {
+      name,
+      goal: goal ?? null,
+      target_date: targetDate ?? null,
+    }),
+  updateProject: (projectId: string, patch: ProjectPatch) =>
+    request<Project>("PATCH", `/api/projects/${projectId}`, patch),
   listTasks: (projectId: string) =>
     request<Task[]>("GET", `/api/projects/${projectId}/tasks`),
   listGroups: (projectId: string) =>
@@ -56,6 +96,8 @@ export const api = {
     request<Group>("POST", `/api/projects/${projectId}/groups`, { name }),
   renameGroup: (groupId: string, name: string) =>
     request<Group>("PATCH", `/api/groups/${groupId}`, { name }),
+  setGroupTargetDate: (groupId: string, targetDate: string | null) =>
+    request<Group>("PATCH", `/api/groups/${groupId}`, { target_date: targetDate }),
   deleteGroup: (groupId: string) => request<void>("DELETE", `/api/groups/${groupId}`),
   reorderGroups: (projectId: string, orderedIds: string[]) =>
     request<Group[]>("PUT", `/api/projects/${projectId}/groups/order`, {
@@ -72,6 +114,8 @@ export const api = {
     request<Task>("PATCH", `/api/tasks/${taskId}`, { title }),
   updateNotes: (taskId: string, notes: string) =>
     request<Task>("PATCH", `/api/tasks/${taskId}`, { notes }),
+  updateTask: (taskId: string, patch: TaskPatch) =>
+    request<Task>("PATCH", `/api/tasks/${taskId}`, patch),
   deleteTask: (taskId: string) => request<void>("DELETE", `/api/tasks/${taskId}`),
   reorder: (projectId: string, orderedIds: string[], groupId?: string | null) =>
     request<Task[]>("PUT", `/api/projects/${projectId}/tasks/order`, {

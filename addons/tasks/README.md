@@ -77,9 +77,13 @@ docker compose up -d
 ## Web UI
 
 Open the addon's port (or the chart's ingress host) in a browser. Pick a
-project at the top. Drag a task by its handle to reorder it, or drag it into
-a group. Click a title or a note to edit it in place. Done tasks sink to the
-bottom of their list.
+project at the top. The header shows the goal (click it to edit), the
+progress bar, the health, the target date, and the status; the Complete
+button is enabled when every task is done. Phases come first, then the
+backlog. The first open task carries an "up next" mark. Drag a task by its
+handle to reorder it, or drag it into a group. Click a title or a note to
+edit it in place; the "⋯" button on a task opens its size, due date, and
+assignee. Done tasks sink to the bottom of their list.
 
 The web UI and its REST API under `/api` have no login. Keep the port on a
 trusted network, or put an ingress with its own access control in front.

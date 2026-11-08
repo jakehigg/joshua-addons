@@ -352,3 +352,120 @@ button.ghost:hover { color: var(--accent); }
   .task .delete,
   .task .note-toggle { opacity: 1; } /* no hover on touch */
 }
+
+/* --- project header: goal, progress, status (functional; theme pending) --- */
+
+#project-header {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.project-goal { cursor: text; color: var(--text); }
+.project-goal.empty { color: var(--muted); font-style: italic; }
+.project-goal-input {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-hover);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.project-progress { display: flex; align-items: center; gap: 10px; }
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-hover);
+  overflow: hidden;
+}
+.progress-fill { height: 100%; background: var(--accent); width: 0; transition: width 0.2s; }
+.progress-text { color: var(--muted); font-family: var(--mono); font-size: 0.85rem; }
+.health {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.health:empty { display: none; }
+.health.overdue, .health.stalled { color: var(--danger); border-color: var(--danger); }
+.health.ready_to_complete, .health.done { color: var(--accent); border-color: var(--accent); }
+.project-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.project-controls label { color: var(--muted); font-size: 0.85rem; display: flex; gap: 6px; align-items: center; }
+input[type="date"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 6px;
+  color-scheme: dark;
+}
+input[type="date"]:focus { border-color: var(--accent); }
+#complete-project:disabled { opacity: 0.4; cursor: not-allowed; }
+main.finished #add-task-form, main.finished .group-add { display: none; }
+
+/* --- backlog section and the up-next marker --- */
+
+.backlog-header { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; }
+.backlog-header[hidden] { display: none; }
+#backlog-label { font-family: var(--mono); color: var(--muted); font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.task.next { border-color: var(--accent); }
+.next-badge {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.task:not(.next) .next-badge { display: none; }
+
+/* --- task details: size, due date, assignee --- */
+
+.task-meta { display: flex; gap: 6px; align-items: center; }
+.meta-badge {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+.meta-badge.overdue { color: var(--danger); border-color: var(--danger); }
+.details-toggle {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  padding: 0 4px;
+  opacity: 0;
+}
+.task:hover .details-toggle, .task.editing .details-toggle { opacity: 1; }
+.task-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0 4px 36px;
+  align-items: center;
+}
+.task-details[hidden] { display: none; }
+.task-details label { color: var(--muted); font-size: 0.8rem; display: flex; gap: 4px; align-items: center; }
+.task-details select, .task-details input[type="text"] { padding: 4px 6px; min-width: 0; font-size: 0.85rem; }
+.task-details input[type="text"] { width: 140px; }
+
+/* --- group (phase) header additions --- */
+
+.group-target { color: var(--muted); font-family: var(--mono); font-size: 0.75rem; cursor: pointer; }
+.group-target.empty { opacity: 0; }
+.group-header:hover .group-target.empty { opacity: 1; }

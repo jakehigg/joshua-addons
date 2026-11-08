@@ -1,5 +1,15 @@
 import Sortable from "sortablejs";
-import { api, clientId, type Group, type Project, type Task } from "./api";
+import {
+  api,
+  clientId,
+  TASK_SIZES,
+  type Group,
+  type Project,
+  type ProjectStatus,
+  type Task,
+  type TaskPatch,
+  type TaskSize,
+} from "./api";
 
 const LAST_PROJECT_KEY = "joshua-tasks.last-project";
 
@@ -8,6 +18,15 @@ const addProjectBtn = document.getElementById("add-project") as HTMLButtonElemen
 const createFirstBtn = document.getElementById("create-first-project") as HTMLButtonElement;
 const newProjectForm = document.getElementById("new-project-form") as HTMLFormElement;
 const newProjectInput = document.getElementById("new-project-input") as HTMLInputElement;
+const newProjectGoal = document.getElementById("new-project-goal") as HTMLInputElement;
+const projectGoal = document.getElementById("project-goal") as HTMLSpanElement;
+const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
+const progressText = document.getElementById("progress-text") as HTMLSpanElement;
+const projectHealth = document.getElementById("project-health") as HTMLSpanElement;
+const projectTarget = document.getElementById("project-target") as HTMLInputElement;
+const projectStatus = document.getElementById("project-status") as HTMLSelectElement;
+const completeBtn = document.getElementById("complete-project") as HTMLButtonElement;
+const backlogHeader = document.querySelector(".backlog-header") as HTMLElement;
 const newProjectCancel = document.getElementById("new-project-cancel") as HTMLButtonElement;
 const main = document.getElementById("main") as HTMLElement;
 const emptyProjects = document.getElementById("empty-projects") as HTMLElement;
@@ -23,6 +42,27 @@ const newGroupCancel = document.getElementById("new-group-cancel") as HTMLButton
 
 let projects: Project[] = [];
 let currentProjectId: string | null = null;
+
+function currentProject(): Project | undefined {
+  return projects.find((p) => p.id === currentProjectId);
+}
+
+// The server computes percent, health, and the next task. After a change
+// this tab made (a done toggle, an add, a delete) the summary is stale, so
+// refetch the project list only, without rerendering the tasks.
+let summaryTimer: number | undefined;
+function scheduleSummaryRefresh() {
+  clearTimeout(summaryTimer);
+  summaryTimer = window.setTimeout(async () => {
+    try {
+      projects = await api.listProjects();
+      renderProjects();
+      renderProjectHeader();
+    } catch {
+      /* the next event or visibility change retries */
+    }
+  }, 300);
+}
 
 // --- live updates -------------------------------------------------------------
 // Changes made elsewhere (Joshua over MCP, another device) arrive as SSE
@@ -200,12 +240,22 @@ function sinkCompletedGroups() {
 
 // --- rendering ------------------------------------------------------------------
 
+const STATUS_ORDER: Record<ProjectStatus, number> = { active: 0, paused: 1, done: 2, closed: 2 };
+
+function projectLabel(p: Project): string {
+  const parts = [p.name];
+  if (p.goal && p.task_count > 0) parts.push(`${p.percent}%`);
+  if (p.status !== "active") parts.push(p.status);
+  return parts.join(" · ");
+}
+
 function renderProjects() {
+  const ordered = [...projects].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
   projectSelect.replaceChildren(
-    ...projects.map((p) => {
+    ...ordered.map((p) => {
       const option = document.createElement("option");
       option.value = p.id;
-      option.textContent = p.name;
+      option.textContent = projectLabel(p);
       return option;
     }),
   );
@@ -215,6 +265,105 @@ function renderProjects() {
   main.hidden = !hasProjects;
   emptyProjects.hidden = hasProjects;
   projectSelect.hidden = !hasProjects;
+}
+
+// --- project header: goal, progress, target date, status ---------------------
+
+function renderProjectHeader() {
+  const p = currentProject();
+  if (!p) return;
+  projectGoal.textContent = p.goal ?? "Set a goal for this project…";
+  projectGoal.classList.toggle("empty", !p.goal);
+  progressFill.style.width = `${p.percent}%`;
+  progressText.textContent = `${p.done_count}/${p.task_count} · ${p.percent}%`;
+  projectHealth.textContent = p.health ? p.health.replaceAll("_", " ") : "";
+  projectHealth.className = "health" + (p.health ? ` ${p.health}` : "");
+  projectTarget.value = p.target_date ?? "";
+  projectStatus.value = p.status;
+  const finished = p.status === "done" || p.status === "closed";
+  main.classList.toggle("finished", finished);
+  completeBtn.hidden = p.status === "done";
+  completeBtn.disabled = p.open_count > 0 || p.task_count === 0;
+  completeBtn.title =
+    p.open_count > 0
+      ? `${p.open_count} task(s) still open. Finish them, or set the status to closed.`
+      : "Mark the project done";
+}
+
+async function patchProject(patch: Parameters<typeof api.updateProject>[1]) {
+  if (!currentProjectId) return;
+  try {
+    const updated = await api.updateProject(currentProjectId, patch);
+    projects = projects.map((p) => (p.id === updated.id ? updated : p));
+  } catch {
+    /* keep the previous values; the header is re-rendered from them */
+  }
+  renderProjects();
+  renderProjectHeader();
+}
+
+projectGoal.addEventListener("click", () => {
+  const p = currentProject();
+  if (!p || projectGoal.querySelector("input")) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "project-goal-input";
+  input.value = p.goal ?? "";
+  input.maxLength = 2000;
+  input.placeholder = "What does done look like?";
+  let settled = false;
+  const finish = async (save: boolean) => {
+    if (settled) return;
+    settled = true;
+    const value = input.value.trim();
+    input.replaceWith(projectGoal);
+    if (save && value !== (p.goal ?? "")) await patchProject({ goal: value || null });
+    else renderProjectHeader();
+  };
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      finish(false);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      input.blur();
+    }
+  });
+  projectGoal.replaceWith(input);
+  input.focus();
+});
+
+projectTarget.addEventListener("change", () => {
+  patchProject({ target_date: projectTarget.value || null });
+});
+
+projectStatus.addEventListener("change", () => {
+  patchProject({ status: projectStatus.value as ProjectStatus });
+});
+
+completeBtn.addEventListener("click", () => patchProject({ status: "done" }));
+
+// --- the up-next marker --------------------------------------------------------
+// The first open task in display order (phases, then the backlog) is the
+// project's next step. Display order is roadmap order, so the DOM is enough.
+
+function markNext() {
+  for (const li of main.querySelectorAll("li.task.next")) li.classList.remove("next");
+  const first = main.querySelector("li.task:not(.done)");
+  if (first) first.classList.add("next");
+}
+
+function taskChanged(...uls: (HTMLElement | null)[]) {
+  updateCountsAround(...uls);
+  markNext();
+  scheduleSummaryRefresh();
+}
+
+// --- task details: size, due date, assignee -------------------------------------
+
+function isoToday(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function taskRow(task: Task): HTMLLIElement {
@@ -237,18 +386,101 @@ function taskRow(task: Task): HTMLLIElement {
   checkbox.addEventListener("change", async () => {
     const ul = li.parentElement as HTMLElement;
     li.classList.toggle("done", checkbox.checked);
-    updateCountsAround(ul);
     sinkDoneRows(ul);
     sinkCompletedGroups();
+    taskChanged(ul);
     try {
       await api.setDone(task.id, checkbox.checked);
     } catch {
       checkbox.checked = !checkbox.checked;
       li.classList.toggle("done", checkbox.checked);
-      updateCountsAround(ul);
       sinkDoneRows(ul);
       sinkCompletedGroups();
+      taskChanged(ul);
     }
+  });
+
+  const nextBadge = document.createElement("span");
+  nextBadge.className = "next-badge";
+  nextBadge.textContent = "up next";
+
+  // Size, due date, and assignee show as small badges when set. The "⋯"
+  // button opens a details row with the three controls.
+  const meta = document.createElement("span");
+  meta.className = "task-meta";
+  const details = document.createElement("div");
+  details.className = "task-details";
+  details.hidden = true;
+
+  function renderMeta() {
+    meta.replaceChildren();
+    const badge = (text: string, cls = "") => {
+      const b = document.createElement("span");
+      b.className = "meta-badge" + (cls ? ` ${cls}` : "");
+      b.textContent = text;
+      meta.append(b);
+    };
+    if (task.size) badge(task.size);
+    if (task.due_date) {
+      badge(task.due_date, !task.done && task.due_date < isoToday() ? "overdue" : "");
+    }
+    if (task.assignee) badge(task.assignee);
+  }
+
+  async function saveDetails(patch: TaskPatch) {
+    try {
+      const updated = await api.updateTask(task.id, patch);
+      Object.assign(task, updated);
+    } catch {
+      /* keep the previous values */
+    }
+    renderMeta();
+  }
+
+  const sizeSelect = document.createElement("select");
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "size";
+  sizeSelect.append(none);
+  for (const size of TASK_SIZES) {
+    const option = document.createElement("option");
+    option.value = size;
+    option.textContent = size;
+    sizeSelect.append(option);
+  }
+  sizeSelect.value = task.size ?? "";
+  sizeSelect.addEventListener("change", () =>
+    saveDetails({ size: (sizeSelect.value || null) as TaskSize | null }),
+  );
+
+  const dueInput = document.createElement("input");
+  dueInput.type = "date";
+  dueInput.value = task.due_date ?? "";
+  dueInput.addEventListener("change", () => saveDetails({ due_date: dueInput.value || null }));
+
+  const assigneeInput = document.createElement("input");
+  assigneeInput.type = "text";
+  assigneeInput.placeholder = "assignee";
+  assigneeInput.maxLength = 200;
+  assigneeInput.value = task.assignee ?? "";
+  assigneeInput.addEventListener("change", () =>
+    saveDetails({ assignee: assigneeInput.value.trim() || null }),
+  );
+
+  const wrap = (text: string, control: HTMLElement) => {
+    const label = document.createElement("label");
+    label.append(text, control);
+    return label;
+  };
+  details.append(wrap("", sizeSelect), wrap("due", dueInput), wrap("", assigneeInput));
+
+  const detailsBtn = document.createElement("button");
+  detailsBtn.className = "details-toggle";
+  detailsBtn.textContent = "⋯";
+  detailsBtn.title = "Size, due date, assignee";
+  detailsBtn.addEventListener("click", () => {
+    details.hidden = !details.hidden;
+    li.classList.toggle("editing", !details.hidden);
   });
 
   const title = document.createElement("span");
@@ -384,13 +616,14 @@ function taskRow(task: Task): HTMLLIElement {
     const ul = li.parentElement;
     await api.deleteTask(task.id);
     li.remove();
-    updateCountsAround(ul);
+    taskChanged(ul);
     updateEmptyState();
   });
 
-  row.append(handle, checkbox, title, noteBtn, del);
-  li.append(row, notes);
+  row.append(handle, checkbox, title, nextBadge, meta, noteBtn, detailsBtn, del);
+  li.append(row, notes, details);
   renderNotes();
+  renderMeta();
   return li;
 }
 
@@ -406,7 +639,7 @@ const taskSortableOpts: Sortable.Options = {
     if (!currentProjectId) return;
     const to = evt.to as HTMLElement;
     const groupId = to.dataset.groupId ?? null;
-    updateCountsAround(evt.from as HTMLElement, to);
+    taskChanged(evt.from as HTMLElement, to);
     updateEmptyState();
     try {
       // Optimistic: Sortable already moved the row. The id list is the
@@ -470,6 +703,41 @@ function groupSection(group: Group, tasks: Task[]): HTMLElement {
   const count = document.createElement("span");
   count.className = "group-count";
 
+  // The phase's target date: a badge that turns into a date input on click.
+  const target = document.createElement("span");
+  target.className = "group-target";
+  const renderTarget = () => {
+    target.textContent = group.target_date ?? "set date";
+    target.classList.toggle("empty", !group.target_date);
+  };
+  target.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "date";
+    input.value = group.target_date ?? "";
+    // change and blur both end the edit; only the first one acts.
+    let settled = false;
+    const finish = async () => {
+      if (settled) return;
+      settled = true;
+      const value = input.value || null;
+      if (value !== group.target_date) {
+        try {
+          const updated = await api.setGroupTargetDate(group.id, value);
+          group.target_date = updated.target_date;
+        } catch {
+          /* keep the old date */
+        }
+      }
+      renderTarget();
+      input.replaceWith(target);
+    };
+    input.addEventListener("change", finish);
+    input.addEventListener("blur", finish);
+    target.replaceWith(input);
+    input.focus();
+  });
+  renderTarget();
+
   const del = document.createElement("button");
   del.className = "delete group-delete";
   del.textContent = "×";
@@ -479,7 +747,7 @@ function groupSection(group: Group, tasks: Task[]): HTMLElement {
     await loadTasks(); // members re-appear in the ungrouped list
   });
 
-  header.append(handle, name, count, del);
+  header.append(handle, name, count, target, del);
 
   const ul = document.createElement("ul");
   ul.className = "group-tasks";
@@ -502,9 +770,9 @@ function groupSection(group: Group, tasks: Task[]): HTMLElement {
     addInput.value = "";
     const task = await api.createTask(currentProjectId, title, group.id);
     ul.append(taskRow(task));
-    updateGroupCount(section);
     sinkDoneRows(ul); // new open task sits above any completed ones
     sinkCompletedGroups(); // a group that regained open work rises again
+    taskChanged(ul);
   });
 
   section.append(header, ul, addForm);
@@ -535,6 +803,10 @@ function renderTasks(tasks: Task[], groups: Group[]) {
     );
   }
   sinkCompletedGroups();
+  // A project with no phases is one plain list; the "Backlog" label only
+  // makes sense next to phases.
+  backlogHeader.hidden = groups.length === 0;
+  markNext();
   updateEmptyState();
 }
 
@@ -553,6 +825,7 @@ async function selectProject(id: string) {
   currentProjectId = id;
   localStorage.setItem(LAST_PROJECT_KEY, id);
   projectSelect.value = id;
+  renderProjectHeader();
   await loadTasks();
 }
 
@@ -575,6 +848,7 @@ function showNewProjectForm() {
 function hideNewProjectForm() {
   newProjectForm.hidden = true;
   newProjectInput.value = "";
+  newProjectGoal.value = "";
 }
 
 projectSelect.addEventListener("change", () => selectProject(projectSelect.value));
@@ -589,7 +863,7 @@ newProjectForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = newProjectInput.value.trim();
   if (!name) return;
-  const project = await api.createProject(name);
+  const project = await api.createProject(name, newProjectGoal.value.trim() || null);
   projects.push(project);
   hideNewProjectForm();
   renderProjects();
@@ -621,6 +895,7 @@ newGroupForm.addEventListener("submit", async (e) => {
   const group = await api.createGroup(currentProjectId, name);
   hideNewGroupForm();
   groupList.append(groupSection(group, []));
+  backlogHeader.hidden = false;
   updateEmptyState();
 });
 
@@ -634,6 +909,7 @@ addTaskForm.addEventListener("submit", async (e) => {
   const task = await api.createTask(currentProjectId, title);
   taskList.append(taskRow(task));
   sinkDoneRows(taskList); // new open task sits above any completed ones
+  taskChanged(taskList);
   updateEmptyState();
 });
 
@@ -651,8 +927,10 @@ new Sortable(groupList, {
     dragDone();
     if (!currentProjectId) return;
     const ids = [...groupList.children].map((s) => (s as HTMLElement).dataset.id!);
+    markNext();
     try {
       await api.reorderGroups(currentProjectId, ids);
+      scheduleSummaryRefresh();
     } catch {
       await loadTasks();
     }
