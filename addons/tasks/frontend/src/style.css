@@ -86,6 +86,89 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 #new-project-form input,
 #new-group-form input { flex: 1 1 200px; min-width: 0; }
 
+/* --------------------------------------------- the home page (dashboard) */
+
+#dashboard { display: flex; flex-direction: column; gap: 20px; }
+
+.section-label {
+  margin: 0;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--j-muted);
+}
+.dashboard-header { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
+.dashboard-header .toggle { margin-left: auto; }
+
+/* the search box: full width, with its one checkbox under it on a phone */
+.search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.search input[type="search"] { flex: 1 1 240px; min-width: 0; }
+input[type="search"] {
+  height: 44px; padding: 0 14px; font: inherit; font-size: 16px; /* 16px: no iOS zoom */
+  appearance: none; -webkit-appearance: none;
+  color: var(--j-text); background: var(--j-surface-2);
+  border: 1px solid var(--j-line); border-radius: var(--j-radius-sm); outline: none;
+}
+input[type="search"]::placeholder { color: var(--j-faint); }
+input[type="search"]:focus { border-color: var(--j-accent); box-shadow: 0 0 0 3px var(--j-accent-soft); }
+
+.toggle { display: flex; align-items: center; gap: 7px; color: var(--j-muted); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.toggle input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--j-accent); cursor: pointer; }
+
+/* the app bar's link back to the search box, on a project page */
+.ghost-link {
+  display: inline-flex; align-items: center; height: 34px; padding: 0 10px; flex: none;
+  color: var(--j-muted); font-size: 14px; font-weight: 600; border-radius: var(--j-radius-sm);
+}
+.ghost-link:hover { color: var(--j-text); background: var(--j-surface-2); text-decoration: none; }
+
+/* one card for each project */
+.cards { display: flex; flex-direction: column; gap: 12px; }
+
+.card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px;
+  color: var(--j-text);
+  background: var(--j-surface);
+  border: 1px solid var(--j-line-soft);
+  border-radius: var(--j-radius);
+  transition: border-color .15s, background .15s;
+}
+.card:hover { border-color: var(--j-line); background: var(--j-surface-2); text-decoration: none; }
+.card.finished { opacity: .6; }
+
+.card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.card-name { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.card-head .health { margin-left: auto; }
+.card-goal { color: var(--j-muted); font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.card-progress { display: flex; align-items: center; gap: 10px; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--j-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.card-target { color: var(--j-faint); }
+.card-next { display: flex; align-items: center; gap: 8px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--j-line-soft); font-size: 14px; }
+.card-next-title { min-width: 0; overflow-wrap: anywhere; }
+
+/* ----------------------------------------------------------- the search */
+
+#search-results { display: flex; flex-direction: column; gap: 18px; }
+.found { display: flex; flex-direction: column; gap: 10px; }
+
+.found-list {
+  list-style: none; margin: 0; padding: 0;
+  background: var(--j-surface); border: 1px solid var(--j-line-soft); border-radius: var(--j-radius);
+  overflow: hidden;
+}
+.found-task { border-top: 1px solid var(--j-line-soft); }
+.found-task:first-child { border-top: 0; }
+.found-task > a {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 14px; color: var(--j-text);
+}
+.found-task > a:hover { background: var(--j-surface-2); text-decoration: none; }
+.found-title { flex: 1 1 auto; min-width: min(100%, 18ch); font-weight: 500; overflow-wrap: anywhere; }
+.found-where { color: var(--j-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.found-task.done .found-title { text-decoration: line-through; color: var(--j-faint); }
+
+/* the task a search link points at, once its project page is open */
+.task.linked { background: var(--j-accent-soft); }
+
 /* ------------------------------------------------------- project header */
 
 #project-header {
@@ -335,4 +418,6 @@ main.finished .group-add { display: none; }
 @media (max-width: 420px) {
   #add-project .label { display: none; }
   #complete-project { margin-left: 0; }
+  /* the app bar is tight on a phone: the search link keeps only its word */
+  .ghost-link { padding: 0 4px; }
 }

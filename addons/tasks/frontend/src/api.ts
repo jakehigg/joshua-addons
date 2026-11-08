@@ -52,6 +52,20 @@ export interface Group {
   percent: number;
 }
 
+// One task a search found: the task, its project, and its group (null for a
+// task in the project's backlog).
+export interface SearchTask {
+  task: Task;
+  project: Project;
+  group: Group | null;
+}
+
+// The two kinds of match, apart: the projects, then the tasks.
+export interface SearchResult {
+  projects: Project[];
+  tasks: SearchTask[];
+}
+
 export interface TaskPatch {
   title?: string;
   notes?: string;
@@ -117,6 +131,12 @@ export const api = {
   updateTask: (taskId: string, patch: TaskPatch) =>
     request<Task>("PATCH", `/api/tasks/${taskId}`, patch),
   deleteTask: (taskId: string) => request<void>("DELETE", `/api/tasks/${taskId}`),
+  // include_done also decides whether done and closed projects are searched.
+  search: (query: string, includeDone: boolean) =>
+    request<SearchResult>(
+      "GET",
+      `/api/search?query=${encodeURIComponent(query)}&include_done=${includeDone}`,
+    ),
   reorder: (projectId: string, orderedIds: string[], groupId?: string | null) =>
     request<Task[]>("PUT", `/api/projects/${projectId}/tasks/order`, {
       ordered_ids: orderedIds,

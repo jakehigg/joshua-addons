@@ -87,14 +87,30 @@ docker compose up -d
 
 ## Web UI
 
-Open the addon's port (or the chart's ingress host) in a browser. Pick a
-project at the top. The header shows the goal (click it to edit), the
-progress bar, the health, the target date, and the status; the Complete
-button is enabled when every task is done. Phases come first, then the
-backlog. The first open task carries an "up next" mark. Drag a task by its
-handle to reorder it, or drag it into a group. Click a title or a note to
-edit it in place; the "⋯" button on a task opens its size, due date, and
-assignee. Done tasks sink to the bottom of their list.
+Open the addon's port (or the chart's ingress host) in a browser.
+
+The home page is one card for each project: the name, the goal, the percent
+done with a bar, the done and the open count, the health, the target date,
+and the next task. A project that needs a person comes first: overdue, then
+stalled, then ready to complete, then on track, then a plain list, then a
+project with no tasks, then paused. The nearer target date comes first in a
+tie. A card opens the project at `/p/<slug>`. "Show finished" adds the done
+and the closed projects.
+
+The search box on the home page finds a project by its name or its goal, and
+a task by its title or its notes. It keeps the two kinds apart: the
+projects, each as its card, then the tasks, each with its project and its
+group. A task opens its project page at the task. Only open tasks and
+unfinished projects match until "Include done" is on. On a project page, the
+Search link in the bar goes back to the box.
+
+A project page shows the goal (click it to edit), the progress bar, the
+health, the target date, and the status; the Complete button is enabled when
+every task is done. Phases come first, then the backlog. The first open task
+carries an "up next" mark. Drag a task by its handle to reorder it, or drag
+it into a group. Click a title or a note to edit it in place; the "⋯" button
+on a task opens its size, due date, and assignee. Done tasks sink to the
+bottom of their list.
 
 The web UI and its REST API under `/api` have no login. Keep the port on a
 trusted network, or put an ingress with its own access control in front.
@@ -102,6 +118,10 @@ trusted network, or put an ingress with its own access control in front.
 
 Live updates use one server-sent event stream in the process. Run one
 replica only.
+
+The home page has its own unit tests: the order of the cards, the toggle,
+and the search. They run on node's own test runner and need no package.
+Run `npm test` in `addons/tasks/frontend`.
 
 ## Settings
 
