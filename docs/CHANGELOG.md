@@ -213,6 +213,10 @@ releases, with the images and the packaged chart, are at
   gains the columns when it is opened. `master_id` is what lets the addon say
   the house owns the same album in another pressing, and it fills at the next
   sync.
+- `chores`: the web UI uses the shared Joshua stylesheet (`joshua-ui.css`
+  1.0.0), as `pantry` and `tasks` do. The manager view and the kiosk screen
+  are dark only; the manager view has no light theme now. The manager view
+  gets a sign-out button. The API and the behavior do not change.
 
 ### Fixed
 

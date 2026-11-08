@@ -4,8 +4,8 @@ import {
   formatDate, localToday,
 } from '../api'
 import DatePicker from './DatePicker'
+import Icon from './Icon'
 import LedgerRow from './LedgerRow'
-import './ManagerView.css'
 
 const PIN_KEY = 'chores_manager_pin'
 const SLUG_PATTERN = /^[a-z0-9-]{1,32}$/
@@ -183,133 +183,173 @@ export default function ManagerView() {
 
   if (!authed) {
     return (
-      <div className="manager-pin-screen">
-        <h1>Chores</h1>
-        <p className="pin-sub">{label} sign in</p>
-        <form onSubmit={handlePinSubmit} className="pin-form">
-          <input
-            type="password"
-            inputMode="numeric"
-            placeholder="Enter PIN"
-            value={pinInput}
-            onChange={e => setPinInput(e.target.value)}
-            autoFocus
-          />
-          {pinError && <div className="pin-error">{pinError}</div>}
-          <button type="submit" className="btn-primary">Unlock</button>
+      <div className="pin-screen">
+        <form onSubmit={handlePinSubmit} className="j-card pin-card">
+          <img className="pin-logo" src="/logo-64.png" alt="" />
+          <div className="pin-heading">
+            <small>Joshua</small>
+            <h1>Chores</h1>
+          </div>
+          <p className="j-muted pin-sub">{label} sign in</p>
+          <label className={`j-field ${pinError ? 'invalid' : ''}`}>
+            <input
+              type="password"
+              inputMode="numeric"
+              placeholder="PIN"
+              aria-label="PIN"
+              value={pinInput}
+              onChange={e => setPinInput(e.target.value)}
+              autoFocus
+            />
+          </label>
+          {pinError && <p className="j-error" role="alert">{pinError}</p>}
+          <button type="submit" className="j-btn primary block">Unlock</button>
         </form>
       </div>
     )
   }
 
   const dayToday = today || localToday()
+  const overdueCount = chores.filter(c => c.next_due_date < dayToday).length
+  const dueTodayCount = chores.filter(c => c.next_due_date === dayToday).length
 
   return (
-    <div className="manager-root">
-      <header className="manager-header">
-        <div className="manager-inner">
-          <h1>Chores</h1>
-          {tab === 'chores' && activeMembers.length > 0 && (
-            <div className="member-chips" aria-label="Member">
-              {activeMembers.map(m => (
-                <button
-                  key={m.slug}
-                  type="button"
-                  className={`member-chip ${m.slug === selectedSlug ? 'active' : ''}`}
-                  aria-pressed={m.slug === selectedSlug}
-                  onClick={() => setSelectedSlug(m.slug)}
-                >
-                  {m.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {tab === 'chores' && selected && (
-            <div className="balance-bar">
-              {selected.balance_dollars !== null ? (
-                <>
-                  <span className="balance-dollars">{selected.balance_dollars}</span>
-                  <span className="balance-pts">{selected.balance} XP</span>
-                </>
-              ) : (
-                <span className="balance-dollars">{selected.balance} XP</span>
-              )}
-            </div>
-          )}
-        </div>
+    <div className="manager">
+      <header className="j-appbar">
+        <img className="j-logo" src="/logo-64.png" alt="" />
+        <a className="j-appbar-title" href="/">
+          <small>Joshua</small>
+          <strong>Chores</strong>
+        </a>
+        <span className="j-spacer" />
+        <button type="button" className="j-icon-btn" onClick={signOut} aria-label="Sign out" title="Sign out">
+          <Icon name="signout" />
+        </button>
       </header>
 
-      <main className="manager-inner manager-main">
-        <div className="view-switch" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === 'chores'}
-            className={tab === 'chores' ? 'active' : ''}
-            onClick={() => setTab('chores')}
-          >
-            Chores
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'members'}
-            className={tab === 'members' ? 'active' : ''}
-            onClick={() => setTab('members')}
-          >
-            Members
-          </button>
-        </div>
+      <nav className="j-tabs" role="tablist" aria-label="Chores sections">
+        <button
+          type="button"
+          role="tab"
+          className="j-tab"
+          aria-selected={tab === 'chores'}
+          onClick={() => setTab('chores')}
+        >
+          Chores
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className="j-tab"
+          aria-selected={tab === 'members'}
+          onClick={() => setTab('members')}
+        >
+          Members
+        </button>
+      </nav>
 
-        {error && <div className="manager-error">{error}</div>}
+      <main className="j-content">
+        {error && (
+          <div className="alert" role="alert">
+            <span>{error}</span>
+            <button type="button" className="j-icon-btn sm" onClick={() => setError('')} aria-label="Dismiss">
+              <Icon name="close" />
+            </button>
+          </div>
+        )}
 
         {tab === 'chores' && (
           <>
-            <div className="action-row">
-              <button className="btn-primary" onClick={() => setModal({ type: 'add' })} disabled={!selected}>
-                <span className="label-long">+ Add chore</span>
-                <span className="label-short">Add</span>
+            {activeMembers.length > 0 && (
+              <div className="j-chips" role="group" aria-label="Member">
+                {activeMembers.map(m => (
+                  <button
+                    key={m.slug}
+                    type="button"
+                    className="j-chip"
+                    aria-pressed={m.slug === selectedSlug}
+                    onClick={() => setSelectedSlug(m.slug)}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selected && (
+              <div className="j-stats">
+                <div className="j-stat ok">
+                  <b>{selected.balance}</b>
+                  <span>XP</span>
+                </div>
+                {selected.balance_dollars !== null && (
+                  <div className="j-stat">
+                    <b>{selected.balance_dollars}</b>
+                    <span>Balance</span>
+                  </div>
+                )}
+                <div className="j-stat">
+                  <b>{dueTodayCount}</b>
+                  <span>Due today</span>
+                </div>
+                <div className={`j-stat ${overdueCount > 0 ? 'warn' : ''}`}>
+                  <b>{overdueCount}</b>
+                  <span>Overdue</span>
+                </div>
+              </div>
+            )}
+
+            <div className="j-row-flex action-row">
+              <button className="j-btn primary" onClick={() => setModal({ type: 'add' })} disabled={!selected}>
+                <Icon name="plus" /><span className="label-long">Add chore</span><span className="label-short">Add</span>
               </button>
-              <button className="btn-secondary" onClick={() => setModal({ type: 'award' })} disabled={!selected}>
-                <span className="label-long">Award XP</span>
-                <span className="label-short">Award</span>
+              <button className="j-btn" onClick={() => setModal({ type: 'award' })} disabled={!selected}>
+                <Icon name="plus" /><span className="label-long">Award XP</span><span className="label-short">Award</span>
               </button>
-              <button className="btn-danger" onClick={() => setModal({ type: 'deduct' })} disabled={!selected}>
-                <span className="label-long">Deduct XP</span>
-                <span className="label-short">Deduct</span>
+              <button className="j-btn danger" onClick={() => setModal({ type: 'deduct' })} disabled={!selected}>
+                <Icon name="minus" /><span className="label-long">Deduct XP</span><span className="label-short">Deduct</span>
               </button>
             </div>
 
-            <ul className="manager-list">
-              {members.length === 0 && <li className="empty-msg">Add a member first</li>}
-              {members.length > 0 && !selected && <li className="empty-msg">No active members</li>}
-              {selected && chores.length === 0 && <li className="empty-msg">No chores yet</li>}
-              {chores.map(chore => {
-                const late = chore.next_due_date < dayToday
-                const dueToday = chore.next_due_date === dayToday
-                return (
-                  <li key={chore.id} className={`manager-chore ${late ? 'overdue' : ''}`}>
-                    <div className="chore-meta">
-                      <span className="chore-name">{chore.name}</span>
-                      <div className="chore-line">
-                        {late && <span className="chip chip-amber">Overdue</span>}
-                        {dueToday && <span className="chip chip-green">Due today</span>}
-                        <span className="chore-sub">
+            {members.length === 0 && <div className="j-empty">Add a member first</div>}
+            {members.length > 0 && !selected && <div className="j-empty">No active members</div>}
+            {selected && chores.length === 0 && <div className="j-empty">No chores yet</div>}
+            {chores.length > 0 && (
+              <ul className="j-list">
+                {chores.map(chore => {
+                  const late = chore.next_due_date < dayToday
+                  const dueToday = chore.next_due_date === dayToday
+                  return (
+                    <li key={chore.id} className="j-list-row">
+                      <span className={`j-dot ${late ? 'warn' : dueToday ? 'ok' : ''}`} aria-hidden="true" />
+                      <div className="j-list-main">
+                        <div className="title-line">
+                          <span className="j-list-title wrap">{chore.name}</span>
+                          {late && <span className="j-badge warn">Overdue</span>}
+                          {dueToday && <span className="j-badge ok">Due today</span>}
+                        </div>
+                        <span className="j-list-sub">
                           {FREQUENCY_LABEL[chore.frequency]} · {chore.points} XP · {formatDate(chore.next_due_date)}
                         </span>
                       </div>
-                    </div>
-                    <div className="chore-actions">
-                      <button className="icon-btn" onClick={() => setModal({ type: 'edit', chore })} title="Edit" aria-label="Edit">✎</button>
-                      <button className="icon-btn danger" onClick={() => handleRetire(chore)} title="Delete" aria-label="Delete">✕</button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+                      <div className="row-actions">
+                        <button className="j-icon-btn sm" onClick={() => setModal({ type: 'edit', chore })} title="Edit" aria-label={`Edit ${chore.name}`}>
+                          <Icon name="edit" />
+                        </button>
+                        <button className="j-icon-btn sm act-danger" onClick={() => handleRetire(chore)} title="Delete" aria-label={`Delete ${chore.name}`}>
+                          <Icon name="trash" />
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
 
             {ledger.length > 0 && (
-              <section className="manager-ledger">
-                <h2 className="ledger-title">History</h2>
-                <ul className="ledger-list">
+              <section className="j-stack history">
+                <h2 className="j-label">History</h2>
+                <ul className="j-list">
                   {ledger.map(tx => <LedgerRow key={tx.id} tx={tx} />)}
                 </ul>
               </section>
@@ -319,31 +359,46 @@ export default function ManagerView() {
 
         {tab === 'members' && (
           <>
-            <div className="action-row">
-              <button className="btn-primary" onClick={() => setModal({ type: 'add-member' })}>+ Add member</button>
+            <div className="j-row-flex">
+              <button className="j-btn primary" onClick={() => setModal({ type: 'add-member' })}>
+                <Icon name="plus" />Add member
+              </button>
             </div>
-            <ul className="manager-list">
-              {members.length === 0 && <li className="empty-msg">No members yet</li>}
-              {members.map((member, index) => (
-                <li key={member.slug} className={`manager-chore ${member.is_active ? '' : 'inactive'}`}>
-                  <div className="chore-meta">
-                    <div className="chore-line">
-                      <span className="chore-name">{member.name}</span>
-                      {!member.is_active && <span className="chip chip-muted">Inactive</span>}
+            {members.length === 0 && <div className="j-empty">No members yet</div>}
+            {members.length > 0 && (
+              <ul className="j-list">
+                {members.map((member, index) => (
+                  <li key={member.slug} className={`j-list-row ${member.is_active ? '' : 'inactive'}`}>
+                    <div className="j-list-main">
+                      <div className="title-line">
+                        <span className="j-list-title">{member.name}</span>
+                        {!member.is_active && <span className="j-badge plain">Inactive</span>}
+                      </div>
+                      <span className="j-list-sub j-num">{member.balance} XP · /{member.slug}</span>
                     </div>
-                    <span className="chore-sub member-sub">{member.balance} XP · /{member.slug}</span>
-                  </div>
-                  <div className="chore-actions">
-                    <button className="icon-btn" onClick={() => move(index, -1)} disabled={index === 0} title="Move up" aria-label="Move up">↑</button>
-                    <button className="icon-btn" onClick={() => move(index, 1)} disabled={index === members.length - 1} title="Move down" aria-label="Move down">↓</button>
-                    <button className="icon-btn" onClick={() => setModal({ type: 'rename', member })} title="Rename" aria-label="Rename">✎</button>
-                    <button className="btn-secondary toggle-btn" onClick={() => toggleActive(member)}>
-                      {member.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                    <div className="row-actions">
+                      <button className="j-icon-btn sm" onClick={() => move(index, -1)} disabled={index === 0} title="Move up" aria-label={`Move ${member.name} up`}>
+                        <Icon name="up" />
+                      </button>
+                      <button className="j-icon-btn sm" onClick={() => move(index, 1)} disabled={index === members.length - 1} title="Move down" aria-label={`Move ${member.name} down`}>
+                        <Icon name="down" />
+                      </button>
+                      <button className="j-icon-btn sm" onClick={() => setModal({ type: 'rename', member })} title="Rename" aria-label={`Rename ${member.name}`}>
+                        <Icon name="edit" />
+                      </button>
+                      <input
+                        type="checkbox"
+                        className="j-toggle"
+                        checked={member.is_active}
+                        onChange={() => toggleActive(member)}
+                        title={member.is_active ? 'Active' : 'Inactive'}
+                        aria-label={`${member.name} active`}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
       </main>
@@ -434,8 +489,14 @@ function ModalOverlay({ children, onClose }: { children: React.ReactNode; onClos
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose} ref={overlayRef}>
-      <div className="modal-box" onClick={e => e.stopPropagation()} onFocus={handleFocus}>
+    <div className="dialog-scrim" onClick={onClose} ref={overlayRef}>
+      <div
+        className="j-card dialog"
+        role="dialog"
+        aria-modal="true"
+        onClick={e => e.stopPropagation()}
+        onFocus={handleFocus}
+      >
         {children}
       </div>
     </div>
@@ -479,42 +540,48 @@ function ChoreForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="modal-form">
-      <h2>{chore ? 'Edit Chore' : 'Add Chore'}</h2>
-      {err && <div className="form-error">{err}</div>}
-      <label>
+    <form onSubmit={handleSubmit} className="dialog-form">
+      <h2>{chore ? 'Edit chore' : 'Add chore'}</h2>
+      {err && <p className="j-error" role="alert">{err}</p>}
+      <label className="j-field-label">
         Name
-        <input value={name} onChange={e => setName(e.target.value)} required autoFocus />
+        <span className="j-field">
+          <input value={name} onChange={e => setName(e.target.value)} required autoFocus />
+        </span>
       </label>
-      <label>
+      <label className="j-field-label">
         XP
-        <input
-          type="number"
-          inputMode="numeric"
-          min={1}
-          step={1}
-          placeholder="XP"
-          value={points}
-          onChange={e => setPoints(e.target.value)}
-          required
-        />
+        <span className="j-field">
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            placeholder="XP"
+            value={points}
+            onChange={e => setPoints(e.target.value)}
+            required
+          />
+        </span>
       </label>
-      <label>
+      <label className="j-field-label">
         Frequency
-        <select value={frequency} onChange={e => setFrequency(e.target.value as Frequency)}>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-          <option value="one_off">One-off</option>
-        </select>
+        <span className="j-field">
+          <select value={frequency} onChange={e => setFrequency(e.target.value as Frequency)}>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="one_off">One-off</option>
+          </select>
+        </span>
       </label>
-      <div className="date-field">
-        <span>Due Date</span>
+      <div className="j-field-label">
+        <span>Due date</span>
         <DatePicker value={dueDate} onChange={setDueDate} />
       </div>
-      <div className="form-actions">
-        <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="submit" className="btn-primary" disabled={saving || !valid}>{saving ? 'Saving…' : 'Save'}</button>
+      <div className="dialog-actions">
+        <button type="button" className="j-btn ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="j-btn primary" disabled={saving || !valid}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </form>
   )
@@ -551,30 +618,34 @@ function XpForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="modal-form">
+    <form onSubmit={handleSubmit} className="dialog-form">
       <h2>{title}</h2>
-      {err && <div className="form-error">{err}</div>}
-      <label>
+      {err && <p className="j-error" role="alert">{err}</p>}
+      <label className="j-field-label">
         XP
-        <input
-          type="number"
-          inputMode="numeric"
-          min={1}
-          step={1}
-          placeholder="XP"
-          value={points}
-          onChange={e => setPoints(e.target.value)}
-          required
-          autoFocus
-        />
+        <span className="j-field">
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            placeholder="XP"
+            value={points}
+            onChange={e => setPoints(e.target.value)}
+            required
+            autoFocus
+          />
+        </span>
       </label>
-      <label>
+      <label className="j-field-label">
         Description
-        <input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. cleaned the yard" required />
+        <span className="j-field">
+          <input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. cleaned the yard" required />
+        </span>
       </label>
-      <div className="form-actions">
-        <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="submit" className="btn-primary" disabled={saving || !valid}>{saving ? 'Saving…' : 'Save'}</button>
+      <div className="dialog-actions">
+        <button type="button" className="j-btn ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="j-btn primary" disabled={saving || !valid}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </form>
   )
@@ -610,34 +681,38 @@ function MemberForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="modal-form">
-      <h2>{member ? 'Rename Member' : 'Add Member'}</h2>
-      {err && <div className="form-error">{err}</div>}
+    <form onSubmit={handleSubmit} className="dialog-form">
+      <h2>{member ? 'Rename member' : 'Add member'}</h2>
+      {err && <p className="j-error" role="alert">{err}</p>}
       {!member && (
-        <label>
+        <label className="j-field-label">
           Slug
-          <input
-            value={slug}
-            onChange={e => setSlug(e.target.value)}
-            placeholder="slug"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            required
-            autoFocus
-          />
+          <span className="j-field">
+            <input
+              value={slug}
+              onChange={e => setSlug(e.target.value)}
+              placeholder="slug"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              required
+              autoFocus
+            />
+          </span>
           <span className={`field-hint ${slug && !slugValid ? 'invalid' : ''}`}>
             1 to 32 lowercase letters, digits, or hyphens. The kiosk URL is /{slug || 'slug'}. You cannot change the slug later.
           </span>
         </label>
       )}
-      <label>
+      <label className="j-field-label">
         Name
-        <input value={name} onChange={e => setName(e.target.value)} required autoFocus={!!member} />
+        <span className="j-field">
+          <input value={name} onChange={e => setName(e.target.value)} required autoFocus={!!member} />
+        </span>
       </label>
-      <div className="form-actions">
-        <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="submit" className="btn-primary" disabled={saving || !valid}>{saving ? 'Saving…' : 'Save'}</button>
+      <div className="dialog-actions">
+        <button type="button" className="j-btn ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="j-btn primary" disabled={saving || !valid}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </form>
   )

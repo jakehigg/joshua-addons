@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { localToday } from '../api'
-import './DatePicker.css'
+import Icon from './Icon'
 
 interface Props {
   value: string // YYYY-MM-DD
@@ -44,9 +44,9 @@ export default function DatePicker({ value, onChange }: Props) {
   return (
     <div className="datepicker">
       <div className="dp-header">
-        <button type="button" className="dp-nav" onClick={prev}>‹</button>
+        <button type="button" className="j-icon-btn sm" onClick={prev} aria-label="Previous month"><Icon name="left" /></button>
         <span className="dp-month">{MONTHS[viewMonth]} {viewYear}</span>
-        <button type="button" className="dp-nav" onClick={next}>›</button>
+        <button type="button" className="j-icon-btn sm" onClick={next} aria-label="Next month"><Icon name="right" /></button>
       </div>
       <div className="dp-dow">
         {DOW.map(d => <span key={d}>{d}</span>)}
@@ -64,6 +64,7 @@ export default function DatePicker({ value, onChange }: Props) {
                 iso === value ? 'selected' : '',
                 iso === todayStr ? 'today' : '',
               ].filter(Boolean).join(' ')}
+              aria-pressed={iso === value}
               onClick={() => onChange(iso)}
             >
               {day}
