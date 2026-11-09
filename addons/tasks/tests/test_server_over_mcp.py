@@ -12,6 +12,8 @@ TOOL_NAMES = {
     "create_project",
     "rename_project",
     "archive_project",
+    "unarchive_project",
+    "list_archived_projects",
     "list_tasks",
     "create_task",
     "update_task",
@@ -65,9 +67,9 @@ async def call_error(session, name: str, args: dict) -> str:
 
 
 @with_session
-async def test_tool_names_are_exactly_the_twenty_two(session) -> None:
+async def test_tool_names_are_exactly_the_twenty_four(session) -> None:
     names = [t.name for t in (await session.list_tools()).tools]
-    assert len(names) == 22
+    assert len(names) == 24
     assert set(names) == TOOL_NAMES
 
 
@@ -82,6 +84,8 @@ async def test_tools_declare_their_arguments(session) -> None:
         "create_project": ({"name", "goal", "target_date"}, {"name"}),
         "rename_project": ({"project", "name"}, {"project", "name"}),
         "archive_project": ({"project"}, {"project"}),
+        "unarchive_project": ({"project"}, {"project"}),
+        "list_archived_projects": (set(), set()),
         "list_tasks": ({"project", "include_done"}, {"project"}),
         "create_task": (
             {"project", "title", "notes", "group", "size", "due_date", "assignee"},
@@ -146,11 +150,37 @@ async def test_rename_project_keeps_slug(session) -> None:
 
 
 @with_session
-async def test_archive_project_hides_it(session) -> None:
-    await call(session, "create_project", {"name": "Old"})
+async def test_archive_project_in_place_hides_it_everywhere(session) -> None:
+    await call(session, "create_project", {"name": "Old", "goal": "a goal nobody reaches"})
+    await call(session, "create_task", {"project": "old", "title": "paint the shed"})
     result = await call(session, "archive_project", {"project": "old"})
     assert result["ok"] is True and result["project"]["archived"] is True
+    # an active project is archived as it stands: the status does not change
+    assert result["project"]["status"] == "active"
     assert (await call(session, "list_projects")) == {"result": []}
+    assert (await call(session, "list_projects", {"include_finished": True})) == {"result": []}
+    assert (await call(session, "next_steps")) == {"result": []}
+    assert (await call(session, "search_tasks", {"query": "paint", "include_done": True})) == {
+        "projects": [],
+        "tasks": [],
+    }
+
+
+@with_session
+async def test_list_archived_projects_and_unarchive_bring_one_back(session) -> None:
+    await call(session, "create_project", {"name": "Old"})
+    await call(session, "create_task", {"project": "old", "title": "paint the shed"})
+    await call(session, "archive_project", {"project": "old"})
+    listing = await call(session, "list_archived_projects")
+    assert [(p["slug"], p["status"]) for p in listing["result"]] == [("old", "active")]
+
+    back = await call(session, "unarchive_project", {"project": "old"})
+    assert back["ok"] is True and back["project"]["archived"] is False
+    assert back["project"]["status"] == "active"
+    assert (await call(session, "list_archived_projects")) == {"result": []}
+    assert [p["slug"] for p in (await call(session, "list_projects"))["result"]] == ["old"]
+    [step] = (await call(session, "next_steps"))["result"]
+    assert [t["title"] for t in step["tasks"]] == ["paint the shed"]
 
 
 @with_session

@@ -14,6 +14,7 @@ import {
 import {
   dashboardMessage,
   dashboardProjects,
+  finishedProjects,
   homeHref,
   parseRoute,
   projectCardView,
@@ -57,7 +58,8 @@ const dashboard = document.getElementById("dashboard") as HTMLElement;
 const dashboardProjectList = document.getElementById("dashboard-projects") as HTMLElement;
 const projectCards = document.getElementById("project-cards") as HTMLElement;
 const dashboardNote = document.getElementById("dashboard-message") as HTMLParagraphElement;
-const showFinished = document.getElementById("show-finished") as HTMLInputElement;
+const finishedSection = document.getElementById("finished-projects") as HTMLElement;
+const finishedCards = document.getElementById("finished-project-cards") as HTMLElement;
 const searchForm = document.getElementById("search-form") as HTMLFormElement;
 const searchInput = document.getElementById("search-input") as HTMLInputElement;
 const searchDone = document.getElementById("search-done") as HTMLInputElement;
@@ -370,13 +372,47 @@ function projectCard(view: CardView): HTMLElement {
 // The search area is open while the box has text, or while a person is in it.
 let searchOpen = false;
 
+// One card, with the archive action beside it. The card is one link, so the
+// button cannot sit inside it.
+function projectRow(project: Project): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "card-row";
+  const archive = document.createElement("button");
+  archive.type = "button";
+  archive.className = "ghost card-archive";
+  archive.textContent = "Archive";
+  archive.title = "Hide this project, as it is. Ask Joshua to unarchive it.";
+  twoTapConfirm(archive, "Archive", () => archiveProject(project.id));
+  row.append(projectCard(projectCardView(project)), archive);
+  return row;
+}
+
+// Archiving hides a project from this page, from the search, and from
+// Joshua, and keeps its status: the work was not done. Joshua brings one
+// back with unarchive_project.
+async function archiveProject(id: string) {
+  try {
+    await api.updateProject(id, { archived: true });
+  } catch {
+    return; // the card stays; the next event or refresh shows the truth
+  }
+  projects = projects.filter((p) => p.id !== id);
+  renderProjects();
+  renderDashboard();
+  // Archiving the last project leaves the home page empty: show the hero.
+  dashboard.hidden = projects.length === 0;
+  emptyProjects.hidden = projects.length > 0;
+}
+
 function renderDashboard() {
-  const shown = dashboardProjects(projects, route.showFinished);
-  projectCards.replaceChildren(...shown.map((p) => projectCard(projectCardView(p))));
-  const note = dashboardMessage(projects, shown, route.showFinished);
+  const shown = dashboardProjects(projects);
+  projectCards.replaceChildren(...shown.map(projectRow));
+  const finished = finishedProjects(projects);
+  finishedCards.replaceChildren(...finished.map(projectRow));
+  finishedSection.hidden = finished.length === 0;
+  const note = dashboardMessage(projects, shown);
   dashboardNote.textContent = note ?? "";
   dashboardNote.hidden = note === null;
-  showFinished.checked = route.showFinished;
   searchResults.hidden = !searchOpen;
   // While a search runs, the full project list steps aside.
   dashboardProjectList.hidden = searchOpen && route.query.trim() !== "";
@@ -492,10 +528,6 @@ searchInput.addEventListener("keydown", (e) => {
 searchDone.addEventListener("change", () => {
   setSearchRoute({ includeDone: searchDone.checked });
   runSearch();
-});
-showFinished.addEventListener("change", () => {
-  setSearchRoute({ showFinished: showFinished.checked });
-  renderDashboard();
 });
 
 // --- routing: the dashboard, or one project ----------------------------------
@@ -1254,7 +1286,7 @@ function openProject(id: string) {
 }
 
 // ``GET /api/projects`` returns every project that is not archived, the done
-// and the closed ones too; the dashboard toggle filters them here.
+// and the closed ones too; the dashboard puts those in their own section.
 async function loadProjects() {
   projects = await api.listProjects();
   renderProjects();

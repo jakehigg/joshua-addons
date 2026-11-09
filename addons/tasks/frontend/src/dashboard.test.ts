@@ -1,5 +1,6 @@
 // Unit tests for the home page: the route, the order of the projects, the
-// finished-projects toggle, and what each card and each found row shows.
+// two sections (active, then finished), and what each card and each found
+// row shows.
 // They run on node's own test runner, with node's type stripping, so the
 // web UI needs no test package: `npm test` in this directory.
 
@@ -10,6 +11,7 @@ import type { Group, Project, SearchResult, Task, TaskRef } from "./api.ts";
 import {
   dashboardMessage,
   dashboardProjects,
+  finishedProjects,
   homeHref,
   orderProjects,
   parseRoute,
@@ -80,39 +82,33 @@ function group(name: string): Group {
 
 // --- the route ----------------------------------------------------------------
 
-test("the bare path is the dashboard, with no search and both toggles off", () => {
+test("the bare path is the dashboard, with no search and the toggle off", () => {
   assert.deepEqual(parseRoute("/"), {
     project: null,
     query: "",
     includeDone: false,
-    showFinished: false,
   });
 });
 
-test("the route carries the project slug, the search text, and the toggles", () => {
+test("the route carries the project slug, the search text, and its toggle", () => {
   assert.equal(parseRoute("/p/paint-the-hall").project, "paint-the-hall");
   assert.equal(parseRoute("/p/paint-the-hall/").project, "paint-the-hall");
-  const searching = parseRoute("/?q=paint%20tin&done=1&finished=1");
+  const searching = parseRoute("/?q=paint%20tin&done=1");
   assert.deepEqual(searching, {
     project: null,
     query: "paint tin",
     includeDone: true,
-    showFinished: true,
   });
 });
 
-test("homeHref keeps only the parts that are set", () => {
-  assert.equal(homeHref({ query: "", includeDone: false, showFinished: false }), "/");
-  assert.equal(
-    homeHref({ query: "paint tin", includeDone: true, showFinished: true }),
-    "/?q=paint+tin&done=1&finished=1",
-  );
-  const route = parseRoute(homeHref({ query: "tin", includeDone: false, showFinished: true }));
+test("homeHref keeps only the parts that are set, and no finished parameter", () => {
+  assert.equal(homeHref({ query: "", includeDone: false }), "/");
+  assert.equal(homeHref({ query: "paint tin", includeDone: true }), "/?q=paint+tin&done=1");
+  const route = parseRoute(homeHref({ query: "tin", includeDone: false }));
   assert.deepEqual(route, {
     project: null,
     query: "tin",
     includeDone: false,
-    showFinished: true,
   });
 });
 
@@ -161,24 +157,27 @@ test("same rank and same target date: the order the API returned", () => {
   assert.deepEqual(names(orderProjects([...given].reverse())), ["newer", "older"]);
 });
 
-// --- the finished-projects toggle ----------------------------------------------
+// --- the two sections: the active projects, then the finished ones -------------
 
-test("the dashboard drops the done and the closed projects until the toggle is on", () => {
+test("the done and the closed projects are in the finished section, not the main list", () => {
   const projects = [
     project({ name: "active", health: "on_track", task_count: 1, open_count: 1 }),
     project({ name: "done", status: "done", health: "done", task_count: 1, done_count: 1 }),
     project({ name: "closed", status: "closed", health: "closed" }),
   ];
-  assert.deepEqual(names(dashboardProjects(projects, false)), ["active"]);
-  assert.deepEqual(names(dashboardProjects(projects, true)), ["active", "done", "closed"]);
+  assert.deepEqual(names(dashboardProjects(projects)), ["active"]);
+  assert.deepEqual(names(finishedProjects(projects)), ["done", "closed"]);
 });
 
-test("a dashboard with nothing to show says why", () => {
+test("a dashboard with no active project says why", () => {
   const finished = [project({ name: "done", status: "done", health: "done" })];
-  assert.match(dashboardMessage(finished, [], false) ?? "", /Show finished/);
-  assert.equal(dashboardMessage(finished, finished, true), null);
+  assert.equal(dashboardMessage(finished, []), "Every project is done or closed.");
+  assert.equal(
+    dashboardMessage(finished, [project({ name: "active", health: "on_track" })]),
+    null,
+  );
   // No projects at all: the "create your first project" hero says it instead.
-  assert.equal(dashboardMessage([], [], false), null);
+  assert.equal(dashboardMessage([], []), null);
 });
 
 // --- one card -------------------------------------------------------------------

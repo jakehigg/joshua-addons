@@ -20,6 +20,13 @@ tracks progress toward it.
   `complete_project` sets `done` and refuses while a task is open. A project
   can be `closed` with open tasks. `paused` keeps a project out of
   `next_steps`.
+- A project can be **archived**, from any status. The project is hidden as
+  it stands and keeps the status it had, so work nobody will finish is put
+  away without a pretence that it is done. An archived project is in no
+  listing, no search, and no next step, and it is not on the web page; its
+  tasks go with it. A tool that names the project by its slug or its id
+  still reads it. `list_archived_projects` shows the archived projects and
+  `unarchive_project` brings one back, with the same status.
 - A project and a group can have a **target date**. Nothing enforces it; a
   passed date with open tasks makes the project `overdue`.
 - The **groups** of a project are its phases, in their own order. The tasks
@@ -69,13 +76,15 @@ project.
 
 | Tool | What it does |
 |---|---|
-| `list_projects` | The projects that are not archived, with counts, percent, health, and the next task. Call it first. `include_finished` adds done and closed projects. |
+| `list_projects` | The projects that are not archived, with counts, percent, health, and the next task. Call it first. `include_finished` adds done and closed projects. An archived project is never in the result. |
 | `create_project` | Makes a project, with an optional goal and target date. |
 | `rename_project` | Changes the name of a project. |
 | `set_project_goal` | Sets or removes the goal and the target date of a project. |
 | `complete_project` | Marks a project `done`. Refuses while a task is open. |
 | `set_project_status` | Sets `active`, `paused`, or `closed`. |
-| `archive_project` | Hides a project. Its tasks are kept. |
+| `archive_project` | Hides a project, from any status, and keeps its status and its tasks. |
+| `unarchive_project` | Brings an archived project back, with the status it had. |
+| `list_archived_projects` | The archived projects. Nothing else shows them. |
 | `next_steps` | The next open tasks of every active project, or of one project, in roadmap order. |
 | `search_tasks` | Finds the projects and the tasks that hold a word. Use it before you add a task, to see whether it is there already. |
 | `list_tasks` | The tasks of one project in roadmap order: each group with its tasks, then the backlog. |
@@ -134,8 +143,14 @@ done with a bar, the done and the open count, the health, the target date,
 and the next task. A project that needs a person comes first: overdue, then
 stalled, then ready to complete, then on track, then a plain list, then a
 project with no tasks, then paused. The nearer target date comes first in a
-tie. A card opens the project at `/p/<slug>`. "Show finished" adds the done
-and the closed projects.
+tie. A card opens the project at `/p/<slug>`. The done and the closed
+projects are together in a quieter "Finished" section at the bottom of the
+page.
+
+Each card has an **Archive** button, in both sections. Tap it twice to
+archive the project as it stands: the project leaves the page, the search,
+and Joshua's lists, and it keeps its status. To bring one back, ask Joshua:
+`list_archived_projects` shows them and `unarchive_project` restores one.
 
 The search box on the home page finds a project by its name or its goal, and
 a task by its title or its notes. It keeps the two kinds apart: the
@@ -169,8 +184,9 @@ trusted network, or put an ingress with its own access control in front.
 Live updates use one server-sent event stream in the process. Run one
 replica only.
 
-The home page has its own unit tests: the order of the cards, the toggle,
-and the search. They run on node's own test runner and need no package.
+The home page has its own unit tests: the order of the cards, the two
+sections, and the search. They run on node's own test runner and need no
+package.
 Run `npm test` in `addons/tasks/frontend`.
 
 ## Settings

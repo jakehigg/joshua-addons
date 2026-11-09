@@ -9,8 +9,8 @@ import type { Project, SearchResult, SearchTask, Task, TaskRef } from "./api";
 
 // --- the route ----------------------------------------------------------------
 // "/" is the dashboard and "/p/<slug>" is one project. The search text and
-// the two toggles live in the query string, so a search is a link a person
-// can keep, and the back button moves between searches.
+// its toggle live in the query string, so a search is a link a person can
+// keep, and the back button moves between searches.
 
 export interface Route {
   // The project slug of a project page, or null on the dashboard.
@@ -18,8 +18,6 @@ export interface Route {
   query: string;
   // Search done tasks and finished projects as well.
   includeDone: boolean;
-  // Also list the done and the closed projects.
-  showFinished: boolean;
 }
 
 const ROUTE_BASE = "http://route.invalid";
@@ -32,16 +30,14 @@ export function parseRoute(url: string): Route {
     project: slug ? decodeURIComponent(slug) : null,
     query: params.get("q") ?? "",
     includeDone: params.get("done") === "1",
-    showFinished: params.get("finished") === "1",
   };
 }
 
-/** The home page, with the search text and the toggles of ``route``. */
+/** The home page, with the search text and the toggle of ``route``. */
 export function homeHref(route: Omit<Route, "project">): string {
   const params = new URLSearchParams();
   if (route.query) params.set("q", route.query);
   if (route.includeDone) params.set("done", "1");
-  if (route.showFinished) params.set("finished", "1");
   const query = params.toString();
   return query ? `/?${query}` : "/";
 }
@@ -107,23 +103,27 @@ export function orderProjects(projects: Project[]): Project[] {
 
 /**
  * The projects the dashboard lists, in order. ``GET /api/projects`` leaves
- * out the archived ones and returns every other one, so the toggle only has
- * to drop the done and the closed ones here.
+ * out the archived ones and returns every other one, so only the done and
+ * the closed ones come out here: they have their own section at the bottom.
  */
-export function dashboardProjects(projects: Project[], showFinished: boolean): Project[] {
-  return orderProjects(showFinished ? projects : projects.filter((p) => !isFinished(p)));
+export function dashboardProjects(projects: Project[]): Project[] {
+  return orderProjects(projects.filter((p) => !isFinished(p)));
 }
 
-/** What to say when the list is empty, or null when there is a card to show. */
-export function dashboardMessage(
-  projects: Project[],
-  shown: Project[],
-  showFinished: boolean,
-): string | null {
+/**
+ * The finished projects, in order, for the quiet section at the bottom.
+ * Done and closed are one group there, and an archived project is in
+ * neither section: the API never sends it.
+ */
+export function finishedProjects(projects: Project[]): Project[] {
+  return orderProjects(projects.filter(isFinished));
+}
+
+/** What to say when no project is active, or null when there is a card to show. */
+export function dashboardMessage(projects: Project[], shown: Project[]): string | null {
   if (shown.length > 0) return null;
   if (projects.length === 0) return null; // the "no projects yet" hero says it
-  if (!showFinished) return "Every project is done or closed. Turn on “Show finished”.";
-  return "No projects to show.";
+  return "Every project is done or closed.";
 }
 
 // --- one project card ----------------------------------------------------------

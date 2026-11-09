@@ -6,6 +6,21 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+### Changed
+
+- `tasks`: the home page has no "Show finished" toggle. The done and the
+  closed projects are always together in a quieter "Finished" section at the
+  bottom of the page, below the active ones.
+- `tasks`: a project can be archived in place, from any status. Each card on
+  the home page has an Archive button, in both sections, that hides the
+  project as it stands and keeps its status. An archived project is on no
+  page, in no `list_projects` result (with `include_finished` true as well),
+  in no `search_tasks` result, and in no `next_steps` result; its tasks go
+  with it. A tool that names it by its slug or its id still reads it. Two
+  new tools, the 23rd and the 24th: `list_archived_projects`, the only place
+  that shows them, and `unarchive_project`, which brings one back with the
+  status it had. The database needs no change.
+
 ## 0.2.0 - 2026-11-08
 
 Three new addons: `tasks` (projects, phases, goals, and blocking links, with a
