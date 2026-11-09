@@ -70,13 +70,14 @@
         <section id="dashboard-projects">
           <header class="dashboard-header">
             <h2 class="section-label">Projects</h2>
-            <label class="toggle">
-              <input id="show-finished" type="checkbox" />
-              Show finished
-            </label>
           </header>
           <div id="project-cards" class="cards"></div>
           <p id="dashboard-message" class="empty" hidden></p>
+          <!-- The done and the closed projects, together, at the bottom. -->
+          <section id="finished-projects" hidden>
+            <h2 class="section-label">Finished</h2>
+            <div id="finished-project-cards" class="cards"></div>
+          </section>
         </section>
       </section>
       <main id="main" hidden>

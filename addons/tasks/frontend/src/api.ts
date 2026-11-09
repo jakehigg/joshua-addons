@@ -59,6 +59,9 @@ export interface ProjectPatch {
   goal?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+  // true hides the project everywhere and keeps its status; false brings it
+  // back. Only Joshua unarchives (unarchive_project).
+  archived?: boolean;
 }
 
 export interface Group {
