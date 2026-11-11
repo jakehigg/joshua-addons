@@ -28,6 +28,10 @@ bundle is resumable also when it ``failed``: the new worker restores the
 commits. The bundle is deleted when a worker of the task pushes, and after
 ``BUNDLE_KEEP_DAYS``.
 
+With ``DEVELOPER_WORK_DIR``, each task has its own work directory on storage
+that a restart keeps (see ``workspaces``). The directory is deleted only when
+the task ends ``success``.
+
 The task clock pauses while a question waits. ``asked_at`` holds the start
 of the open wait, and ``paused_s`` the seconds of the waits that ended. The
 supervisor of the runtime adds both to the deadline of the worker.
@@ -70,6 +74,7 @@ from joshua_developer.store import (
     parse_time,
     utcnow,
 )
+from joshua_developer.workspaces import Workspaces
 
 logger = get_logger("joshua_developer.manager")
 
@@ -102,6 +107,8 @@ MAX_BUNDLE = 100 * 1024 * 1024
 BUNDLE_KEEP_DAYS = 14
 # The first line of a git bundle file, version 2 or 3.
 BUNDLE_SIGNATURES = (b"# v2 git bundle\n", b"# v3 git bundle\n")
+# The time between two runs of the sweeper of the work directories.
+SWEEP_INTERVAL_S = 3600
 
 
 def rejected(reason: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -200,6 +207,7 @@ class Manager:
         # Held around the capacity check, the lock, and the row write of a
         # dispatch or a resume, so two calls cannot both take the last slot.
         self._admission = threading.Lock()
+        self.workspaces = Workspaces(settings.work_dir, store, settings.config.work.keep_failed)
 
     @property
     def config(self) -> DeveloperConfig:
@@ -221,7 +229,26 @@ class Manager:
         self.recovered = [task["task_id"] for task in failed]
         self.store.clear_ended_worker_tokens()
         self.prune_bundles()
+        self.sweep_workspaces()
         return list(self.recovered)
+
+    # --- work directories --------------------------------------------------
+
+    def sweep_workspaces(self) -> int:
+        """Run the sweeper of the work directories once. Returns the count it deleted."""
+        try:
+            return self.workspaces.sweep()
+        except OSError as exc:
+            logger.warning(
+                {"message": "the workspace sweep failed", "error_type": type(exc).__name__}
+            )
+            return 0
+
+    async def sweep_forever(self, interval_s: float = SWEEP_INTERVAL_S) -> None:
+        """Run the sweeper every ``interval_s`` seconds, until cancelled."""
+        while True:
+            await asyncio.sleep(interval_s)
+            await asyncio.to_thread(self.sweep_workspaces)
 
     # --- bundles -----------------------------------------------------------
 
@@ -604,6 +631,25 @@ class Manager:
         full = self.store.get_task_full(task_id)
         assert full is not None
         try:
+            await asyncio.to_thread(self.workspaces.prepare, full)
+        except OSError as exc:
+            logger.error(
+                {
+                    "message": "the work directory was not made",
+                    "task_id": task_id,
+                    "error_type": type(exc).__name__,
+                }
+            )
+            self.store.update_task(
+                task_id,
+                status="failed",
+                error=f"the work directory was not made: {type(exc).__name__}; "
+                "check that the manager can write DEVELOPER_WORK_DIR",
+                completed_at=now_iso(),
+            )
+            self.locks.release(full["repo"], full["scope"], task_id)
+            return {"task_id": task_id, "status": "failed", "error": "the worker did not start"}
+        try:
             await self._runtime().start(full)
         except Exception as exc:
             logger.error(
@@ -701,6 +747,9 @@ class Manager:
             self.store.update_task(task_id, **fields)
         finally:
             self._finishing.discard(task_id)
+        if fields["status"] == "success":
+            # Only a task that ended success loses its work directory.
+            await asyncio.to_thread(self.workspaces.drop, task_id)
         self.locks.release(task["repo"], task["scope"], task_id)
         event = self._answer_events.pop(task_id, None)
         if event is not None:
@@ -876,8 +925,8 @@ class Manager:
         task that ended ``blocked`` or
         ``timed_out`` after its worker pushed the branch is resumed: a new
         worker starts on that branch, with the answer in its brief. A task
-        that ended with a saved bundle (``failed`` included) is resumed from
-        the bundle.
+        that ended with a saved bundle, or with a checkout in its kept work
+        directory (``failed`` included), is resumed from it.
         """
         if not text or not text.strip():
             return rejected("invalid_arguments", "text is required")
@@ -886,7 +935,7 @@ class Manager:
         full = self.store.get_task_full(task["task_id"])
         assert full is not None
         if full["status"] in RESUMABLE_STATUSES or (
-            full["status"] == "failed" and self.has_bundle(full["task_id"])
+            full["status"] == "failed" and self.has_saved_work(full["task_id"])
         ):
             return await self._resume(person, full, text)
         if full["status"] != "running" or not full["open_question"]:
@@ -930,7 +979,7 @@ class Manager:
         history: list[dict[str, Any]] = list(full.get("history") or [])
         previous = full.get("report") or {}
         pushed = previous.get("pushed") or any(entry.get("pushed") for entry in history)
-        if not pushed and not self.has_bundle(task_id):
+        if not pushed and not self.has_saved_work(task_id):
             return rejected(
                 "not_resumable",
                 f"the worker of task {task_id} pushed nothing and saved no commits, so "
@@ -975,6 +1024,10 @@ class Manager:
             "resumed": True,
             "message": "A new worker continues the task on its branch, with the answer.",
         }
+
+    def has_saved_work(self, task_id: str) -> bool:
+        """True when a bundle, or a kept checkout in the work directory, holds the task's work."""
+        return self.has_bundle(task_id) or self.workspaces.has_checkout(task_id)
 
     def push_only(self, task: dict[str, Any]) -> bool:
         """True when a resumed worker only pushes the saved commits, with no session.

@@ -320,6 +320,17 @@ class TaskStore:
         )
         return [row for row in (_row(r) for r in cursor.fetchall()) if row is not None]
 
+    def find_kept_tasks(self, person: str, repo: str, branch: str, exclude: str) -> list[str]:
+        """The ended tasks of ``person`` on ``repo`` and ``branch`` that did not end
+        ``success``, newest first."""
+        cursor = self._execute(
+            "SELECT task_id FROM tasks WHERE person = ? AND repo = ? AND branch_name = ? "
+            "AND task_id != ? AND status IN ('failed', 'blocked', 'timed_out') "
+            "ORDER BY completed_at DESC, rowid DESC",
+            (person, repo, branch, exclude),
+        )
+        return [str(row[0]) for row in cursor.fetchall()]
+
     def count_active_tasks(self) -> int:
         """The number of tasks in ``dispatched`` or ``running``."""
         cursor = self._execute(

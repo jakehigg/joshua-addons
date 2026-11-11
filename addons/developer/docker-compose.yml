@@ -13,6 +13,11 @@
 #
 # Data: developer.db lives in the `developer-data` volume.
 #
+# Work: each worker clones and commits in its own directory of the
+# `developer-work` volume, mounted at /work. The manager deletes the
+# directory of a task only when the task ends success, so a restart or a
+# failed push loses no commit. Docker Engine 26 or later.
+#
 # Networks:
 #   joshua             the external network joshua-ai's compose file creates.
 #                      The gateway reaches the addon at http://developer:8000/mcp.
@@ -53,9 +58,12 @@ services:
       WORKER_NETWORK: developer_workers
       PUBLIC_NETWORK: ${PUBLIC_NETWORK:-bridge}
       DOCKER_HOST: tcp://docker-socket-proxy:2375
+      DEVELOPER_WORK_DIR: /work
+      WORKER_WORK_VOLUME: developer-work
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - developer-data:/data
+      - developer-work:/work
       - ./developer.yaml:/etc/joshua-addon/developer.yaml:ro
     healthcheck:
       test:
@@ -109,6 +117,10 @@ services:
 
 volumes:
   developer-data:
+  # The name is fixed, so WORKER_WORK_VOLUME finds the volume without the
+  # compose project prefix.
+  developer-work:
+    name: developer-work
 
 networks:
   joshua:

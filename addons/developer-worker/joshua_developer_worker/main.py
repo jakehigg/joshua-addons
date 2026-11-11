@@ -1,7 +1,8 @@
 """The flow of one worker, from the brief to the report.
 
 1. Get the brief from the manager.
-2. Configure git, clone the repository, and check out the branch.
+2. Configure git, clone the repository (or continue in a kept checkout), and
+   check out the branch.
 3. Read ``CLAUDE.md`` of the checkout as text, if there is one.
 4. Tell the manager the session runs, and run the session until it ends or
    its clock runs out. The clock has the persona timeout minus
@@ -11,8 +12,14 @@
    When the push fails, store a bundle of the commits on the manager first,
    so that an ``answer`` can resume the task from them.
 
+When ``/work`` already holds a checkout of the repository, from an earlier
+worker of the task, the worker continues in it instead of cloning: the
+commits that the earlier worker made and did not push stay, and the push
+sends them (``git.resume_checkout``).
+
 A resumed task whose brief has ``bundle`` restores the commits of the bundle
-on the branch after the checkout. With ``push_only``, the session of the
+on the branch after the checkout, unless a kept checkout already has commits
+that the remote does not have. With ``push_only``, the session of the
 earlier worker was complete: the worker pushes the commits and reports, with
 no session.
 
@@ -25,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
 import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -360,6 +368,22 @@ def push_saved(
     )
 
 
+def kept_checkout(dest: Path, repo_url: str, log_: session.SessionLog) -> bool:
+    """True when ``dest`` holds a checkout of ``repo_url`` that an earlier worker left.
+
+    A kept ``/work`` holds the checkout of an earlier worker of the task when
+    the manager keeps the work directories. A directory that is not a
+    checkout of the same repository is deleted, and the worker clones fresh.
+    """
+    if not dest.exists():
+        return False
+    if (dest / ".git").is_dir() and git.origin_url(dest) == repo_url:
+        return True
+    log_.add("the work directory held no checkout of this repository; it is cloned fresh")
+    shutil.rmtree(dest)
+    return False
+
+
 async def _work(
     env: WorkerEnv,
     client: ManagerClient,
@@ -376,6 +400,7 @@ async def _work(
     ask_wait_s = float(brief.get("ask_wait_s") or session.DEFAULT_ASK_WAIT_S)
     dest = workdir / CHECKOUT
     log_ = session.SessionLog(client)
+    kept = False
 
     person = brief.get("git") or {}
     if not person.get("name") or not person.get("email"):
@@ -395,24 +420,37 @@ async def _work(
                 env.proxy_url,
                 brief.get("git_ca_pem") or None,
             )
-        with step("clone", task_id):
-            git.clone(str(brief["repo_url"]), dest)
-        with step("checkout", task_id):
-            clone_head, created_branch = git.checkout(
-                dest,
-                branch,
-                brief.get("base_branch"),
-                # A rework, or a resumed task, works on a branch that exists.
-                # A task with a bundle can resume a branch that was never pushed.
-                create_if_missing=bool(brief.get("bundle"))
-                or (brief.get("task_type") != "rework" and not brief.get("resumed")),
-            )
-        if brief.get("bundle"):
+        # A rework, or a resumed task, works on a branch that exists. A task
+        # with a bundle, or a kept checkout, can resume a branch that was
+        # never pushed.
+        create = bool(brief.get("bundle")) or (
+            brief.get("task_type") != "rework" and not brief.get("resumed")
+        )
+        kept = kept_checkout(dest, str(brief["repo_url"]), log_)
+        if kept:
+            with step("resume_checkout", task_id):
+                clone_head, created_branch = git.resume_checkout(
+                    dest,
+                    branch,
+                    brief.get("base_branch"),
+                    create_if_missing=create or brief.get("task_type") != "rework",
+                )
+            log_.add(f"continued in the kept checkout of {branch}, from {clone_head[:12]}")
+        else:
+            with step("clone", task_id):
+                git.clone(str(brief["repo_url"]), dest)
+            with step("checkout", task_id):
+                clone_head, created_branch = git.checkout(
+                    dest, branch, brief.get("base_branch"), create_if_missing=create
+                )
+        if brief.get("bundle") and not (kept and git.has_commits_after(dest, clone_head)):
             with step("restore_bundle", task_id):
                 await restore_work(dest, workdir, branch, client)
     except (git.GitError, ManagerError, OSError) as exc:
         error = str(exc)
-        if brief.get("bundle"):
+        if kept:
+            error = f"the kept checkout could not continue: {git.scrub(error)}"
+        elif brief.get("bundle"):
             error = f"the saved commits were not restored: {git.scrub(error)}"
         return Report(status="failed", error=error, log=log_.text())
 

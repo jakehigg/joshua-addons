@@ -17,6 +17,7 @@ process.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hmac
 from collections.abc import AsyncIterator
@@ -393,7 +394,13 @@ def build_app(settings: Settings | None = None, stub_delay_s: float | None = 1.0
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
         async with session_lifespan(app):
             await manager.send_recovered_reports()
-            yield
+            sweeper = asyncio.create_task(manager.sweep_forever())
+            try:
+                yield
+            finally:
+                sweeper.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await sweeper
 
     inner.router.lifespan_context = lifespan
     return BearerAuthMiddleware(inner, settings)

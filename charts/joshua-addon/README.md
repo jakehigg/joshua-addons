@@ -54,6 +54,8 @@ helm install hello charts/joshua-addon -f addons/hello/values.yaml
 | `configFile.name` | `config.yaml` | The file name, and the ConfigMap key. |
 | `configFile.content` | `""` | Contents of the file, as a string. |
 | `configFile.mountPath` | `/etc/joshua-addon/config.yaml` | Where the addon container mounts the file. |
+| `worker.workClaim` | `""` | An existing ReadWriteMany claim for the work storage of the worker pods (developer). Set, the chart mounts it into the addon at `worker.workMountPath` and sets `DEVELOPER_WORK_DIR` and `WORKER_WORK_CLAIM`. Empty, each worker has a scratch emptyDir at `/work`. The chart makes no claim. |
+| `worker.workMountPath` | `/work` | Where the addon container mounts `worker.workClaim`. |
 | `rbac.enabled` | `false` | Make a ServiceAccount, a Role, and a RoleBinding. See "RBAC". |
 | `rbac.rules` | jobs, pods, `pods/log` | The rules of the Role. |
 | `networkPolicy.enabled` | `false` | Make the two NetworkPolicies. See "NetworkPolicy". |

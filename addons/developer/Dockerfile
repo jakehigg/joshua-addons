@@ -17,7 +17,7 @@ COPY --from=builder --chown=1000:1000 /app/.venv /app/.venv
 COPY --from=builder --chown=1000:1000 /app/addons/developer /app/addons/developer
 # The home of developer.db. Owned by app, so the named volume in
 # docker-compose.yml, mounted over this directory, gets the same owner.
-RUN mkdir /data && chown 1000:1000 /data
+RUN mkdir /data /work && chown 1000:1000 /data /work
 ENV PATH="/app/.venv/bin:$PATH" \
     DEVELOPER_DATA_DIR=/data
 USER 1000

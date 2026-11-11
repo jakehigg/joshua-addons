@@ -1,8 +1,8 @@
 # Mirrors addons/developer/values.yaml: persistence, a mounted config file,
 # extraEnv from the downward API, the three extra Service ports, and both
 # optional blocks on: rbac (a ServiceAccount, a Role, and a RoleBinding) and
-# networkPolicy (the worker and the manager policies). No other file in this
-# directory renders rbac or networkPolicy.
+# networkPolicy (the worker and the manager policies). It has no
+# worker.workClaim; developer-work-values.yaml is the same file with one.
 image:
   repository: ghcr.io/jakehigg/joshua-addons-developer
 persistence:

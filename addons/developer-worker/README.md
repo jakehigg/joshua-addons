@@ -19,9 +19,20 @@ directory has no compose file and no `values.yaml`.
    that is there. So does a resumed task: a brief with `resumed: true`
    comes from an `answer` to a task whose earlier worker pushed the branch.
    Its prompt starts the task with the note of that worker and the answer.
+   When `/work/repo` already holds a checkout of the same repository, from
+   an earlier worker of the task, the worker does not clone. It fetches,
+   checks out the branch, and keeps the commits of the earlier worker that
+   the remote does not have. A local branch behind the remote moves to the
+   remote. A local branch that moved apart from the remote is rebased on it,
+   and stays as it was when the rebase fails. `clone_head` is then the commit
+   where the work leaves the remote, so the push sends the kept commits and
+   the scan of the manager reads them. A checkout of another repository is
+   deleted, and the worker clones fresh. Git runs no hook from a kept
+   checkout.
    A brief with `bundle: true` comes from a task whose earlier worker could
    not push. The worker gets the bundle of that worker's commits from the
-   manager (`GET /worker/bundle`) and restores them on the branch. With
+   manager (`GET /worker/bundle`) and restores them on the branch, unless a
+   kept checkout already has commits that the remote does not have. With
    `push_only: true`, the earlier session was complete: the worker pushes
    the restored commits and reports with the summary, the files, and the
    tests in `saved`. It runs no session and skips steps 3 to 5.
@@ -99,7 +110,10 @@ The checkout is `/work/repo`. The worker keeps its files in `/work` and `/tmp`.
 The root file system is read-only. On Kubernetes, these two folders are
 emptyDirs with a size limit. On Docker, they are anonymous volumes, except
 with `worker.disk_docker_storage_opt: true`, which keeps them in a writable
-root file system with a size limit.
+root file system with a size limit. When the manager keeps the work
+directories (`DEVELOPER_WORK_DIR`), `/work` is the directory of the task on
+the kept storage, and the manager sets `HOME=/tmp/home`, so the git token is
+never on that storage.
 
 The worker puts `GIT_PROXY_URL` in git's own config (`http.proxy`), and not
 in `HTTPS_PROXY`. Only git uses the tunnel.

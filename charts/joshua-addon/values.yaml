@@ -77,6 +77,16 @@ configFile:
   content: "" # the file's contents, as a string
   mountPath: /etc/joshua-addon/config.yaml # where the addon container mounts the file
 
+# The work storage of the worker pods, for an addon that starts them, such as
+# developer. Empty keeps a scratch emptyDir at /work in each worker, which goes
+# with the worker. Set it to an existing ReadWriteMany claim: the chart mounts
+# the claim into the addon at workMountPath and sets DEVELOPER_WORK_DIR and
+# WORKER_WORK_CLAIM, and the addon mounts one directory of the claim, the
+# directory of the task, at /work in each worker. The chart makes no claim.
+worker:
+  workClaim: "" # the name of an existing ReadWriteMany PersistentVolumeClaim
+  workMountPath: /work # where the addon container mounts the claim
+
 # A Role in the release namespace, bound to the release ServiceAccount. For an
 # addon that calls the Kubernetes API, such as developer, which starts one Job
 # for each task. Off, the pod runs as the namespace default ServiceAccount.

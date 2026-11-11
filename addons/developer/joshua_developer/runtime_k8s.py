@@ -20,7 +20,10 @@ pod also gets the three proxy variables of the package proxy (see
 The pod runs as uid 1000 with no Linux capabilities, no privilege
 escalation, and a read-only root file system. ``/work`` and ``/tmp`` are
 emptyDir volumes, each with the ``sizeLimit`` ``worker.disk``, and the
-container has the ``ephemeral-storage`` limit ``worker.disk``. The pod gets
+container has the ``ephemeral-storage`` limit ``worker.disk``. With
+``WORKER_WORK_CLAIM``, ``/work`` is instead the directory of the task on that
+claim (``subPath`` = the task id), which the manager makes before the Job
+starts, so the commits of the worker stay when the pod goes. The pod gets
 no ServiceAccount token and no Service variables. The chart's
 ``networkPolicy`` block limits where it can connect.
 
@@ -161,6 +164,17 @@ def job_manifest(
             {"name": "tmp", "emptyDir": {"sizeLimit": limits.disk}},
         ],
     }
+    if settings.worker_work_claim:
+        # One directory of the claim, the one of this task, and never the
+        # whole claim: a worker cannot read the work of another task.
+        pod["volumes"][0] = {
+            "name": "work",
+            "persistentVolumeClaim": {"claimName": settings.worker_work_claim},
+        }
+        pod["containers"][0]["volumeMounts"][0]["subPath"] = task["task_id"]
+        # The manager made the directory as uid 1000, so no recursive chown
+        # of the kept checkout at each start.
+        pod["securityContext"]["fsGroupChangePolicy"] = "OnRootMismatch"
     if settings.worker_image_pull_secret:
         pod["imagePullSecrets"] = [{"name": settings.worker_image_pull_secret}]
     return {

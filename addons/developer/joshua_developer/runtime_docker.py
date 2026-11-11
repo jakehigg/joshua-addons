@@ -10,7 +10,9 @@ A worker container gets four variables and nothing else:
     GIT_PROXY_URL    http://task:<TASK_TOKEN>@<MANAGER_HOST>:8002
     TASK_TOKEN       the task token
 
-With ``packages.enabled`` in developer.yaml, it also gets ``HTTPS_PROXY`` and
+With ``DEVELOPER_WORK_DIR`` set, it also gets ``HOME`` (``/tmp/home``) and
+``CLAUDE_CONFIG_DIR``, so the git token is never on the kept ``/work``. With
+``packages.enabled`` in developer.yaml, it also gets ``HTTPS_PROXY`` and
 ``HTTP_PROXY`` (``http://<MANAGER_HOST>:8003``, the package proxy) and
 ``NO_PROXY`` (the manager host, the loopback, and the cluster domain).
 
@@ -25,7 +27,10 @@ developer.yaml it also joins ``PUBLIC_NETWORK``. The
 container has the ``worker`` memory and CPU limits, at most ``PIDS_LIMIT``
 processes, no Linux capabilities, ``no-new-privileges``, and a read-only
 root file system. ``/work`` and ``/tmp`` are anonymous volumes that the
-removal of the container deletes. Docker has no disk limit for them. With
+removal of the container deletes. With ``WORKER_WORK_VOLUME``, ``/work`` is
+instead the directory of the task on that named volume (``subpath`` = the
+task id), which the manager makes before the container starts, so the
+commits of the worker stay when the container goes. Docker has no disk limit for them. With
 ``worker.disk_docker_storage_opt: true``, the container instead gets
 ``storage_opt`` ``size`` = ``worker.disk`` and keeps ``/work`` and ``/tmp`` in
 its writable layer, so its root file system is not read-only; the storage
@@ -83,6 +88,9 @@ INSTANCE_LABEL = "joshua-developer-instance"
 PIDS_LIMIT = 512
 # The folders a worker writes to: the checkout and $HOME, and the temp files.
 WRITABLE_PATHS = ("/work", "/tmp")
+WORK_PATH = "/work"
+# $HOME of a worker whose /work is kept: in /tmp, so no token stays on the work storage.
+WORKER_HOME = "/tmp/home"
 GRACE_S = 120
 POLL_S = 5.0
 LOG_TAIL_CHARS = 4000
@@ -113,6 +121,11 @@ def worker_environment(settings: Settings, task: dict[str, Any]) -> dict[str, st
         env["HTTPS_PROXY"] = proxy_url
         env["HTTP_PROXY"] = proxy_url
         env["NO_PROXY"] = ",".join((host, *NO_PROXY_NAMES))
+    if settings.work_dir is not None:
+        # /work is kept after the worker ends, and $HOME holds the git token.
+        # $HOME goes in /tmp, which goes with the worker.
+        env["HOME"] = WORKER_HOME
+        env["CLAUDE_CONFIG_DIR"] = f"{WORKER_HOME}/.claude"
     if settings.worker_fake_session:
         env["JOSHUA_WORKER_FAKE_SESSION"] = settings.worker_fake_session
     return env
@@ -233,17 +246,34 @@ class DockerRuntime:
             "cap_drop": ["ALL"],
             "security_opt": ["no-new-privileges"],
         }
+        work = self._work_mount(task)
         if limits.disk_docker_storage_opt:
             # The size limit covers the writable layer only, so the worker's
             # folders stay in it, and the root file system stays writable.
             kwargs["storage_opt"] = {"size": limits.disk}
+            if work is not None:
+                kwargs["mounts"] = [work]
         else:
             kwargs["read_only"] = True
             kwargs["mounts"] = [
                 Mount(target=path, source="", type="volume", labels=dict(self.labels))
                 for path in WRITABLE_PATHS
+                if work is None or path != WORK_PATH
             ]
+            if work is not None:
+                kwargs["mounts"].insert(0, work)
         return kwargs
+
+    def _work_mount(self, task: dict[str, Any]) -> Mount | None:
+        """The directory of the task on ``WORKER_WORK_VOLUME``, at /work, or None.
+
+        Only the directory of the task, never the whole volume: a worker
+        cannot read the work of another task. Docker Engine 26 or later.
+        """
+        volume = self.settings.worker_work_volume
+        if not volume:
+            return None
+        return Mount(target=WORK_PATH, source=volume, type="volume", subpath=task["task_id"])
 
     def _create(self, task: dict[str, Any]) -> Any:
         kwargs = self._create_kwargs(task)
