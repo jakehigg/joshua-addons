@@ -354,6 +354,9 @@ class KubernetesRuntime:
         self, task_id: str, token: str | None, name: str, deadline: Deadline
     ) -> None:
         state: str | None = None
+        # A supervisor that is cancelled, as on a manager shutdown, leaves the
+        # Job: the worker runs on, and the next manager reattaches to it.
+        cancelled = False
         try:
             while True:
                 try:
@@ -394,6 +397,9 @@ class KubernetesRuntime:
                 else:
                     report = _report(state, tail, self.settings.worker_start_grace_s)
                 await self.reporter.record_report(task_id, report)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
         except Exception as exc:
             logger.error(
                 {
@@ -403,7 +409,8 @@ class KubernetesRuntime:
                 }
             )
         finally:
-            await asyncio.to_thread(self._delete, name)
+            if not cancelled:
+                await asyncio.to_thread(self._delete, name)
 
     def _log_tail(self, name: str) -> str:
         """The last characters of the pod log of the Job ``name``, or an empty string."""

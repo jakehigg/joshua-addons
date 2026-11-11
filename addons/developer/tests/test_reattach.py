@@ -186,8 +186,10 @@ class LabelledBatch(FakeBatch):
         super().__init__()
         self.task_id = task_id
         self.missing = False
+        self.reads = 0
 
     def read_namespaced_job(self, name: str, namespace: str) -> Any:
+        self.reads += 1
         if self.missing:
             raise ApiException(status=404)
         found = super().read_namespaced_job(name, namespace)
@@ -349,3 +351,46 @@ async def test_a_container_that_exited_while_the_manager_was_away_gives_its_repo
     [(_, report)] = recorder.reports
     assert report.status == "blocked"
     assert done.removed
+
+
+# --- a manager shutdown leaves the worker (the supervisor is cancelled) --------
+
+
+async def test_a_cancelled_supervisor_leaves_the_job(tmp_path) -> None:
+    """A manager shutdown cancels the supervisors. The Job must stay, so the next
+    manager can reattach to it."""
+    import asyncio
+
+    batch = LabelledBatch(TASK["task_id"])
+    batch.statuses = [running()]
+    recorder = Recorder()
+    runtime, _ = k8s_runtime(tmp_path, batch, recorder)
+    await runtime.start(TASK)
+    # The supervisor watches: it has read the Job at least twice.
+    await wait_for(lambda: batch.reads >= 2)
+    [supervisor] = list(runtime._supervisors)
+    supervisor.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await supervisor
+    assert batch.deleted == []
+    assert recorder.reports == []
+    # The next manager finds the Job and watches it again.
+    assert await k8s_runtime(tmp_path, batch, Recorder())[0].reattach(TASK) is True
+
+
+async def test_a_cancelled_supervisor_leaves_the_container(tmp_path) -> None:
+    import asyncio
+
+    client = FakeClient()
+    client.containers.next_statuses = ["running"] * 1000
+    recorder = DockerRecorder()
+    runtime = docker_runtime(tmp_path, client, recorder)
+    await runtime.start(TASK)
+    [container] = client.containers.made
+    await wait_for(lambda: len(container.statuses) < 1000)
+    [supervisor] = list(runtime._supervisors)
+    supervisor.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await supervisor
+    assert container.removed is False
+    assert recorder.reports == []
