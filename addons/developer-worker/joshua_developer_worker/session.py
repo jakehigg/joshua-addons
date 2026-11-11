@@ -46,6 +46,7 @@ from joshua_developer_worker.clock import Clock
 from joshua_developer_worker.git import scrub
 from joshua_developer_worker.log import get_logger
 from joshua_developer_worker.manager_client import (
+    DEFAULT_GRACE_S,
     ManagerClient,
     ManagerError,
     NotSent,
@@ -102,15 +103,45 @@ QUIET_ENV = {
 }
 
 
-def cli_env(manager_url: str, task_token: str, home: Path, config_dir: Path) -> dict[str, str]:
+# The waits of the CLI between two tries of an API call: 0.5 s, doubled each
+# time, at most 32 s.
+CLI_FIRST_BACKOFF_S = 0.5
+CLI_MAX_BACKOFF_S = 32.0
+
+
+def cli_retries(grace_s: float) -> int:
+    """The number of tries that makes the CLI wait at least ``grace_s`` seconds in total.
+
+    The CLI reaches the model through the forwarder on the manager, so a
+    manager restart breaks its calls. Enough tries carry the session over the
+    restart.
+    """
+    tries = 0
+    waited = 0.0
+    while waited < grace_s:
+        waited += min(CLI_FIRST_BACKOFF_S * 2**tries, CLI_MAX_BACKOFF_S)
+        tries += 1
+    return max(tries, 10)
+
+
+def cli_env(
+    manager_url: str,
+    task_token: str,
+    home: Path,
+    config_dir: Path,
+    grace_s: float = DEFAULT_GRACE_S,
+) -> dict[str, str]:
     """The environment the SDK gives the Claude CLI.
 
     The CLI sends its requests to the forwarder on the manager, with the task
     token as its Claude token. The manager puts the real token on them.
+    ``CLAUDE_CODE_MAX_RETRIES`` lets the CLI wait ``grace_s`` seconds for a
+    manager that restarts.
     """
     return {
         "ANTHROPIC_BASE_URL": f"{manager_url.rstrip('/')}/worker/claude",
         "CLAUDE_CODE_OAUTH_TOKEN": task_token,
+        "CLAUDE_CODE_MAX_RETRIES": str(cli_retries(grace_s)),
         "HOME": str(home),
         "CLAUDE_CONFIG_DIR": str(config_dir),
         **QUIET_ENV,

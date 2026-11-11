@@ -34,10 +34,13 @@ configFile:
     ask_wait_s: 7200
     # The limits of one worker. disk is the sizeLimit of each emptyDir and
     # the ephemeral-storage limit of the worker pod.
+    # manager_grace is the seconds a worker waits for a manager that
+    # restarts, such as on a deploy.
     worker:
       memory: 2g
       cpus: 2.0
       disk: 4Gi
+      manager_grace: 600
     # The days a task that did not end success keeps its work directory,
     # with worker.workClaim set. The sweeper then deletes it.
     work:

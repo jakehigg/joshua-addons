@@ -34,6 +34,15 @@ releases, with the images and the packaged chart, are at
   `worker.workClaim` to an existing ReadWriteMany claim; empty keeps the
   emptyDir.
 
+- `developer`: a manager restart no longer kills a running task (#71). At
+  start, the manager finds the Job or the container of each active task
+  again and watches it, and fails a task only when its worker is gone. A
+  worker tries each call to the manager again for `worker.manager_grace`
+  seconds (default 600), and the Claude CLI gets the same wait. A report
+  that cannot be sent goes to the last line of the worker log, and the
+  manager reads it from there. The error `manager restarted` is gone: a task
+  with no worker fails with `the worker is gone`.
+
 ### Changed
 
 - The chart value `networkPolicy.managerPorts` is now `[8001, 8002, 8003]`,

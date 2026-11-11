@@ -84,9 +84,8 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - `answer` on a `failed` task resumes it when the manager has saved commits
   of the task (see [When a push fails](#when-a-push-fails)). `task_output` shows the reports of the earlier workers in
   `history`.
-- When the manager starts, each task that is `dispatched` or `running`
-  changes to `failed` with the error `manager restarted`, and its report
-  goes to the chat.
+- A manager restart does not end a task whose worker still runs. See
+  [What a restart does to a running task](#what-a-restart-does-to-a-running-task).
 
 ## The task clock
 
@@ -236,7 +235,7 @@ network: off                       # off or on. See "The network setting".
 default_persona: opus              # the persona when neither the call nor the person names one
 max_workers: 2                     # tasks that run at the same time
 ask_wait_s: 7200                   # the total wait for answers in one task. See "The task clock".
-worker: { memory: 2g, cpus: 2.0, disk: 4Gi }  # the limits of one worker
+worker: { memory: 2g, cpus: 2.0, disk: 4Gi, manager_grace: 600 }  # the limits of one worker
 work: { keep_failed: 7 }           # days a kept work directory stays. See "The work directories".
 packages:                          # the package proxy. See "The package proxy".
   enabled: false                   # the default: no proxy, and no proxy variable in a worker
@@ -282,6 +281,10 @@ limit of the worker. Docker has no disk limit for a container. On Docker,
 must support it (overlay2 on xfs with `pquota`). The limit applies to the
 writable layer of the container only, so with this setting `/work` and
 `/tmp` stay in that layer, and the root file system is not read-only.
+
+`worker.manager_grace` is the number of seconds a worker keeps trying to
+reach a manager that does not answer, default 600. See "What a restart does
+to a running task".
 
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks is told to set `blocked`. `notify` is a
@@ -605,6 +608,53 @@ not lose the commits:
 
 When the bundle cannot be made or sent, the error says that the commits are
 lost, and `answer` returns `not_resumable`.
+
+## What a restart does to a running task
+
+A deploy of the addon, a changed Secret with a Reloader, a node drain, and a
+crash all restart the manager. The worker is a separate Job or container, and
+it keeps running.
+
+1. **The worker waits.** Every call of the worker to the manager (the brief,
+   the log, a question, the report, the git tunnel of a push) is tried again
+   on a connection error, with a longer wait each time, for
+   `worker.manager_grace` seconds (default 600). The Claude CLI reaches the
+   model through the forwarder of the manager, so the worker also sets
+   `CLAUDE_CODE_MAX_RETRIES` high enough for the CLI to wait the same time.
+   The session and the commits stay in the worker.
+2. **The manager finds the worker again.** At start, the manager looks for
+   the worker of each task that is `dispatched` or `running`: the Job
+   (Kubernetes) or the container (Docker) with the name of the current worker
+   and the task label. When it is there, the task keeps its status, its lock,
+   and its task token, and a new supervisor watches the worker. The deadline
+   of the task does not change. Then the manager removes the workers that no
+   active task owns.
+3. **A task fails only when its worker is gone.** The error is `the worker is
+   gone: the manager restarted and found no worker for the task`, and the
+   report goes to the chat. The work directory of the task stays (see "The
+   work directories"), so `answer` can resume the task from its commits.
+4. **No report is lost.** A worker whose report cannot reach the manager in
+   `worker.manager_grace` seconds writes the report to its log as the last
+   line (`unsent report`), and exits. When the manager then finds a worker
+   that ended, it takes the report from the log. A worker that ended with no
+   such line gets a `failed` report from the state of its Job or container.
+   The Job of a worker stays for one hour after it ends
+   (`ttlSecondsAfterFinished`), so the manager must be back in that time to
+   read the log.
+
+A restart that takes longer than `worker.manager_grace` seconds stops the
+worker. The commits stay in its work directory.
+
+**The strategy of the chart.** The chart uses `Recreate` for the manager,
+because the claim of `developer.db` is ReadWriteOnce: the new pod can only
+mount it after the old pod stops. The workers wait out the gap, so a deploy
+does not need to drain the tasks first. A drain would hold a deploy for as
+long as the longest task runs. Keep `worker.manager_grace` longer than the
+time a new manager pod takes to start, the image pull included.
+
+A Reloader on the Secret now restarts the manager without a lost task. It
+still breaks the open Claude request of each worker once, and the CLI sends
+it again.
 
 ## The work directories
 

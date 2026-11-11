@@ -78,7 +78,8 @@ from joshua_developer.workspaces import Workspaces
 
 logger = get_logger("joshua_developer.manager")
 
-RESTART_ERROR = "manager restarted"
+# The error of an active task whose worker is not there after a manager restart.
+WORKER_GONE_ERROR = "the worker is gone: the manager restarted and found no worker for the task"
 MAX_TEXT = 100_000
 MAX_QUESTION = 10_000
 DEFAULT_BASE_BRANCH = "main"
@@ -216,21 +217,80 @@ class Manager:
     # --- start -------------------------------------------------------------
 
     def recover(self) -> list[str]:
-        """Clear every lock and fail every task that was active. Returns their ids.
+        """Take the locks of the tasks that are still active. Returns their ids.
 
-        ``send_recovered_reports`` sends the reports of these tasks later.
+        A manager restart does not end a task: its worker can still run.
+        ``reattach_workers`` then finds the worker of each active task, and
+        fails only a task whose worker is gone.
         """
         self.locks.clear()
-        failed = self.store.fail_active_tasks(RESTART_ERROR)
-        for task in failed:
-            logger.warning(
-                {"message": "task failed by a manager restart", "task_id": task["task_id"]}
-            )
-        self.recovered = [task["task_id"] for task in failed]
+        active = self.store.list_active_tasks()
+        for task in active:
+            full = self.store.get_task_full(task["task_id"]) or task
+            try:
+                self.locks.acquire(
+                    full["repo"],
+                    full["scope"],
+                    full["task_id"],
+                    full["task_type"],
+                    full.get("branch_name"),
+                )
+            except LockedError:
+                logger.warning(
+                    {"message": "two active tasks hold one lock", "task_id": full["task_id"]}
+                )
         self.store.clear_ended_worker_tokens()
         self.prune_bundles()
         self.sweep_workspaces()
-        return list(self.recovered)
+        return [task["task_id"] for task in active]
+
+    async def reattach_workers(self) -> list[str]:
+        """Watch the worker of each active task again. Returns the ids of the failed tasks.
+
+        A task whose worker is there, running or ended, keeps its status, and
+        a supervisor watches its worker again: a worker that ended while the
+        manager was away gives its outcome. A task with no worker fails with
+        ``WORKER_GONE_ERROR``, keeps its work directory, and its report goes
+        out with ``send_recovered_reports``. Then the runtime removes the
+        workers that no active task owns.
+        """
+        runtime = self._runtime()
+        failed: list[str] = []
+        for task in self.store.list_active_tasks():
+            task_id = task["task_id"]
+            full = self.store.get_task_full(task_id)
+            assert full is not None
+            try:
+                found = await runtime.reattach(full)
+            except Exception as exc:
+                logger.error(
+                    {
+                        "message": "the runtime could not look for the worker",
+                        "task_id": task_id,
+                        "error_type": type(exc).__name__,
+                    }
+                )
+                found = False
+            if found:
+                continue
+            self.store.update_task(
+                task_id,
+                status="failed",
+                error=WORKER_GONE_ERROR,
+                completed_at=now_iso(),
+                asked_at=None,
+            )
+            self.locks.release(full["repo"], full["scope"], task_id)
+            logger.warning({"message": "task failed: its worker is gone", "task_id": task_id})
+            failed.append(task_id)
+        self.recovered.extend(failed)
+        try:
+            await asyncio.to_thread(runtime.remove_orphans)
+        except Exception as exc:
+            logger.warning(
+                {"message": "the old workers were not removed", "error_type": type(exc).__name__}
+            )
+        return failed
 
     # --- work directories --------------------------------------------------
 

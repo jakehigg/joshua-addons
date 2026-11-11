@@ -31,6 +31,8 @@ DEFAULT_ASK_WAIT_S = 7200
 # image pull and the container start.
 DEFAULT_WORKER_START_GRACE_S = 600
 DEFAULT_MANAGER_HOST = "developer"
+# The seconds a worker waits for a manager that restarts.
+DEFAULT_MANAGER_GRACE_S = 600
 # The days a task that did not end success keeps its work directory.
 DEFAULT_KEEP_FAILED_DAYS = 7
 DEFAULT_WORKER_NETWORK = "developer_workers"
@@ -146,6 +148,9 @@ class WorkerLimits(_Model):
     cpus: float = Field(default=2.0, gt=0, le=64)
     disk: str = Field(default="4Gi", pattern=r"^[1-9][0-9]*(Ki|Mi|Gi|Ti)?$")
     disk_docker_storage_opt: bool = False
+    # The seconds a worker keeps trying to reach a manager that does not
+    # answer, such as one that restarts. The worker gets it as MANAGER_GRACE_S.
+    manager_grace: int = Field(default=DEFAULT_MANAGER_GRACE_S, gt=0, strict=True)
 
 
 class PackagesConfig(_Model):

@@ -163,6 +163,7 @@ async def test_start_creates_the_container_with_the_limits(tmp_path) -> None:
         "MANAGER_URL": "http://developer:8001",
         "GIT_PROXY_URL": "http://task:tok-value@developer:8002",
         "TASK_TOKEN": "tok-value",
+        "MANAGER_GRACE_S": "600",
     }
     assert kwargs["labels"] == {
         "joshua-addon": "developer",
@@ -421,7 +422,7 @@ def test_worker_environment_uses_the_manager_host(tmp_path) -> None:
     assert env["MANAGER_URL"] == "http://mgr:8001"
     assert env["GIT_PROXY_URL"] == "http://task:tok-value@mgr:8002"
     # No test aid reaches a worker unless WORKER_FAKE_SESSION is set.
-    assert set(env) == {"TASK_ID", "MANAGER_URL", "GIT_PROXY_URL", "TASK_TOKEN"}
+    assert set(env) == {"TASK_ID", "MANAGER_URL", "GIT_PROXY_URL", "TASK_TOKEN", "MANAGER_GRACE_S"}
 
 
 def test_worker_environment_has_the_package_proxy_when_the_block_is_on(tmp_path) -> None:
@@ -461,7 +462,8 @@ def test_server_start_builds_the_docker_runtime(tmp_path, monkeypatch) -> None:
     manager = server.start(settings_for(tmp_path))
     assert isinstance(manager.runtime, DockerRuntime)
     assert server.worker_app is not None and server.git_proxy is not None
-    assert client.containers.listed[-1]["all"] is True
+    # The old workers go in the app lifespan, after reattach_workers.
+    assert client.containers.listed == []
     # The manager pulls the worker image at start, not on the first task.
     assert client.pulled == ["example/worker:1"]
 

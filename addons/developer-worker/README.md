@@ -84,9 +84,23 @@ when `created_branch` is true on a `develop`. The report has no field for
 the branch name or the pull request. The manager takes them from its own
 data, and it refuses a report with an unknown field.
 
+## When the manager restarts
+
+Every call to the manager is tried again on a connection error, with a
+longer wait each time (at most 15 seconds), until `MANAGER_GRACE_S` seconds
+pass. A reply with a status, such as a 503 with a reason, is not tried
+again. A push that fails because the git tunnel of the manager does not
+answer is also tried again for that time. A push that the git host refuses
+is not. The worker gives the Claude CLI `CLAUDE_CODE_MAX_RETRIES`, so that
+the CLI also waits `MANAGER_GRACE_S` seconds for the forwarder. When the
+report still cannot be sent, the worker writes it to its log as the last
+line, a JSON line with `message: "unsent report"`, the task id, and the
+report, and exits 1. The manager reads the report from there when it starts
+again.
+
 ## Environment
 
-The manager sets these four variables. The worker takes no other setting,
+The manager sets these five variables. The worker takes no other setting,
 except the three proxy variables below and the test aid
 `JOSHUA_WORKER_FAKE_SESSION`.
 
@@ -96,6 +110,7 @@ except the three proxy variables below and the test aid
 | `MANAGER_URL` | The worker API of the manager, `http://<manager>:8001`. |
 | `GIT_PROXY_URL` | The git tunnel of the manager, `http://task:<TASK_TOKEN>@<manager>:8002`. |
 | `TASK_TOKEN` | The task token. It works only on the routes of this task. |
+| `MANAGER_GRACE_S` | The seconds the worker keeps trying to reach a manager that does not answer, such as one that restarts (`worker.manager_grace`, default 600). |
 
 With the `packages` block on in the manager's `developer.yaml`, the manager
 also sets `HTTPS_PROXY` and `HTTP_PROXY` (`http://<manager>:8003`, the

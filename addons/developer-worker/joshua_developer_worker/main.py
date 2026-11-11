@@ -23,6 +23,12 @@ that the remote does not have. With ``push_only``, the session of the
 earlier worker was complete: the worker pushes the commits and reports, with
 no session.
 
+Every call to the manager is tried again for ``MANAGER_GRACE_S`` seconds
+(default 600) while the manager does not answer, so the worker keeps its
+session and its commits through a manager restart. When the report still
+cannot be sent, the worker writes it to its log as the last line
+(``unsent report``), and a manager that starts again reads it from there.
+
 The exit code is 0 when the manager accepted the report, or when the task
 had already ended. It is 1 only when the report could not be sent.
 """
@@ -44,7 +50,13 @@ import httpx
 
 from joshua_developer_worker import git, log, prompt, session
 from joshua_developer_worker.clock import Clock
-from joshua_developer_worker.manager_client import ManagerClient, ManagerError, Report, TaskEnded
+from joshua_developer_worker.manager_client import (
+    DEFAULT_GRACE_S,
+    ManagerClient,
+    ManagerError,
+    Report,
+    TaskEnded,
+)
 
 logger = log.get_logger("joshua_developer_worker.main")
 
@@ -65,6 +77,8 @@ SAVED_NOTE = (
     "Correct the cause, then call answer to push them."
 )
 LOST_NOTE = "The commits could not be saved on the developer manager, and are lost."
+# The log message that holds a report the manager did not take.
+UNSENT_REPORT = "unsent report"
 START_PROMPT = "Do the task in your instructions. End with the structured result."
 
 
@@ -80,6 +94,8 @@ class WorkerEnv:
     config_dir: Path
     # A test aid: "1" or "ask" runs the scripted session, not Claude Code.
     fake_session: str | None = None
+    # How long a call waits for a manager that does not answer (MANAGER_GRACE_S).
+    manager_grace_s: float = DEFAULT_GRACE_S
 
 
 def read_env(environ: Mapping[str, str]) -> WorkerEnv | None:
@@ -98,7 +114,17 @@ def read_env(environ: Mapping[str, str]) -> WorkerEnv | None:
         home=home,
         config_dir=Path(environ.get("CLAUDE_CONFIG_DIR") or home / ".claude"),
         fake_session=session.fake_mode(environ),
+        manager_grace_s=_grace(environ.get("MANAGER_GRACE_S", "")),
     )
+
+
+def _grace(raw: str) -> float:
+    """``MANAGER_GRACE_S`` as seconds. Empty or not a positive number gives the default."""
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_GRACE_S
+    return value if value > 0 else DEFAULT_GRACE_S
 
 
 @contextlib.contextmanager
@@ -150,6 +176,15 @@ async def _send(client: ManagerClient, report: Report) -> int:
                     "error_type": type(exc).__name__,
                 }
             )
+            # The last line of the log. A manager that starts again after the
+            # worker gave up reads the report from here.
+            logger.error(
+                {
+                    "message": UNSENT_REPORT,
+                    "task_id": client.task_id,
+                    "report": report.model_dump(),
+                }
+            )
             return 1
     return 0
 
@@ -178,6 +213,7 @@ def finish(
     asker: session.Asker,
     log_: session.SessionLog,
     created_branch: bool = False,
+    push_retry_s: float = 0.0,
 ) -> Report:
     """Push the model's commits and build the report after the session.
 
@@ -205,7 +241,7 @@ def finish(
         new_head = git.head(dest)
         if new_head and new_head != clone_head:
             with step("push", asker.client.task_id):
-                pushed, push_error = git.push(dest, branch)
+                pushed, push_error = git.push(dest, branch, push_retry_s)
             if not pushed:
                 push_failed = True
                 error = f"the push of {branch} failed: {push_error}"
@@ -332,6 +368,7 @@ def push_saved(
     clone_head: str,
     created_branch: bool,
     log_: session.SessionLog,
+    push_retry_s: float = 0.0,
 ) -> Report:
     """Push the restored commits of a complete session, with no new session.
 
@@ -341,7 +378,7 @@ def push_saved(
     branch = str(brief["branch"])
     saved = brief.get("saved") or {}
     new_head = git.head(dest)
-    pushed, push_error = git.push(dest, branch)
+    pushed, push_error = git.push(dest, branch, push_retry_s)
     files = list(saved.get("files_changed") or [])
     if not files:
         with contextlib.suppress(git.GitError):
@@ -456,7 +493,7 @@ async def _work(
 
     if brief.get("bundle") and brief.get("push_only"):
         with step("push_saved", task_id):
-            report = push_saved(dest, brief, clone_head, created_branch, log_)
+            report = push_saved(dest, brief, clone_head, created_branch, log_, env.manager_grace_s)
         return await save_work(dest, workdir, branch, report, client, log_)
 
     claude_md = read_claude_md(dest)
@@ -472,7 +509,9 @@ async def _work(
         int(persona.get("max_turns") or DEFAULT_MAX_TURNS),
         session.ask_server(asker),
         effort=persona.get("effort"),
-        env=session.cli_env(env.manager_url, env.token, env.home, env.config_dir),
+        env=session.cli_env(
+            env.manager_url, env.token, env.home, env.config_dir, env.manager_grace_s
+        ),
         stderr=lambda line: log_.add(f"cli: {line}"),
     )
     kwargs: dict[str, Any] = {"log": log_, "asker": asker, "fake": env.fake_session}
@@ -481,7 +520,9 @@ async def _work(
     with step("session", task_id):
         result = await session.run(options, START_PROMPT, clock, **kwargs)
     with step("finish", task_id):
-        report = finish(dest, brief, clone_head, result, asker, log_, created_branch)
+        report = finish(
+            dest, brief, clone_head, result, asker, log_, created_branch, env.manager_grace_s
+        )
     return await save_work(dest, workdir, branch, report, client, log_)
 
 
@@ -500,7 +541,9 @@ async def run_task(
         return 1
     git.register_secret(env.token)
     git.register_secret(env.proxy_url)
-    client = manager or ManagerClient(env.manager_url, env.task_id, env.token)
+    client = manager or ManagerClient(
+        env.manager_url, env.task_id, env.token, grace_s=env.manager_grace_s
+    )
     try:
         with step("brief", env.task_id):
             try:

@@ -4,13 +4,14 @@ The manager calls the Kubernetes API with its ServiceAccount. The chart's
 ``rbac`` block gives it a Role in its own namespace: create, read, and delete
 Jobs, read pods, and read pod logs.
 
-A worker pod gets the same four variables as a Docker worker, and nothing
+A worker pod gets the same five variables as a Docker worker, and nothing
 else:
 
     TASK_ID          the task id
     MANAGER_URL      http://<MANAGER_HOST>:8001
     GIT_PROXY_URL    http://task:<TASK_TOKEN>@<MANAGER_HOST>:8002
     TASK_TOKEN       the task token
+    MANAGER_GRACE_S  worker.manager_grace
 
 On Kubernetes, ``MANAGER_HOST`` is the name of the manager's Service, which
 is the Helm release name. With ``packages.enabled`` in developer.yaml, the
@@ -27,9 +28,14 @@ starts, so the commits of the worker stay when the pod goes. The pod gets
 no ServiceAccount token and no Service variables. The chart's
 ``networkPolicy`` block limits where it can connect.
 
+After a manager restart, ``reattach`` finds the Job of an active task by its
+name and its task label, and a new supervisor watches it. ``remove_orphans``
+then deletes the Jobs that no supervisor watches.
+
 A supervisor reads the Job every ``poll_s`` seconds. When the Job ends and
-the task has no report, it records a ``failed`` report with the end of the
-pod log. When the deadline passes, it deletes the Job, waits until its pod
+the task has no report, it records the report that the worker wrote to its
+log (``unsent report``), else a ``failed`` report with the end of the pod
+log. When the deadline passes, it deletes the Job, waits until its pod
 is gone, and then, if no report came, records ``timed_out``: the worker
 cannot push after the status is final. The deadline is the same as on
 Docker: from the time the worker read its brief, the persona timeout, plus a
@@ -59,7 +65,14 @@ from kubernetes.client.exceptions import ApiException
 
 from joshua_developer.config import Settings
 from joshua_developer.log import get_logger
-from joshua_developer.runtime import Deadline, Report, Reporter, no_start_report, worker_name
+from joshua_developer.runtime import (
+    Deadline,
+    Report,
+    Reporter,
+    no_start_report,
+    unsent_report,
+    worker_name,
+)
 from joshua_developer.runtime_docker import (
     GRACE_S,
     LABEL,
@@ -78,6 +91,8 @@ NAME_VALUE = "joshua-addon-developer-worker"
 SELECTOR = f"{LABEL}={LABEL_VALUE},{NAME_LABEL}={NAME_VALUE}"
 TTL_S = 3600
 LOG_TAIL_LINES = 1000
+# The lines at the end of a pod log where an unsent report can be.
+REPORT_TAIL_LINES = 20
 WORKER_UID = 1000
 SA_NAMESPACE_FILE = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 DEFAULT_NAMESPACE = "default"
@@ -238,6 +253,8 @@ class KubernetesRuntime:
         self.now = now
         self.kill_wait_s = kill_wait_s
         self._supervisors: set[asyncio.Task[None]] = set()
+        # The Job names that a supervisor of this manager watches.
+        self._watched: set[str] = set()
 
     def _jobs(self) -> list[Any]:
         return list(
@@ -250,13 +267,14 @@ class KubernetesRuntime:
     def remove_orphans(self) -> int:
         """Delete every worker Job whose task is not active. Returns the count.
 
-        A manager start fails every task that was active, so a Job from an
-        earlier run has no task left.
+        The manager calls it at start after ``reattach``: a Job of an active
+        task has a supervisor again and stays. A Job of an ended task, or of
+        an earlier worker of a resumed task, goes.
         """
         removed = 0
         for job in self._jobs():
             task_id = (job.metadata.labels or {}).get(TASK_LABEL, "")
-            if task_id and self.reporter.is_active(task_id):
+            if task_id and job.metadata.name in self._watched and self.reporter.is_active(task_id):
                 continue
             if self._delete(job.metadata.name):
                 removed += 1
@@ -298,12 +316,39 @@ class KubernetesRuntime:
             self.batch.create_namespaced_job, namespace=self.namespace, body=manifest
         )
         logger.info({"message": "worker started", "task_id": task["task_id"], "job": name})
+        self._watch(task, name)
+        return name
+
+    def _watch(self, task: dict[str, Any], name: str) -> None:
+        self._watched.add(name)
         job = asyncio.create_task(
             self._supervise(task["task_id"], task.get("worker_token"), name, self._deadline(task))
         )
         self._supervisors.add(job)
         job.add_done_callback(self._supervisors.discard)
-        return name
+
+    async def reattach(self, task: dict[str, Any]) -> bool:
+        """Watch the Job of ``task`` again after a manager restart.
+
+        The Job of the current worker has the name ``worker_name(task)`` and
+        the task label. When it is there, running or ended, a new supervisor
+        watches it: a Job that ended while the manager was away gets its
+        outcome from the report in its log, or from its state.
+        """
+        name = worker_name(task)
+        try:
+            job = await asyncio.to_thread(
+                self.batch.read_namespaced_job, name=name, namespace=self.namespace
+            )
+        except ApiException as exc:
+            if exc.status == 404:
+                return False
+            raise
+        if (job.metadata.labels or {}).get(TASK_LABEL) != task["task_id"]:
+            return False
+        logger.info({"message": "worker reattached", "task_id": task["task_id"], "job": name})
+        self._watch(task, name)
+        return True
 
     async def _supervise(
         self, task_id: str, token: str | None, name: str, deadline: Deadline
@@ -337,11 +382,17 @@ class KubernetesRuntime:
                 await asyncio.sleep(self.poll_s)
             if self.reporter.is_active(task_id, token):
                 tail = await asyncio.to_thread(self._log_tail, name)
+                report: Report | None = None
                 if state in ("deadline", "no_start"):
                     # The pod goes before the report, so the worker cannot
                     # push after the status is final.
                     await asyncio.to_thread(self._stop, name)
-                report = _report(state, tail, self.settings.worker_start_grace_s)
+                else:
+                    report = await asyncio.to_thread(self._unsent_report, name, task_id)
+                if report is not None:
+                    logger.info({"message": "report read from the worker log", "task_id": task_id})
+                else:
+                    report = _report(state, tail, self.settings.worker_start_grace_s)
                 await self.reporter.record_report(task_id, report)
         except Exception as exc:
             logger.error(
@@ -368,6 +419,23 @@ class KubernetesRuntime:
         except ApiException:
             return ""
         return str(text or "")[-LOG_TAIL_CHARS:]
+
+    def _unsent_report(self, name: str, task_id: str) -> Report | None:
+        """The report that the worker of Job ``name`` wrote to its log, or None."""
+        try:
+            pods = self.core.list_namespaced_pod(
+                namespace=self.namespace, label_selector=f"job-name={name}"
+            ).items
+            if not pods:
+                return None
+            text = self.core.read_namespaced_pod_log(
+                name=pods[-1].metadata.name,
+                namespace=self.namespace,
+                tail_lines=REPORT_TAIL_LINES,
+            )
+        except ApiException:
+            return None
+        return unsent_report(str(text or ""), task_id)
 
     def _stop(self, name: str) -> None:
         """Delete the Job ``name`` and wait up to ``kill_wait_s`` for its pod to go."""

@@ -16,6 +16,8 @@ import contextlib
 import os
 import re
 import subprocess
+import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
 
@@ -270,13 +272,56 @@ def changed_files(dest: Path, since: str) -> list[str]:
     return [name for name in out.split("\0") if name]
 
 
-def push(dest: Path, branch: str) -> tuple[bool, str | None]:
-    """Push ``branch`` to origin. Returns (True, None), or (False, a scrubbed error)."""
-    try:
-        _run([*NO_HOOKS, "push", "--quiet", "--no-verify", "-u", "origin", branch], cwd=dest)
-    except GitError as exc:
-        return False, str(exc)
-    return True, None
+# The git errors of a tunnel that is not there, such as a manager that restarts.
+_TUNNEL_DOWN = (
+    "failed to connect",
+    "couldn't connect",
+    "could not connect",
+    "connection refused",
+    "connection reset",
+    "could not resolve proxy",
+    "proxy connect aborted",
+    "timed out",
+    "empty reply from server",
+)
+PUSH_BACKOFF_S = 2.0
+PUSH_MAX_BACKOFF_S = 15.0
+
+
+def tunnel_down(error: str) -> bool:
+    """True when a git error says the tunnel of the manager did not answer."""
+    lowered = error.lower()
+    return any(marker in lowered for marker in _TUNNEL_DOWN)
+
+
+def push(
+    dest: Path,
+    branch: str,
+    retry_s: float = 0.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[bool, str | None]:
+    """Push ``branch`` to origin. Returns (True, None), or (False, a scrubbed error).
+
+    A push that fails because the tunnel did not answer is tried again, with
+    a longer wait each time, for ``retry_s`` seconds. Any other failure, such
+    as a refused credential, returns at once.
+    """
+    give_up = time.monotonic() + retry_s
+    attempt = 0
+    while True:
+        try:
+            _run([*NO_HOOKS, "push", "--quiet", "--no-verify", "-u", "origin", branch], cwd=dest)
+        except GitError as exc:
+            error = str(exc)
+            now = time.monotonic()
+            if not tunnel_down(error) or now >= give_up:
+                return False, error
+            attempt += 1
+            logger.warning({"message": "the push did not reach the tunnel; trying again"})
+            delay = min(PUSH_BACKOFF_S * 2 ** min(attempt - 1, 10), PUSH_MAX_BACKOFF_S)
+            sleep(min(delay, give_up - now))
+            continue
+        return True, None
 
 
 def bundle(dest: Path, since: str, branch: str, out: Path) -> None:

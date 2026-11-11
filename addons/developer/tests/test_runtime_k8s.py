@@ -207,6 +207,7 @@ def test_the_job_manifest_has_every_security_field(tmp_path) -> None:
         {"name": "MANAGER_URL", "value": "http://developer:8001"},
         {"name": "GIT_PROXY_URL", "value": "http://task:tok-value@developer:8002"},
         {"name": "TASK_TOKEN", "value": "tok-value"},
+        {"name": "MANAGER_GRACE_S", "value": "600"},
     ]
     assert "envFrom" not in container
     assert container["resources"] == {
@@ -309,9 +310,11 @@ async def test_an_end_without_a_report_records_failed_with_the_log_tail(
     assert report.error == error
     assert len(report.log) == 4000 and report.log.endswith("the end")
     assert "tok-value" not in (report.error or "")
-    assert core.pod_selectors == ["job-name=dev-worker-12345678"]
+    # One read for the log tail, one for an unsent report.
+    assert set(core.pod_selectors) == {"job-name=dev-worker-12345678"}
     assert core.log_calls == [
-        {"name": "dev-worker-12345678-abcde", "namespace": "joshua", "tail_lines": 1000}
+        {"name": "dev-worker-12345678-abcde", "namespace": "joshua", "tail_lines": 1000},
+        {"name": "dev-worker-12345678-abcde", "namespace": "joshua", "tail_lines": 20},
     ]
     assert batch.deleted == [("dev-worker-12345678", "joshua", "Background")]
 
@@ -443,6 +446,8 @@ def test_orphans_are_deleted_and_an_active_task_keeps_its_job(tmp_path) -> None:
         job("live", running(), task_id="live-task"),
         job("unlabelled", running()),
     ]
+    # A supervisor watches the Job of the active task again (reattach).
+    runtime._watched.add("live")
     assert runtime.remove_orphans() == 2
     assert [name for name, _, _ in batch.deleted] == ["old", "unlabelled"]
     assert batch.listed[-1] == {"namespace": "joshua", "label_selector": SELECTOR}
@@ -490,7 +495,8 @@ def test_server_start_builds_the_kubernetes_runtime(tmp_path, monkeypatch) -> No
     manager = server.start(settings_for(tmp_path, pod_namespace="joshua"))
     assert isinstance(manager.runtime, KubernetesRuntime)
     assert manager.runtime.namespace == "joshua"
-    assert batch.listed == [{"namespace": "joshua", "label_selector": SELECTOR}]
+    # The old Jobs go in the app lifespan, after reattach_workers.
+    assert batch.listed == []
 
 
 async def test_the_job_hard_cap_takes_the_ask_wait_of_the_persona(tmp_path) -> None:

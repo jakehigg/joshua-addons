@@ -105,7 +105,9 @@ async def test_a_manager_restart_keeps_the_directory(
     task_id = await develop(manager)
     commit = commit_in(work_dir / task_id)
     restarted = Manager(manager.settings, manager.store, LockManager())
+    restarted.runtime = StubRuntime(restarted, delay_s=None)
     assert restarted.recover() == [task_id]
+    assert await restarted.reattach_workers() == [task_id]
     assert git("rev-parse", "HEAD", cwd=work_dir / task_id / "repo") == commit
 
 
@@ -141,6 +143,7 @@ async def test_an_answer_resumes_a_task_a_restart_failed_from_its_kept_checkout(
     restarted = Manager(manager.settings, manager.store, LockManager())
     restarted.runtime = StubRuntime(restarted, delay_s=None)
     restarted.recover()
+    await restarted.reattach_workers()
     row = restarted.store.get_task(task_id)
     assert row is not None and row["status"] == "failed"
     result = await restarted.answer("alex", {"task_id": task_id}, "Go on.")

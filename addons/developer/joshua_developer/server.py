@@ -330,15 +330,12 @@ def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | Non
         from joshua_developer.runtime_docker import DockerRuntime
 
         runtime = DockerRuntime(manager, settings)
-        runtime.remove_orphans()
         runtime.pull_image()
         return runtime
     if settings.worker_runtime == "kubernetes":
         from joshua_developer.runtime_k8s import KubernetesRuntime
 
-        k8s_runtime = KubernetesRuntime(manager, settings)
-        k8s_runtime.remove_orphans()
-        return k8s_runtime
+        return KubernetesRuntime(manager, settings)
     if settings.worker_runtime == "stub":
         return StubRuntime(manager, delay_s=stub_delay_s)
     raise RuntimeError(f"the {settings.worker_runtime} runtime is not in this release")
@@ -356,7 +353,7 @@ def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
     store = TaskStore(settings.db_path)
     manager = Manager(settings, store, LockManager())
     _manager = manager
-    manager.recover()
+    active = manager.recover()
     manager.runtime = make_runtime(manager, settings, stub_delay_s)
     worker_app = build_worker_app(manager)
     git_proxy = GitProxy(lambda token: task_target(manager, token))
@@ -370,7 +367,7 @@ def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
             "runtime": settings.worker_runtime,
             "network": settings.config.network,
             "packages": sorted(packages.hosts) if packages.enabled else [],
-            "recovered": len(manager.recovered),
+            "active_at_start": len(active),
         }
     )
     return manager
@@ -380,7 +377,8 @@ def build_app(settings: Settings | None = None, stub_delay_s: float | None = 1.0
     """Build the addon's ASGI app: the MCP routes plus the auth wrapper.
 
     The manager starts here, before the first request. The app lifespan
-    sends the reports of the tasks that the restart failed.
+    watches the workers that still run again, and sends the reports of the
+    tasks whose worker is gone.
     ``host="0.0.0.0"`` turns off the SDK's loopback-only DNS-rebinding guard:
     a caller reaches this addon by its cluster or compose hostname, never by
     ``localhost``, and the guard would otherwise reject every real request.
@@ -393,6 +391,9 @@ def build_app(settings: Settings | None = None, stub_delay_s: float | None = 1.0
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
         async with session_lifespan(app):
+            # A restart leaves the workers running: watch them again before
+            # the first request, and fail only the tasks with no worker.
+            await manager.reattach_workers()
             await manager.send_recovered_reports()
             sweeper = asyncio.create_task(manager.sweep_forever())
             try:
