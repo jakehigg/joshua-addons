@@ -355,6 +355,9 @@ class DockerRuntime:
         self, task_id: str, token: str | None, container: Any, deadline: Deadline
     ) -> None:
         stopped: str | None = None
+        # A supervisor that is cancelled, as on a manager shutdown, leaves the
+        # container: the worker runs on, and the next manager reattaches to it.
+        cancelled = False
         try:
             while True:
                 try:
@@ -385,6 +388,9 @@ class DockerRuntime:
                 else:
                     report = self._report(container, stopped)
                 await self.reporter.record_report(task_id, report)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
         except Exception as exc:
             logger.error(
                 {
@@ -394,7 +400,8 @@ class DockerRuntime:
                 }
             )
         finally:
-            await asyncio.to_thread(_remove, container)
+            if not cancelled:
+                await asyncio.to_thread(_remove, container)
 
     def _report(self, container: Any, stopped: str | None) -> Report:
         tail = _log_tail(container)

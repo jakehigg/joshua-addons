@@ -534,6 +534,8 @@ async def test_the_supervisor_waits_while_a_question_is_open(tmp_path) -> None:
     await asyncio.sleep(0.05)
     assert batch.deleted == []
     now[0] = t0 + timedelta(seconds=3720)
-    await wait_for(lambda: batch.deleted)
+    # The Job goes first, and the report comes after it.
+    await wait_for(lambda: recorder.reports)
+    assert batch.deleted
     [(_, report)] = recorder.reports
     assert report.status == "timed_out"
