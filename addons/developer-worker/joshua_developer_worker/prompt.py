@@ -75,6 +75,25 @@ def _task(brief: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def references_section(brief: dict[str, Any], paths: list[str]) -> str:
+    """The reference repositories of the task: where each one is, and the rules."""
+    lines = [
+        "## Reference repositories",
+        "",
+        "These repositories are cloned next to the checkout, on their default branch, so "
+        "you can read them. They are read-only. Read the source there, and write the "
+        "code that the task needs into the checkout yourself: copy a file, or port it, "
+        "and then change it to fit. Do not write from memory what you can read.",
+        "",
+        "Never change, commit, or push in a reference repository. You push only the "
+        "task branch of the task repository.",
+        "",
+    ]
+    for ref, path in zip(brief.get("refs") or [], paths, strict=False):
+        lines.append(f"- {ref['repo']}: `{path}`")
+    return "\n".join(lines)
+
+
 def claude_md_section(text: str) -> str:
     """The ``CLAUDE.md`` text under its heading, cut at ``MAX_CLAUDE_MD`` characters."""
     body = text[:MAX_CLAUDE_MD]
@@ -92,14 +111,22 @@ def claude_md_section(text: str) -> str:
     )
 
 
-def compose(brief: dict[str, Any], claude_md: str | None) -> str:
-    """The full system prompt for ``brief``, with ``claude_md`` when there is one."""
+def compose(
+    brief: dict[str, Any], claude_md: str | None, reference_dirs: list[str] | None = None
+) -> str:
+    """The full system prompt for ``brief``, with ``claude_md`` when there is one.
+
+    ``reference_dirs`` are the paths of the reference repositories, in the
+    order of ``refs`` in the brief.
+    """
     persona = brief.get("persona") or {}
     parts = [
         base_prompt().strip(),
         persona_overlay(str(persona.get("name") or DEFAULT_PERSONA)).strip(),
         _task(brief),
     ]
+    if reference_dirs:
+        parts.append(references_section(brief, reference_dirs))
     if claude_md and claude_md.strip():
         parts.append(claude_md_section(claude_md))
     return "\n\n".join(parts) + "\n"

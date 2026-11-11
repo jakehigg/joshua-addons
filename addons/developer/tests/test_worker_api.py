@@ -165,6 +165,8 @@ async def test_the_brief_has_what_the_worker_needs(manager) -> None:
         "git_username": "x-access-token",
         "platform_kind": "github",
         "brief": "Add a health check.",
+        "refs": [],
+        "ref_credentials": [],
         "feedback": None,
         "answer": None,
         "resumed": False,

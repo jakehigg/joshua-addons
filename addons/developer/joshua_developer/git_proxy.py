@@ -8,8 +8,9 @@ host of its task through this tunnel. The worker sets git's own config, not
 
 git then sends ``CONNECT <host>:443`` with
 ``Proxy-Authorization: Basic base64("task:<TASK_TOKEN>")``. The proxy allows
-one destination for each token: the host of the task's repository, on port
-443, or on the port in the repository address when it has one. Port 22 is
+the destinations of each token's task: the host of the task's repository,
+and the host of each of its reference repositories (``refs``), on port 443,
+or on the port in the repository address when it has one. Port 22 is
 never allowed. The tunnel carries TLS from end to end, so the proxy never
 sees the git token.
 
@@ -45,20 +46,28 @@ HEAD_TIMEOUT_S = 10.0
 _CHUNK = 65536
 MAX_ATTEMPTS = 3
 
-# A token to the one host and port the token may reach, or None.
-Resolver = Callable[[str], tuple[str, int] | None]
+# A token to the hosts and ports the token may reach, or None.
+Resolver = Callable[[str], frozenset[tuple[str, int]] | None]
 
 
-def task_target(manager: Manager, token: str) -> tuple[str, int] | None:
-    """The git host and port that the task of ``token`` may reach, or None."""
+def _target(repo: str) -> tuple[str, int]:
+    host, _, port = repo_host(repo).partition(":")
+    return host, int(port) if port else 443
+
+
+def task_target(manager: Manager, token: str) -> frozenset[tuple[str, int]] | None:
+    """The git hosts and ports that the task of ``token`` may reach, or None.
+
+    The host of the task repository, and the host of each reference
+    repository of the task (``refs``).
+    """
     task_id = manager.store.find_task_by_worker_token(token)
     if task_id is None:
         return None
     task = manager.store.get_task(task_id)
     if task is None or task["status"] not in ACTIVE_STATUSES:
         return None
-    host, _, port = repo_host(task["repo"]).partition(":")
-    return host, int(port) if port else 443
+    return frozenset(_target(repo) for repo in [task["repo"], *(task.get("refs") or [])])
 
 
 def reply(status: int, reason: str, extra: str = "") -> bytes:
@@ -141,7 +150,7 @@ class GitProxy:
                 return
             port = int(port_text)
             host = host.strip("[]").lower()
-            if port == 22 or (host, port) != allowed:
+            if port == 22 or (host, port) not in allowed:
                 logger.warning({"message": "tunnel refused: destination not allowed", "port": port})
                 await send(writer, reply(403, "Forbidden"))
                 return

@@ -34,8 +34,8 @@ pushes one branch, sends one report, and stops.
 
 | Tool | What it does |
 |---|---|
-| `develop(repo, brief, base_branch?, branch?, persona?, notify?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. |
-| `rework(repo, feedback, pr?, branch?, persona?, notify?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. |
+| `develop(repo, brief, base_branch?, branch?, persona?, notify?, refs?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. `refs` is a list of up to 5 reference repositories that the worker can read (see [Reference repositories](#reference-repositories)). |
+| `rework(repo, feedback, pr?, branch?, persona?, notify?, refs?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. `refs` is the same as for `develop`. |
 | `answer(task_id, text)` | Gives a waiting worker the answer to its question. On a task that stopped `blocked` or `timed_out` after a push, starts a new worker that continues on the branch. |
 | `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, and the open question. |
 | `task_output(task_id)` | The full report and the session log. |
@@ -86,6 +86,29 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
   `history`.
 - A manager restart does not end a task whose worker still runs. See
   [What a restart does to a running task](#what-a-restart-does-to-a-running-task).
+
+## Reference repositories
+
+A task can read other repositories beside its own: for example, to move code
+from one repository to another. Give them in `refs` on `develop` or `rework`,
+in the same form as `repo`, at most 5.
+
+- Each one passes the same checks as `repo`: it is in the list of the
+  person, and its git host has a platform and a token. The task repository
+  itself and a repeated entry are refused. `task_status` shows `refs`, and a
+  resumed task keeps them.
+- The worker clones each one, shallow, on its default branch, into
+  `/work/refs/<host>/<owner>/<name>`. The clone has no push URL, and its
+  files are read-only. The session can read the folder, and the prompt tells
+  the model to read the source there and write the code into the checkout.
+- The worker pushes only the task branch of `repo`. The manager scans and
+  opens the pull request only there.
+- The git host tunnel lets the task reach the host of each reference
+  repository too, and the brief carries the token of each such host.
+
+The read-only clone is a guard, not a boundary: the git token of a host can
+still write where the host lets it. Give a reference repository on a host
+whose token can only read when that matters.
 
 ## The task clock
 
@@ -145,7 +168,8 @@ hostile, and these rules limit what it can read and where its data can go:
    other paths with 403. It answers the CLI probe `api/hello` itself.
 3. **By default, a worker reaches the manager and nothing else.** The
    manager forwards two destinations for it: the Claude API, and the git host
-   of the task's repository. With the `packages` block on, it also forwards
+   of the task's repository (and the host of each of its reference
+   repositories). With the `packages` block on, it also forwards
    the package hosts in that block, with no credential (see "The package
    proxy"). On Kubernetes, a worker can also use the cluster DNS resolver, so
    a DNS tunnel through the resolver stays possible.

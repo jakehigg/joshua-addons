@@ -121,6 +121,7 @@ async def develop(
     branch: str | None = None,
     persona: str | None = None,
     notify: str | None = None,
+    refs: list[str] | None = None,
 ) -> dict:
     """Start a coding task on a repository. Returns task_id, persona, and status at once.
 
@@ -131,9 +132,13 @@ async def develop(
     branch, joshua/<first line in kebab case>-<id>. base_branch is the branch
     to start from and the pull request target; without it, main. persona is a name from
     list_personas. notify is the chat that gets the report; without it, the
-    person's setting. A call is rejected when the repository is not in the
-    person's list, when its git host has no platform or no token, when too
-    many tasks run, or when another task works on the same branch.
+    person's setting. refs is a list of up to 5 other repositories, in the
+    same form as repo, that the worker can read: each one is cloned read-only
+    next to the checkout, on its default branch, so the worker can port or
+    copy code from it. The worker pushes only to repo. A call is rejected when
+    the repository, or one in refs, is not in the person's list, when its git
+    host has no platform or no token, when too many tasks run, or when
+    another task works on the same branch.
     """
     person = _person(ctx)
     return await _get_manager().develop(
@@ -144,6 +149,7 @@ async def develop(
         branch=branch,
         persona=persona,
         notify_to=notify,
+        refs=refs,
     )
 
 
@@ -156,6 +162,7 @@ async def rework(
     branch: str | None = None,
     persona: str | None = None,
     notify: str | None = None,
+    refs: list[str] | None = None,
 ) -> dict:
     """Start a task that applies review feedback to a pull request, on its source branch.
 
@@ -166,7 +173,7 @@ async def rework(
     """
     person = _person(ctx)
     return await _get_manager().rework(
-        person, repo, pr, feedback, persona=persona, notify_to=notify, branch=branch
+        person, repo, pr, feedback, persona=persona, notify_to=notify, branch=branch, refs=refs
     )
 
 

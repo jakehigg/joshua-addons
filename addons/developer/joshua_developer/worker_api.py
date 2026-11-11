@@ -156,11 +156,25 @@ def read_ca_bundle(path: str) -> str | None:
 def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
     """The brief of a task (the full row) for its worker.
 
-    It holds the git token of the task's host. The brief goes only to the
+    It holds the git token of the task's host, and the token of the host of
+    each reference repository. The brief goes only to the
     worker that holds the task token, over the internal network. Raises
     PlatformConfigError when the token is gone.
     """
     resolved = platforms.resolve(manager.config, task["person"], task["repo"])
+    refs: list[dict[str, str]] = []
+    # One credential for each host of a reference repository that is not the
+    # host of the task repository.
+    credentials: dict[str, dict[str, str]] = {}
+    for ref in task.get("refs") or []:
+        ref_resolved = platforms.resolve(manager.config, task["person"], ref)
+        refs.append({"repo": ref, "repo_url": repo_url(ref)})
+        if ref_resolved.host != resolved.host and ref_resolved.host not in credentials:
+            credentials[ref_resolved.host] = {
+                "host": ref_resolved.host,
+                "username": ref_resolved.credential_username,
+                "token": ref_resolved.token,
+            }
     persona_name = task["persona"]
     persona = manager.config.personas.get(persona_name)
     if persona is None:
@@ -183,6 +197,10 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "git_username": resolved.credential_username,
         "platform_kind": resolved.kind,
         "brief": task["brief"],
+        # The reference repositories: cloned read-only, never pushed.
+        "refs": refs,
+        # The git credentials of the hosts of refs, beside git_token.
+        "ref_credentials": list(credentials.values()),
         "feedback": task["instructions"],
         "answer": task["answer"],
         # The total time the worker waits for answers, over all its questions.

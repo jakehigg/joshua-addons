@@ -93,8 +93,12 @@ def configure(
     host: str,
     proxy_url: str | None = None,
     ca_pem: str | None = None,
+    extra_credentials: list[tuple[str, str, str]] | None = None,
 ) -> None:
     """Write the credentials file and the global git config under ``home``.
+
+    ``extra_credentials`` holds ``(username, token, host)`` for each other
+    host, the hosts of the reference repositories.
 
     ``home`` must be ``$HOME`` of this process, because git reads its global
     config and the credentials file from there. ``proxy_url`` goes into
@@ -105,10 +109,16 @@ def configure(
     register_secret(proxy_url)
     home.mkdir(parents=True, exist_ok=True)
     path = home / CREDENTIALS_FILE
-    line = f"https://{quote(username, safe='')}:{quote(token, safe='')}@{host}\n"
+    entries = [(username, token, host), *(extra_credentials or [])]
+    lines = []
+    for entry_user, entry_token, entry_host in entries:
+        register_secret(entry_token)
+        lines.append(
+            f"https://{quote(entry_user, safe='')}:{quote(entry_token, safe='')}@{entry_host}\n"
+        )
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as handle:
-        handle.write(line)
+        handle.write("".join(lines))
     path.chmod(0o600)
     _run(["config", "--global", "credential.helper", "store"])
     _run(["config", "--global", "user.name", name])
@@ -128,6 +138,32 @@ def configure(
 def clone(repo_url: str, dest: Path) -> None:
     """Clone ``repo_url`` into ``dest``."""
     _run(["clone", "--quiet", repo_url, str(dest)])
+
+
+# The push URL of a reference clone: no transport, so every push fails.
+NO_PUSH_URL = "no-push://reference-repository-is-read-only"
+
+
+def clone_reference(repo_url: str, dest: Path) -> None:
+    """Clone ``repo_url`` into ``dest`` for reading only.
+
+    The clone is shallow, on the default branch. Its push URL goes nowhere,
+    and every file and folder in it is read-only. This is a guard, not a
+    boundary: the token can still write to what the host lets it write.
+    """
+    _run(["clone", "--quiet", "--depth", "1", "--single-branch", repo_url, str(dest)])
+    _run(["remote", "set-url", "--push", "origin", NO_PUSH_URL], cwd=dest)
+    set_read_only(dest, True)
+
+
+def set_read_only(root: Path, read_only: bool) -> None:
+    """Remove (``read_only``) or give back the write bits of every path under ``root``."""
+    paths = [root, *root.rglob("*")]
+    for path in paths:
+        if path.is_symlink():
+            continue
+        mode = path.stat().st_mode
+        path.chmod(mode & ~0o222 if read_only else mode | 0o200)
 
 
 def _remote_has_branch(dest: Path, branch: str) -> bool:

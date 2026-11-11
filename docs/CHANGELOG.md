@@ -43,6 +43,13 @@ releases, with the images and the packaged chart, are at
   manager reads it from there. The error `manager restarted` is gone: a task
   with no worker fails with `the worker is gone`.
 
+- `developer`: reference repositories for a task (#75). `develop` and
+  `rework` take `refs`, a list of up to 5 other repositories. The worker
+  clones each one read-only into `/work/refs/<host>/<owner>/<name>` and
+  reads the source there, so it can move or port code from one repository
+  to another. It still pushes only to `repo`. The git host tunnel also lets
+  the task reach the host of each reference repository.
+
 ### Changed
 
 - The chart value `networkPolicy.managerPorts` is now `[8001, 8002, 8003]`,

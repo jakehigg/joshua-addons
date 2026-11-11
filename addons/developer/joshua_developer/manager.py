@@ -102,6 +102,8 @@ _COMMIT_CHARS = frozenset("0123456789abcdef")
 CLOSED_PR_STATES = frozenset({"closed", "merged", "locked"})
 # The states from which an answer resumes a task.
 RESUMABLE_STATUSES = ("blocked", "timed_out")
+# The most reference repositories of one task (refs).
+MAX_REFS = 5
 # The bundles of commits that a worker could not push.
 BUNDLE_DIR = "bundles"
 MAX_BUNDLE = 100 * 1024 * 1024
@@ -402,6 +404,7 @@ class Manager:
         branch: str | None = None,
         persona: str | None = None,
         notify_to: str | None = None,
+        refs: list[str] | None = None,
     ) -> dict[str, Any]:
         if not brief or not brief.strip():
             return rejected("invalid_arguments", "brief is required")
@@ -419,10 +422,14 @@ class Manager:
         admitted = self._admit(person, repo)
         if isinstance(admitted, dict):
             return admitted
+        checked = self._admit_refs(person, admitted[0], refs)
+        if isinstance(checked, dict):
+            return checked
         return await self._dispatch(
             task_id=task_id,
             person=person,
             task_type="develop",
+            refs=checked or None,
             repo=admitted[0],
             scope=f"branch:{branch_name}",
             persona=persona,
@@ -441,6 +448,7 @@ class Manager:
         persona: str | None = None,
         notify_to: str | None = None,
         branch: str | None = None,
+        refs: list[str] | None = None,
     ) -> dict[str, Any]:
         """Start a task on the source branch of a pull request.
 
@@ -464,6 +472,9 @@ class Manager:
         if isinstance(admitted, dict):
             return admitted
         normalized, resolved = admitted
+        checked = self._admit_refs(person, normalized, refs)
+        if isinstance(checked, dict):
+            return checked
         task_id = str(uuid.uuid4())
         if resolved.kind == "git":
             if branch_name is None:
@@ -484,6 +495,7 @@ class Manager:
                 notify_to=notify_to,
                 instructions=feedback,
                 branch_name=branch_name,
+                refs=checked or None,
             )
         if number is None:
             return rejected("invalid_arguments", "pr is required")
@@ -508,7 +520,36 @@ class Manager:
             pr_url=url or found.html_url or None,
             branch_name=found.source_branch,
             base_branch=found.base_branch,
+            refs=checked or None,
         )
+
+    def _admit_refs(
+        self, person: str, repo: str, raw_refs: list[str] | None
+    ) -> list[str] | dict[str, Any]:
+        """Check the reference repositories of a task. Returns them normalized, or a rejection.
+
+        A reference repository is cloned read-only next to the checkout, so the
+        worker can read it. Each one passes the same checks as the task
+        repository. The task repository itself and a repeated entry are refused.
+        """
+        if not raw_refs:
+            return []
+        if len(raw_refs) > MAX_REFS:
+            return rejected("invalid_arguments", f"refs holds at most {MAX_REFS} repositories")
+        refs: list[str] = []
+        for raw in raw_refs:
+            admitted = self._admit(person, raw)
+            if isinstance(admitted, dict):
+                return {**admitted, "message": f"refs: {admitted['message']}"}
+            ref = admitted[0]
+            if ref == repo:
+                return rejected(
+                    "invalid_arguments", f"refs: {ref} is the task repository; it is cloned already"
+                )
+            if ref in refs:
+                return rejected("invalid_arguments", f"refs: {ref} is named twice")
+            refs.append(ref)
+        return refs
 
     def _admit(self, person: str, raw_repo: str) -> tuple[str, Resolved] | dict[str, Any]:
         """Check the repository before any network call.
