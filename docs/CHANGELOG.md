@@ -6,6 +6,14 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+### Changed
+
+- `tasks`: a task list of a project shows one row for each task, with the
+  number, the title, the size, the due date, the assignee, the done state,
+  and the blocked state. The note of a task now sits behind a "note"
+  control, which starts closed on every task, also after a reload. A long
+  note no longer fills the screen. The API and the MCP tools do not change.
+
 ## 0.2.0 - 2026-11-08
 
 Three new addons: `tasks` (projects, phases, goals, and blocking links, with a
