@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from conftest import FakeManager, make_brief, remote_head, run_git
+from conftest import GIT_TOKEN, FakeManager, make_brief, remote_head, run_git
 from joshua_developer_worker import git
 from test_main import BRANCH, result, run, write_file
 
@@ -80,6 +81,9 @@ async def test_a_checkout_of_another_repository_is_cloned_fresh(
 
 
 def _kept(tmp_path: Path, bare: Path, branch: str) -> Path:
+    """A kept checkout, with git configured as the worker configures it first."""
+    home = Path(os.environ["HOME"])
+    git.configure(home, "Alex Example", "alex@example.test", "git", GIT_TOKEN, "git.test")
     dest = tmp_path / "kept"
     run_git("clone", "-q", str(bare), str(dest))
     run_git("checkout", "-q", branch, cwd=dest)
