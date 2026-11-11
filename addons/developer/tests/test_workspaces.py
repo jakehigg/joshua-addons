@@ -238,10 +238,10 @@ async def test_the_sweeper_deletes_only_the_directories_past_the_age(
     eight_days_ago = "2026-01-01T00:00:00+00:00"
     manager.store.update_task(old, completed_at=eight_days_ago)
     _age(work_dir / active, 30)
-    orphan_old = work_dir / "no-such-task-old"
+    orphan_old = work_dir / "00000000-0000-4000-8000-000000000001"
     orphan_old.mkdir()
     _age(orphan_old, 8)
-    orphan_new = work_dir / "no-such-task-new"
+    orphan_new = work_dir / "00000000-0000-4000-8000-000000000002"
     orphan_new.mkdir()
 
     caplog.set_level(logging.INFO)
@@ -261,7 +261,7 @@ async def test_the_sweeper_takes_the_age_from_work_keep_failed(
     store = TaskStore(settings.db_path)
     manager = Manager(settings, store, LockManager())
     try:
-        orphan = work_dir / "orphan"
+        orphan = work_dir / "00000000-0000-4000-8000-000000000003"
         orphan.mkdir()
         _age(orphan, 8)
         assert manager.sweep_workspaces() == 0
@@ -287,6 +287,16 @@ async def test_the_sweeper_deletes_a_success_directory_that_drop_left(
     monkeypatch.undo()
     assert manager.sweep_workspaces() == 1
     assert not (work_dir / task_id).exists()
+
+
+async def test_the_sweeper_never_touches_a_name_that_is_not_a_task_id(
+    manager: Manager, work_dir: Path
+) -> None:
+    for name in ("lost+found", "notes", "12345678-AAAA-4000-8000-000000000000"):
+        (work_dir / name).mkdir()
+        _age(work_dir / name, 30)
+    assert manager.sweep_workspaces() == 0
+    assert (work_dir / "lost+found").is_dir() and (work_dir / "notes").is_dir()
 
 
 async def test_the_sweeper_skips_files_and_symlinks(manager: Manager, work_dir: Path) -> None:

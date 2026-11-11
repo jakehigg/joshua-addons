@@ -30,6 +30,7 @@ from __future__ import annotations
 import os
 import shutil
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -143,13 +144,15 @@ class Workspaces:
         A directory goes when its task ended ``success``, when its task ended
         more than ``work.keep_failed`` days ago, or when the store has no task
         for it and it is older than that. A directory of an active task stays.
+        A name that is not a task id, such as ``lost+found`` at the root of a
+        file system, is never touched.
         """
         if self.root is None or not self.root.is_dir():
             return 0
         limit = self.now() - self.keep_s
         count = 0
         for path in self.root.iterdir():
-            if path.is_symlink() or not path.is_dir():
+            if path.is_symlink() or not path.is_dir() or not _is_task_id(path.name):
                 continue
             task = self.store.get_task(path.name)
             if task is not None and task["status"] in ACTIVE_STATUSES:
@@ -183,3 +186,11 @@ class Workspaces:
         if stamp < limit:
             return "expired" if task is not None else "no_task"
         return None
+
+
+def _is_task_id(name: str) -> bool:
+    """True when ``name`` is a task id: a UUID in its canonical form."""
+    try:
+        return str(uuid.UUID(name)) == name
+    except ValueError:
+        return False
