@@ -3,14 +3,18 @@
 The manager reaches Docker at ``DOCKER_HOST``. On compose, that is a socket
 proxy that allows the container, image, and network calls only.
 
-A worker container gets four variables and nothing else:
+A worker container gets five variables and nothing else:
 
     TASK_ID          the task id
     MANAGER_URL      http://<MANAGER_HOST>:8001
     GIT_PROXY_URL    http://task:<TASK_TOKEN>@<MANAGER_HOST>:8002
     TASK_TOKEN       the task token
+    MANAGER_GRACE_S  worker.manager_grace: how long the worker waits for a
+                     manager that does not answer
 
-With ``packages.enabled`` in developer.yaml, it also gets ``HTTPS_PROXY`` and
+With ``DEVELOPER_WORK_DIR`` set, it also gets ``HOME`` (``/tmp/home``) and
+``CLAUDE_CONFIG_DIR``, so the git token is never on the kept ``/work``. With
+``packages.enabled`` in developer.yaml, it also gets ``HTTPS_PROXY`` and
 ``HTTP_PROXY`` (``http://<MANAGER_HOST>:8003``, the package proxy) and
 ``NO_PROXY`` (the manager host, the loopback, and the cluster domain).
 
@@ -25,7 +29,10 @@ developer.yaml it also joins ``PUBLIC_NETWORK``. The
 container has the ``worker`` memory and CPU limits, at most ``PIDS_LIMIT``
 processes, no Linux capabilities, ``no-new-privileges``, and a read-only
 root file system. ``/work`` and ``/tmp`` are anonymous volumes that the
-removal of the container deletes. Docker has no disk limit for them. With
+removal of the container deletes. With ``WORKER_WORK_VOLUME``, ``/work`` is
+instead the directory of the task on that named volume (``subpath`` = the
+task id), which the manager makes before the container starts, so the
+commits of the worker stay when the container goes. Docker has no disk limit for them. With
 ``worker.disk_docker_storage_opt: true``, the container instead gets
 ``storage_opt`` ``size`` = ``worker.disk`` and keeps ``/work`` and ``/tmp`` in
 its writable layer, so its root file system is not read-only; the storage
@@ -39,8 +46,13 @@ touch each other's workers.
 The manager pulls the worker image when it starts. A task pulls the image
 only when it is still missing.
 
+After a manager restart, ``reattach`` finds the container of an active task
+by its name and labels, and a new supervisor watches it. ``remove_orphans``
+then removes the containers of this instance that no supervisor watches.
+
 A supervisor watches each container. When the container exits and the task
-has no report, it records a ``failed`` report with the end of the container
+has no report, it records the report that the worker wrote to its log
+(``unsent report``), else a ``failed`` report with the end of the container
 log. When the deadline passes, it kills the container and then, if no report
 came, records ``timed_out``. Then it removes the container.
 
@@ -71,7 +83,14 @@ from joshua_developer.config import (
     Settings,
 )
 from joshua_developer.log import get_logger
-from joshua_developer.runtime import Deadline, Report, Reporter, no_start_report, worker_name
+from joshua_developer.runtime import (
+    Deadline,
+    Report,
+    Reporter,
+    no_start_report,
+    unsent_report,
+    worker_name,
+)
 from joshua_developer.store import utcnow
 
 logger = get_logger("joshua_developer.runtime_docker")
@@ -83,6 +102,9 @@ INSTANCE_LABEL = "joshua-developer-instance"
 PIDS_LIMIT = 512
 # The folders a worker writes to: the checkout and $HOME, and the temp files.
 WRITABLE_PATHS = ("/work", "/tmp")
+WORK_PATH = "/work"
+# $HOME of a worker whose /work is kept: in /tmp, so no token stays on the work storage.
+WORKER_HOME = "/tmp/home"
 GRACE_S = 120
 POLL_S = 5.0
 LOG_TAIL_CHARS = 4000
@@ -104,6 +126,7 @@ def worker_environment(settings: Settings, task: dict[str, Any]) -> dict[str, st
         "MANAGER_URL": f"http://{host}:{WORKER_API_PORT}",
         "GIT_PROXY_URL": f"http://task:{token}@{host}:{GIT_PROXY_PORT}",
         "TASK_TOKEN": token,
+        "MANAGER_GRACE_S": str(settings.config.worker.manager_grace),
     }
     if settings.config.packages.enabled:
         # The package proxy takes the installs of the dependencies. NO_PROXY
@@ -113,6 +136,11 @@ def worker_environment(settings: Settings, task: dict[str, Any]) -> dict[str, st
         env["HTTPS_PROXY"] = proxy_url
         env["HTTP_PROXY"] = proxy_url
         env["NO_PROXY"] = ",".join((host, *NO_PROXY_NAMES))
+    if settings.work_dir is not None:
+        # /work is kept after the worker ends, and $HOME holds the git token.
+        # $HOME goes in /tmp, which goes with the worker.
+        env["HOME"] = WORKER_HOME
+        env["CLAUDE_CONFIG_DIR"] = f"{WORKER_HOME}/.claude"
     if settings.worker_fake_session:
         env["JOSHUA_WORKER_FAKE_SESSION"] = settings.worker_fake_session
     return env
@@ -147,6 +175,8 @@ class DockerRuntime:
         self.poll_s = poll_s
         self.now = now
         self._supervisors: set[asyncio.Task[None]] = set()
+        # The container names that a supervisor of this manager watches.
+        self._watched: set[str] = set()
 
     @property
     def labels(self) -> dict[str, str]:
@@ -185,17 +215,20 @@ class DockerRuntime:
         return True
 
     def remove_orphans(self) -> int:
-        """Remove every worker container of this instance from an earlier run.
+        """Remove every worker container of this instance whose task is not active.
 
-        Returns the count. A manager start fails every task that was active,
-        so no old worker has a task left. A container of another instance
-        on the same daemon has another ``joshua-developer-instance`` label
-        and stays.
+        Returns the count. The manager calls it at start after ``reattach``:
+        a container of an active task has a supervisor again and stays. A
+        container of another instance on the same daemon has another
+        ``joshua-developer-instance`` label and stays.
         """
         removed = 0
         for container in self.client.containers.list(
             all=True, filters={"label": self._label_filter()}
         ):
+            task_id = (getattr(container, "labels", None) or {}).get(TASK_LABEL, "")
+            if task_id and container.name in self._watched and self.reporter.is_active(task_id):
+                continue
             try:
                 container.remove(force=True, v=True)
                 removed += 1
@@ -233,17 +266,34 @@ class DockerRuntime:
             "cap_drop": ["ALL"],
             "security_opt": ["no-new-privileges"],
         }
+        work = self._work_mount(task)
         if limits.disk_docker_storage_opt:
             # The size limit covers the writable layer only, so the worker's
             # folders stay in it, and the root file system stays writable.
             kwargs["storage_opt"] = {"size": limits.disk}
+            if work is not None:
+                kwargs["mounts"] = [work]
         else:
             kwargs["read_only"] = True
             kwargs["mounts"] = [
                 Mount(target=path, source="", type="volume", labels=dict(self.labels))
                 for path in WRITABLE_PATHS
+                if work is None or path != WORK_PATH
             ]
+            if work is not None:
+                kwargs["mounts"].insert(0, work)
         return kwargs
+
+    def _work_mount(self, task: dict[str, Any]) -> Mount | None:
+        """The directory of the task on ``WORKER_WORK_VOLUME``, at /work, or None.
+
+        Only the directory of the task, never the whole volume: a worker
+        cannot read the work of another task. Docker Engine 26 or later.
+        """
+        volume = self.settings.worker_work_volume
+        if not volume:
+            return None
+        return Mount(target=WORK_PATH, source=volume, type="volume", subpath=task["task_id"])
 
     def _create(self, task: dict[str, Any]) -> Any:
         kwargs = self._create_kwargs(task)
@@ -268,13 +318,38 @@ class DockerRuntime:
         logger.info(
             {"message": "worker started", "task_id": task["task_id"], "container": container.name}
         )
+        self._watch(task, container)
+        return str(container.name)
+
+    def _watch(self, task: dict[str, Any], container: Any) -> None:
+        self._watched.add(str(container.name))
         supervise = self._supervise(
             task["task_id"], task.get("worker_token"), container, self._deadline(task)
         )
         job = asyncio.create_task(supervise)
         self._supervisors.add(job)
         job.add_done_callback(self._supervisors.discard)
-        return str(container.name)
+
+    async def reattach(self, task: dict[str, Any]) -> bool:
+        """Watch the container of ``task`` again after a manager restart.
+
+        The container of the current worker has the name ``worker_name(task)``,
+        the label of this instance, and the task label. When it is there,
+        running or ended, a new supervisor watches it.
+        """
+        name = worker_name(task)
+        try:
+            container = await asyncio.to_thread(self.client.containers.get, name)
+        except NotFound:
+            return False
+        labels = getattr(container, "labels", None) or {}
+        if labels.get(TASK_LABEL) != task["task_id"] or any(
+            labels.get(key) != value for key, value in self.labels.items()
+        ):
+            return False
+        logger.info({"message": "worker reattached", "task_id": task["task_id"], "container": name})
+        self._watch(task, container)
+        return True
 
     async def _supervise(
         self, task_id: str, token: str | None, container: Any, deadline: Deadline
@@ -304,7 +379,12 @@ class DockerRuntime:
                     break
                 await asyncio.sleep(self.poll_s)
             if self.reporter.is_active(task_id, token):
-                await self.reporter.record_report(task_id, self._report(container, stopped))
+                report = None if stopped else _unsent(container, task_id)
+                if report is not None:
+                    logger.info({"message": "report read from the worker log", "task_id": task_id})
+                else:
+                    report = self._report(container, stopped)
+                await self.reporter.record_report(task_id, report)
         except Exception as exc:
             logger.error(
                 {
@@ -341,6 +421,16 @@ def _log_tail(container: Any) -> str:
         return ""
     text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
     return text[-LOG_TAIL_CHARS:]
+
+
+def _unsent(container: Any, task_id: str) -> Report | None:
+    """The report that the worker wrote to its log, or None."""
+    try:
+        raw = container.logs(stdout=True, stderr=False, tail=20)
+    except DockerException:
+        return None
+    text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    return unsent_report(text, task_id)
 
 
 def _kill(container: Any) -> None:

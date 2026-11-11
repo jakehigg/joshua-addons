@@ -84,9 +84,8 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - `answer` on a `failed` task resumes it when the manager has saved commits
   of the task (see [When a push fails](#when-a-push-fails)). `task_output` shows the reports of the earlier workers in
   `history`.
-- When the manager starts, each task that is `dispatched` or `running`
-  changes to `failed` with the error `manager restarted`, and its report
-  goes to the chat.
+- A manager restart does not end a task whose worker still runs. See
+  [What a restart does to a running task](#what-a-restart-does-to-a-running-task).
 
 ## The task clock
 
@@ -236,7 +235,8 @@ network: off                       # off or on. See "The network setting".
 default_persona: opus              # the persona when neither the call nor the person names one
 max_workers: 2                     # tasks that run at the same time
 ask_wait_s: 7200                   # the total wait for answers in one task. See "The task clock".
-worker: { memory: 2g, cpus: 2.0, disk: 4Gi }  # the limits of one worker
+worker: { memory: 2g, cpus: 2.0, disk: 4Gi, manager_grace: 600 }  # the limits of one worker
+work: { keep_failed: 7 }           # days a kept work directory stays. See "The work directories".
 packages:                          # the package proxy. See "The package proxy".
   enabled: false                   # the default: no proxy, and no proxy variable in a worker
   hosts:                           # host names, never a pattern or an address
@@ -282,6 +282,10 @@ must support it (overlay2 on xfs with `pquota`). The limit applies to the
 writable layer of the container only, so with this setting `/work` and
 `/tmp` stay in that layer, and the root file system is not read-only.
 
+`worker.manager_grace` is the number of seconds a worker keeps trying to
+reach a manager that does not answer, default 600. See "What a restart does
+to a running task".
+
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks is told to set `blocked`. `notify` is a
 channels destination: a logical name or a reference such as
@@ -313,6 +317,9 @@ applies before the value in the file.
 | `POD_NAMESPACE` | the namespace of the pod | The namespace of the worker Jobs. |
 | `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. |
 | `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. The manager trusts it for the host API, and sends its text to each worker, which trusts it for git. |
+| `DEVELOPER_WORK_DIR` | empty | Where the manager has the work storage mounted, such as `/work`. Set, each task gets its own directory on it, which a restart keeps. Empty, each worker has a scratch `/work`. See "The work directories". |
+| `WORKER_WORK_CLAIM` | empty | Kubernetes: the ReadWriteMany PersistentVolumeClaim of the work storage, which the manager also mounts at `DEVELOPER_WORK_DIR`. Required with `DEVELOPER_WORK_DIR` on `kubernetes`. The chart sets it from `worker.workClaim`. |
+| `WORKER_WORK_VOLUME` | empty | Docker: the named volume of the work storage, which the manager also mounts at `DEVELOPER_WORK_DIR`. Required with `DEVELOPER_WORK_DIR` on `docker`. Docker Engine 26 or later. |
 | `WORKER_START_GRACE_S` | `600` | The seconds a worker has from its start to its first brief call: the image pull and the container start. A worker that takes longer is stopped, and its task fails. |
 | each `token_env` in `developer.yaml` | empty | The git tokens. |
 | `LOG_LEVEL` | `INFO` | The log level. The access line of a `GET /healthz` shows at `DEBUG` only. |
@@ -418,8 +425,9 @@ default bridge (see "The network setting").
 
 A worker gets the `worker` memory and CPU limits, at most 512 processes, no
 Linux capabilities, `no-new-privileges`, and a read-only root file system.
-It writes to `/work` and `/tmp`, two anonymous volumes that the manager
-removes with the container. Docker has no disk limit for them: see
+It writes to `/tmp`, an anonymous volume that the manager removes with the
+container, and to `/work`, its own directory of the `developer-work` volume
+(see "The work directories"). Docker has no disk limit for them: see
 `worker.disk`. Each worker has the label `joshua-developer-instance` with
 the value of `MANAGER_HOST`. The manager removes old workers, and counts
 workers, with that label only, so two installs on one Docker daemon need
@@ -467,6 +475,9 @@ helm install developer charts/joshua-addon -f addons/developer/values.yaml
 - Set `CHANNELS_URL` to the address of the joshua-ai channels Service.
 - For a private registry, set `WORKER_IMAGE_PULL_SECRET` to the name of an
   image pull Secret in the namespace.
+- To keep the work of a task through a restart, make a ReadWriteMany
+  PersistentVolumeClaim in the namespace, and set `worker.workClaim` to its
+  name. The chart does not make the claim. See "The work directories".
 
 The two chart blocks are on:
 
@@ -492,8 +503,10 @@ The manager starts one Job for each task, named
 `dev-worker-<first 8 characters of the task id>`, with `-r<n>` added for
 the worker of a resumed task. The worker pod runs as uid
 1000 with no Linux capabilities, the `RuntimeDefault` seccomp profile, and a
-read-only root file system. It writes to two emptyDirs, `/work` and `/tmp`,
-each with the `sizeLimit` `worker.disk`. It gets no ServiceAccount token. The
+read-only root file system. It writes to `/tmp`, an emptyDir with the
+`sizeLimit` `worker.disk`, and to `/work`: an emptyDir of the same size, or,
+with `worker.workClaim`, its own directory of the work claim (see "The work
+directories"). It gets no ServiceAccount token. The
 `worker` limits, with `ephemeral-storage` set to `worker.disk`, are its
 requests and its limits.
 
@@ -595,6 +608,94 @@ not lose the commits:
 
 When the bundle cannot be made or sent, the error says that the commits are
 lost, and `answer` returns `not_resumable`.
+
+## What a restart does to a running task
+
+A deploy of the addon, a changed Secret with a Reloader, a node drain, and a
+crash all restart the manager. The worker is a separate Job or container, and
+it keeps running.
+
+1. **The worker waits.** Every call of the worker to the manager (the brief,
+   the log, a question, the report, the git tunnel of a push) is tried again
+   on a connection error, with a longer wait each time, for
+   `worker.manager_grace` seconds (default 600). The Claude CLI reaches the
+   model through the forwarder of the manager, so the worker also sets
+   `CLAUDE_CODE_MAX_RETRIES` high enough for the CLI to wait the same time.
+   The session and the commits stay in the worker.
+2. **The manager finds the worker again.** At start, the manager looks for
+   the worker of each task that is `dispatched` or `running`: the Job
+   (Kubernetes) or the container (Docker) with the name of the current worker
+   and the task label. When it is there, the task keeps its status, its lock,
+   and its task token, and a new supervisor watches the worker. The deadline
+   of the task does not change. Then the manager removes the workers that no
+   active task owns.
+3. **A task fails only when its worker is gone.** The error is `the worker is
+   gone: the manager restarted and found no worker for the task`, and the
+   report goes to the chat. The work directory of the task stays (see "The
+   work directories"), so `answer` can resume the task from its commits.
+4. **No report is lost.** A worker whose report cannot reach the manager in
+   `worker.manager_grace` seconds writes the report to its log as the last
+   line (`unsent report`), and exits. When the manager then finds a worker
+   that ended, it takes the report from the log. A worker that ended with no
+   such line gets a `failed` report from the state of its Job or container.
+   The Job of a worker stays for one hour after it ends
+   (`ttlSecondsAfterFinished`), so the manager must be back in that time to
+   read the log.
+
+A restart that takes longer than `worker.manager_grace` seconds stops the
+worker. The commits stay in its work directory.
+
+**The strategy of the chart.** The chart uses `Recreate` for the manager,
+because the claim of `developer.db` is ReadWriteOnce: the new pod can only
+mount it after the old pod stops. The workers wait out the gap, so a deploy
+does not need to drain the tasks first. A drain would hold a deploy for as
+long as the longest task runs. Keep `worker.manager_grace` longer than the
+time a new manager pod takes to start, the image pull included.
+
+A Reloader on the Secret now restarts the manager without a lost task. It
+still breaks the open Claude request of each worker once, and the CLI sends
+it again.
+
+## The work directories
+
+Each worker clones the repository into `/work` and commits there. Where
+`/work` lives decides what a restart, a failed push, or a crash loses.
+
+| Runtime | Storage of `/work` | Kept after the worker ends |
+|---|---|---|
+| `docker` (the compose file) | `<task id>` on the named volume `developer-work` (`WORKER_WORK_VOLUME`) | yes |
+| `kubernetes` with `worker.workClaim` | `<task id>` on that claim (`WORKER_WORK_CLAIM`, `subPath`) | yes |
+| `kubernetes` without `worker.workClaim` | an emptyDir | no |
+| `docker` without `WORKER_WORK_VOLUME` | an anonymous volume | no |
+
+With kept storage, the manager has the storage mounted at
+`DEVELOPER_WORK_DIR`, and:
+
+1. Before a worker starts, the manager makes the directory of the task,
+   `<DEVELOPER_WORK_DIR>/<task id>`. The runtime mounts that directory only
+   at `/work` in the worker, so a worker cannot read the work of another
+   task.
+2. **Nothing is deleted while a task is not successful.** The manager deletes
+   the directory of a task only when the task ends `success`. A task that
+   ends `failed`, `blocked`, or `timed_out`, or that a manager restart
+   failed, keeps its directory and its commits.
+3. A resumed task keeps its directory. A new task of the same person, for
+   the same repository and branch as a kept task, takes the directory of the
+   newest such task. The worker then finds the checkout in `/work`, fetches,
+   and continues on the branch from the commits that are there, instead of
+   cloning. When the remote branch moved, the worker rebases the kept
+   commits on it; when that rebase fails, the commits stay as they are.
+4. `answer` also resumes a `failed` task whose directory holds a checkout,
+   for example a task that a manager restart failed.
+5. A sweeper, at start and every hour, deletes a kept directory when its
+   task ended more than `work.keep_failed` days ago (default 7), and a
+   directory with no task in the store that is older than that. It logs each
+   deletion. It never deletes the directory of an active task.
+
+The git token is not on the kept storage: with `DEVELOPER_WORK_DIR` set, a
+worker gets `HOME=/tmp/home`, which goes with the worker. The manager runs
+as uid 1000 and must be able to write the root of the storage. When it
+cannot, a task fails with `the work directory was not made`.
 
 ## The first run
 

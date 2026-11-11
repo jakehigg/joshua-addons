@@ -1,7 +1,8 @@
 """The flow of one worker, from the brief to the report.
 
 1. Get the brief from the manager.
-2. Configure git, clone the repository, and check out the branch.
+2. Configure git, clone the repository (or continue in a kept checkout), and
+   check out the branch.
 3. Read ``CLAUDE.md`` of the checkout as text, if there is one.
 4. Tell the manager the session runs, and run the session until it ends or
    its clock runs out. The clock has the persona timeout minus
@@ -11,10 +12,22 @@
    When the push fails, store a bundle of the commits on the manager first,
    so that an ``answer`` can resume the task from them.
 
+When ``/work`` already holds a checkout of the repository, from an earlier
+worker of the task, the worker continues in it instead of cloning: the
+commits that the earlier worker made and did not push stay, and the push
+sends them (``git.resume_checkout``).
+
 A resumed task whose brief has ``bundle`` restores the commits of the bundle
-on the branch after the checkout. With ``push_only``, the session of the
+on the branch after the checkout, unless a kept checkout already has commits
+that the remote does not have. With ``push_only``, the session of the
 earlier worker was complete: the worker pushes the commits and reports, with
 no session.
+
+Every call to the manager is tried again for ``MANAGER_GRACE_S`` seconds
+(default 600) while the manager does not answer, so the worker keeps its
+session and its commits through a manager restart. When the report still
+cannot be sent, the worker writes it to its log as the last line
+(``unsent report``), and a manager that starts again reads it from there.
 
 The exit code is 0 when the manager accepted the report, or when the task
 had already ended. It is 1 only when the report could not be sent.
@@ -25,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
 import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -36,7 +50,13 @@ import httpx
 
 from joshua_developer_worker import git, log, prompt, session
 from joshua_developer_worker.clock import Clock
-from joshua_developer_worker.manager_client import ManagerClient, ManagerError, Report, TaskEnded
+from joshua_developer_worker.manager_client import (
+    DEFAULT_GRACE_S,
+    ManagerClient,
+    ManagerError,
+    Report,
+    TaskEnded,
+)
 
 logger = log.get_logger("joshua_developer_worker.main")
 
@@ -57,6 +77,8 @@ SAVED_NOTE = (
     "Correct the cause, then call answer to push them."
 )
 LOST_NOTE = "The commits could not be saved on the developer manager, and are lost."
+# The log message that holds a report the manager did not take.
+UNSENT_REPORT = "unsent report"
 START_PROMPT = "Do the task in your instructions. End with the structured result."
 
 
@@ -72,6 +94,8 @@ class WorkerEnv:
     config_dir: Path
     # A test aid: "1" or "ask" runs the scripted session, not Claude Code.
     fake_session: str | None = None
+    # How long a call waits for a manager that does not answer (MANAGER_GRACE_S).
+    manager_grace_s: float = DEFAULT_GRACE_S
 
 
 def read_env(environ: Mapping[str, str]) -> WorkerEnv | None:
@@ -90,7 +114,17 @@ def read_env(environ: Mapping[str, str]) -> WorkerEnv | None:
         home=home,
         config_dir=Path(environ.get("CLAUDE_CONFIG_DIR") or home / ".claude"),
         fake_session=session.fake_mode(environ),
+        manager_grace_s=_grace(environ.get("MANAGER_GRACE_S", "")),
     )
+
+
+def _grace(raw: str) -> float:
+    """``MANAGER_GRACE_S`` as seconds. Empty or not a positive number gives the default."""
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_GRACE_S
+    return value if value > 0 else DEFAULT_GRACE_S
 
 
 @contextlib.contextmanager
@@ -142,6 +176,15 @@ async def _send(client: ManagerClient, report: Report) -> int:
                     "error_type": type(exc).__name__,
                 }
             )
+            # The last line of the log. A manager that starts again after the
+            # worker gave up reads the report from here.
+            logger.error(
+                {
+                    "message": UNSENT_REPORT,
+                    "task_id": client.task_id,
+                    "report": report.model_dump(),
+                }
+            )
             return 1
     return 0
 
@@ -170,6 +213,7 @@ def finish(
     asker: session.Asker,
     log_: session.SessionLog,
     created_branch: bool = False,
+    push_retry_s: float = 0.0,
 ) -> Report:
     """Push the model's commits and build the report after the session.
 
@@ -197,7 +241,7 @@ def finish(
         new_head = git.head(dest)
         if new_head and new_head != clone_head:
             with step("push", asker.client.task_id):
-                pushed, push_error = git.push(dest, branch)
+                pushed, push_error = git.push(dest, branch, push_retry_s)
             if not pushed:
                 push_failed = True
                 error = f"the push of {branch} failed: {push_error}"
@@ -324,6 +368,7 @@ def push_saved(
     clone_head: str,
     created_branch: bool,
     log_: session.SessionLog,
+    push_retry_s: float = 0.0,
 ) -> Report:
     """Push the restored commits of a complete session, with no new session.
 
@@ -333,7 +378,7 @@ def push_saved(
     branch = str(brief["branch"])
     saved = brief.get("saved") or {}
     new_head = git.head(dest)
-    pushed, push_error = git.push(dest, branch)
+    pushed, push_error = git.push(dest, branch, push_retry_s)
     files = list(saved.get("files_changed") or [])
     if not files:
         with contextlib.suppress(git.GitError):
@@ -360,6 +405,22 @@ def push_saved(
     )
 
 
+def kept_checkout(dest: Path, repo_url: str, log_: session.SessionLog) -> bool:
+    """True when ``dest`` holds a checkout of ``repo_url`` that an earlier worker left.
+
+    A kept ``/work`` holds the checkout of an earlier worker of the task when
+    the manager keeps the work directories. A directory that is not a
+    checkout of the same repository is deleted, and the worker clones fresh.
+    """
+    if not dest.exists():
+        return False
+    if (dest / ".git").is_dir() and git.origin_url(dest) == repo_url:
+        return True
+    log_.add("the work directory held no checkout of this repository; it is cloned fresh")
+    shutil.rmtree(dest)
+    return False
+
+
 async def _work(
     env: WorkerEnv,
     client: ManagerClient,
@@ -376,6 +437,7 @@ async def _work(
     ask_wait_s = float(brief.get("ask_wait_s") or session.DEFAULT_ASK_WAIT_S)
     dest = workdir / CHECKOUT
     log_ = session.SessionLog(client)
+    kept = False
 
     person = brief.get("git") or {}
     if not person.get("name") or not person.get("email"):
@@ -395,30 +457,43 @@ async def _work(
                 env.proxy_url,
                 brief.get("git_ca_pem") or None,
             )
-        with step("clone", task_id):
-            git.clone(str(brief["repo_url"]), dest)
-        with step("checkout", task_id):
-            clone_head, created_branch = git.checkout(
-                dest,
-                branch,
-                brief.get("base_branch"),
-                # A rework, or a resumed task, works on a branch that exists.
-                # A task with a bundle can resume a branch that was never pushed.
-                create_if_missing=bool(brief.get("bundle"))
-                or (brief.get("task_type") != "rework" and not brief.get("resumed")),
-            )
-        if brief.get("bundle"):
+        # A rework, or a resumed task, works on a branch that exists. A task
+        # with a bundle, or a kept checkout, can resume a branch that was
+        # never pushed.
+        create = bool(brief.get("bundle")) or (
+            brief.get("task_type") != "rework" and not brief.get("resumed")
+        )
+        kept = kept_checkout(dest, str(brief["repo_url"]), log_)
+        if kept:
+            with step("resume_checkout", task_id):
+                clone_head, created_branch = git.resume_checkout(
+                    dest,
+                    branch,
+                    brief.get("base_branch"),
+                    create_if_missing=create or brief.get("task_type") != "rework",
+                )
+            log_.add(f"continued in the kept checkout of {branch}, from {clone_head[:12]}")
+        else:
+            with step("clone", task_id):
+                git.clone(str(brief["repo_url"]), dest)
+            with step("checkout", task_id):
+                clone_head, created_branch = git.checkout(
+                    dest, branch, brief.get("base_branch"), create_if_missing=create
+                )
+        if brief.get("bundle") and not (kept and git.has_commits_after(dest, clone_head)):
             with step("restore_bundle", task_id):
                 await restore_work(dest, workdir, branch, client)
     except (git.GitError, ManagerError, OSError) as exc:
         error = str(exc)
-        if brief.get("bundle"):
+        if kept:
+            error = f"the kept checkout could not continue: {git.scrub(error)}"
+        elif brief.get("bundle"):
             error = f"the saved commits were not restored: {git.scrub(error)}"
         return Report(status="failed", error=error, log=log_.text())
 
     if brief.get("bundle") and brief.get("push_only"):
         with step("push_saved", task_id):
-            report = push_saved(dest, brief, clone_head, created_branch, log_)
+            report = push_saved(dest, brief, clone_head, created_branch, log_, env.manager_grace_s)
         return await save_work(dest, workdir, branch, report, client, log_)
 
     claude_md = read_claude_md(dest)
@@ -434,7 +509,9 @@ async def _work(
         int(persona.get("max_turns") or DEFAULT_MAX_TURNS),
         session.ask_server(asker),
         effort=persona.get("effort"),
-        env=session.cli_env(env.manager_url, env.token, env.home, env.config_dir),
+        env=session.cli_env(
+            env.manager_url, env.token, env.home, env.config_dir, env.manager_grace_s
+        ),
         stderr=lambda line: log_.add(f"cli: {line}"),
     )
     kwargs: dict[str, Any] = {"log": log_, "asker": asker, "fake": env.fake_session}
@@ -443,7 +520,9 @@ async def _work(
     with step("session", task_id):
         result = await session.run(options, START_PROMPT, clock, **kwargs)
     with step("finish", task_id):
-        report = finish(dest, brief, clone_head, result, asker, log_, created_branch)
+        report = finish(
+            dest, brief, clone_head, result, asker, log_, created_branch, env.manager_grace_s
+        )
     return await save_work(dest, workdir, branch, report, client, log_)
 
 
@@ -462,7 +541,9 @@ async def run_task(
         return 1
     git.register_secret(env.token)
     git.register_secret(env.proxy_url)
-    client = manager or ManagerClient(env.manager_url, env.task_id, env.token)
+    client = manager or ManagerClient(
+        env.manager_url, env.task_id, env.token, grace_s=env.manager_grace_s
+    )
     try:
         with step("brief", env.task_id):
             try:

@@ -12,7 +12,7 @@ import pytest
 from conftest import make_settings
 from joshua_developer import notify, server
 from joshua_developer.locks import LockManager
-from joshua_developer.manager import RESTART_ERROR, Manager
+from joshua_developer.manager import WORKER_GONE_ERROR, Manager
 from joshua_developer.runtime import Report, StubRuntime
 from joshua_developer.store import TaskStore
 
@@ -175,7 +175,9 @@ async def test_a_stored_persona_that_is_gone_falls_back(settings) -> None:
     assert manager.resolve_persona(None, "fable") == "fable"
 
 
-async def test_recover_sends_one_report_for_each_failed_task(settings, monkeypatch) -> None:
+async def test_a_task_whose_worker_is_gone_fails_once_with_one_report(
+    settings, monkeypatch
+) -> None:
     first = make_manager(settings, delay_s=None)
     task_id = (await first.develop("alex", REPO, "brief"))["task_id"]
     first.store.close()
@@ -188,11 +190,18 @@ async def test_recover_sends_one_report_for_each_failed_task(settings, monkeypat
 
     monkeypatch.setattr(notify, "send_report", fake_send)
     second = make_manager(settings)
+    # The task stays active, with its lock, until the runtime looks for its worker.
     assert second.recover() == [task_id]
+    assert second.store.get_task(task_id)["status"] == "running"
+    scope = second.store.get_task_full(task_id)["scope"]
+    assert second.locks.get(REPO, scope) is not None
+    # The stub runtime keeps no worker over a restart.
+    assert await second.reattach_workers() == [task_id]
     await second.send_recovered_reports()
     await second.send_recovered_reports()
     assert [task["task_id"] for task in sent] == [task_id]
-    assert sent[0]["error"] == RESTART_ERROR
+    assert sent[0]["error"] == WORKER_GONE_ERROR
+    assert second.locks.get(REPO, scope) is None
 
 
 async def test_the_app_lifespan_sends_the_recovered_reports(settings, monkeypatch) -> None:

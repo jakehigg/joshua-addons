@@ -227,3 +227,49 @@ def test_a_failed_push_returns_a_scrubbed_error(
 def test_head_of_an_empty_repository_is_none(tmp_path: Path) -> None:
     run_git("init", "--quiet", str(tmp_path / "empty"))
     assert git.head(tmp_path / "empty") is None
+
+
+def test_a_push_that_does_not_reach_the_tunnel_is_tried_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    errors = [
+        git.GitError("git push failed (128): fatal: unable to access: Failed to connect to proxy"),
+        git.GitError("git push failed (128): Connection refused"),
+    ]
+
+    def fake_run(args: list[str], cwd: Path | None = None) -> str:
+        calls.append(args)
+        if errors:
+            raise errors.pop(0)
+        return ""
+
+    waits: list[float] = []
+    monkeypatch.setattr(git, "_run", fake_run)
+    assert git.push(tmp_path, "feature", retry_s=60, sleep=waits.append) == (True, None)
+    assert len(calls) == 3
+    assert waits == [2.0, 4.0]
+
+
+def test_a_refused_push_is_not_tried_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def fake_run(args: list[str], cwd: Path | None = None) -> str:
+        calls.append(1)
+        raise git.GitError("git push failed (128): remote: Permission denied")
+
+    monkeypatch.setattr(git, "_run", fake_run)
+    pushed, error = git.push(tmp_path, "feature", retry_s=60, sleep=lambda s: None)
+    assert pushed is False and "Permission denied" in (error or "")
+    assert calls == [1]
+
+
+def test_a_push_stops_trying_when_the_grace_time_ends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_run(args: list[str], cwd: Path | None = None) -> str:
+        raise git.GitError("git push failed (128): Connection timed out")
+
+    monkeypatch.setattr(git, "_run", fake_run)
+    pushed, error = git.push(tmp_path, "feature", retry_s=0.05, sleep=lambda s: None)
+    assert pushed is False and "timed out" in (error or "")

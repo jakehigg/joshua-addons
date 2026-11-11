@@ -31,6 +31,10 @@ DEFAULT_ASK_WAIT_S = 7200
 # image pull and the container start.
 DEFAULT_WORKER_START_GRACE_S = 600
 DEFAULT_MANAGER_HOST = "developer"
+# The seconds a worker waits for a manager that restarts.
+DEFAULT_MANAGER_GRACE_S = 600
+# The days a task that did not end success keeps its work directory.
+DEFAULT_KEEP_FAILED_DAYS = 7
 DEFAULT_WORKER_NETWORK = "developer_workers"
 DEFAULT_PUBLIC_NETWORK = "bridge"
 # The values of WORKER_FAKE_SESSION, a test aid of the Docker runtime.
@@ -51,6 +55,9 @@ _AWS_KEY_RE = re.compile(r"AKIA[0-9A-Z]{16}")
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}\Z")
+# A Kubernetes object name (DNS-1123 subdomain), and a Docker volume name.
+_CLAIM_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?\Z")
+_VOLUME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}\Z")
 _HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?\Z")
 
 
@@ -141,6 +148,9 @@ class WorkerLimits(_Model):
     cpus: float = Field(default=2.0, gt=0, le=64)
     disk: str = Field(default="4Gi", pattern=r"^[1-9][0-9]*(Ki|Mi|Gi|Ti)?$")
     disk_docker_storage_opt: bool = False
+    # The seconds a worker keeps trying to reach a manager that does not
+    # answer, such as one that restarts. The worker gets it as MANAGER_GRACE_S.
+    manager_grace: int = Field(default=DEFAULT_MANAGER_GRACE_S, gt=0, strict=True)
 
 
 class PackagesConfig(_Model):
@@ -156,6 +166,16 @@ class PackagesConfig(_Model):
     hosts: list[str] = Field(default_factory=list)
 
 
+class WorkConfig(_Model):
+    """The work directories of the workers (``DEVELOPER_WORK_DIR``).
+
+    ``keep_failed`` is the number of days a task that did not end ``success``
+    keeps its directory after it ends. The sweeper then deletes it.
+    """
+
+    keep_failed: int = Field(default=DEFAULT_KEEP_FAILED_DAYS, gt=0, strict=True)
+
+
 class DeveloperConfig(_Model):
     """The contents of ``developer.yaml``."""
 
@@ -168,6 +188,7 @@ class DeveloperConfig(_Model):
     personas: dict[str, Persona] = Field(default_factory=builtin_personas)
     worker: WorkerLimits = Field(default_factory=WorkerLimits)
     packages: PackagesConfig = Field(default_factory=PackagesConfig)
+    work: WorkConfig = Field(default_factory=WorkConfig)
     platforms: dict[str, Platform] = Field(default_factory=dict)
     repos: list[str] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
@@ -346,6 +367,13 @@ class Settings:
     # A test aid, not for production: the Docker runtime gives this value to
     # each worker as JOSHUA_WORKER_FAKE_SESSION. Empty means a real session.
     worker_fake_session: str = ""
+    # Where the manager has the work storage mounted. None means each worker
+    # gets a scratch /work that goes with the worker.
+    work_dir: Path | None = None
+    # The claim (kubernetes) or the named volume (docker) of the work storage,
+    # which the runtime mounts into each worker.
+    worker_work_claim: str = ""
+    worker_work_volume: str = ""
 
     @property
     def open(self) -> bool:
@@ -446,6 +474,30 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if fake_session and runtime != "docker":
         raise ConfigError("WORKER_FAKE_SESSION works only when WORKER_RUNTIME is docker")
 
+    raw_work_dir = env.get("DEVELOPER_WORK_DIR", "").strip()
+    work_dir = Path(raw_work_dir) if raw_work_dir else None
+    if work_dir is not None and not work_dir.is_absolute():
+        raise ConfigError("DEVELOPER_WORK_DIR must be an absolute path")
+    work_claim = env.get("WORKER_WORK_CLAIM", "").strip()
+    work_volume = env.get("WORKER_WORK_VOLUME", "").strip()
+    if work_claim and not _CLAIM_RE.match(work_claim):
+        raise ConfigError("WORKER_WORK_CLAIM must be the name of a PersistentVolumeClaim")
+    if work_volume and not _VOLUME_RE.match(work_volume):
+        raise ConfigError("WORKER_WORK_VOLUME must be the name of a Docker volume")
+    if work_claim and runtime != "kubernetes":
+        raise ConfigError("WORKER_WORK_CLAIM works only when WORKER_RUNTIME is kubernetes")
+    if work_volume and runtime != "docker":
+        raise ConfigError("WORKER_WORK_VOLUME works only when WORKER_RUNTIME is docker")
+    if (work_claim or work_volume) and work_dir is None:
+        raise ConfigError(
+            "DEVELOPER_WORK_DIR is required with WORKER_WORK_CLAIM or WORKER_WORK_VOLUME: "
+            "the manager must have the work storage mounted"
+        )
+    if work_dir is not None and runtime == "kubernetes" and not work_claim:
+        raise ConfigError("WORKER_WORK_CLAIM is required when DEVELOPER_WORK_DIR is set")
+    if work_dir is not None and runtime == "docker" and not work_volume:
+        raise ConfigError("WORKER_WORK_VOLUME is required when DEVELOPER_WORK_DIR is set")
+
     return Settings(
         config=config,
         data_dir=Path(env.get("DEVELOPER_DATA_DIR", "").strip() or DEFAULT_DATA_DIR),
@@ -464,4 +516,7 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         worker_image_pull_secret=env.get("WORKER_IMAGE_PULL_SECRET", "").strip(),
         worker_start_grace_s=start_grace,
         worker_fake_session=fake_session,
+        work_dir=work_dir,
+        worker_work_claim=work_claim,
+        worker_work_volume=work_volume,
     )

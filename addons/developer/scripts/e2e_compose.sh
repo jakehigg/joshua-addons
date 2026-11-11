@@ -19,7 +19,9 @@
 #      notify target and no channels exist, so the question is not sent. The
 #      worker gets the fallback reply at once, and the task ends blocked with
 #      the open question.
-#   7. removes all that it made, also after a failure.
+#   7. checks the developer-work volume: the directory of task 1 (success) is
+#      deleted, and the directory of task 2 (blocked) keeps its checkout;
+#   8. removes all that it made, also after a failure.
 #
 # Each check prints a PASS or FAIL line. The exit code is 0 only when all
 # checks pass. The script needs docker (with compose), uv, curl, and python3.
@@ -265,6 +267,18 @@ check_worker_gone() {
   same "$left" "" "no worker volume is left"
 }
 
+# work_dir_of <task id>: "kept" when the task has its directory on the
+# developer-work volume, with a checkout in it, else "gone".
+work_dir_of() {
+  if compose exec -T developer test -d "/work/$1/repo/.git" 2>/dev/null; then
+    echo kept
+  elif compose exec -T developer test -e "/work/$1" 2>/dev/null; then
+    echo "there, with no checkout"
+  else
+    echo gone
+  fi
+}
+
 # in_repo <args>: run git in the bare repository of the git server.
 in_repo() {
   docker exec "$GIT_CONTAINER" git -C "$BARE" "$@"
@@ -291,6 +305,7 @@ same "$AUTHORS" "Alex Example <alex@example.test>" \
 FILE="$(in_repo show "$BRANCH:hello-from-worker.txt" 2>&1 || true)"
 same "$FILE" "task $TASK" "the branch holds hello-from-worker.txt with the task id"
 check_worker_gone "$TASK"
+same "$(work_dir_of "$TASK")" gone "the work directory of task 1 (success) is deleted"
 
 echo "== task 2: the scripted ask session, with nobody to ask"
 start_manager ask
@@ -310,3 +325,4 @@ case "$FILE" in
   *) fail "hello-from-worker.txt holds: $FILE" ;;
 esac
 check_worker_gone "$TASK"
+same "$(work_dir_of "$TASK")" kept "the work directory of task 2 (blocked) keeps its checkout"

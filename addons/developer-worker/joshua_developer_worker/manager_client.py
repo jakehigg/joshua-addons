@@ -1,7 +1,11 @@
 """The client of the worker API on the manager.
 
 Every call sends ``Authorization: Bearer <TASK_TOKEN>`` and ``X-Task-Id``.
-A connection error gets 3 more attempts, with a longer wait each time. A 409
+A connection error is tried again, with a longer wait
+each time (at most ``MAX_BACKOFF_S``), until ``grace_s`` seconds pass from the
+first failure. The manager can restart while a worker runs: a deploy, or a
+changed Secret. The worker keeps its session and its commits through the gap,
+and its next call reaches the new manager. A 409
 means the task ended; it is never retried and raises ``TaskEnded``. Any other
 reply that is not 2xx raises ``ManagerError`` with the status and the reason
 the manager gave.
@@ -20,8 +24,10 @@ from joshua_developer_worker.log import get_logger
 
 logger = get_logger("joshua_developer_worker.manager_client")
 
-RETRIES = 3
+# How long a worker tries to reach a manager that does not answer (MANAGER_GRACE_S).
+DEFAULT_GRACE_S = 600.0
 BACKOFF_S = 1.0
+MAX_BACKOFF_S = 15.0
 # The manager holds GET /worker/answer open for up to 25 s.
 ANSWER_READ_S = 40.0
 TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
@@ -98,11 +104,11 @@ class ManagerClient:
         token: str,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
-        retries: int = RETRIES,
+        grace_s: float = DEFAULT_GRACE_S,
         backoff_s: float = BACKOFF_S,
     ) -> None:
         self.task_id = task_id
-        self.retries = retries
+        self.grace_s = grace_s
         self.backoff_s = backoff_s
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
@@ -124,13 +130,19 @@ class ManagerClient:
         http_timeout: httpx.Timeout | None = None,
     ) -> httpx.Response:
         attempt = 0
+        give_up: float | None = None
         while True:
             try:
                 response = await self._http.request(
                     method, path, json=json, content=content, timeout=http_timeout or TIMEOUT
                 )
             except httpx.TransportError as exc:
-                if attempt >= self.retries:
+                # A 503 is not tried again: the manager uses it for a reason,
+                # such as token_missing. A manager that is away refuses the
+                # connection or does not answer.
+                now = time.monotonic()
+                give_up = now + self.grace_s if give_up is None else give_up
+                if now >= give_up:
                     raise
                 attempt += 1
                 logger.warning(
@@ -142,7 +154,8 @@ class ManagerClient:
                         "error_type": type(exc).__name__,
                     }
                 )
-                await asyncio.sleep(self.backoff_s * 2 ** (attempt - 1))
+                delay = min(self.backoff_s * 2 ** min(attempt - 1, 10), MAX_BACKOFF_S)
+                await asyncio.sleep(min(delay, max(give_up - now, 0.0)))
                 continue
             if response.status_code == 409:
                 raise TaskEnded(path)
