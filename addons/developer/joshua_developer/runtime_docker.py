@@ -18,8 +18,10 @@ The one exception is a test aid: when ``WORKER_FAKE_SESSION`` is set, the
 worker also gets ``JOSHUA_WORKER_FAKE_SESSION`` with the same value, and runs
 a scripted session instead of Claude Code.
 
-It joins ``WORKER_NETWORK``, where the manager is the only other member. With
-``network: on`` in developer.yaml it also joins ``PUBLIC_NETWORK``. The
+It joins ``WORKER_NETWORK``, where the manager is the only other member. The
+compose file makes that network internal, so a worker that ignores the proxy
+variables still reaches the manager only. With ``network: on`` in
+developer.yaml it also joins ``PUBLIC_NETWORK``. The
 container has the ``worker`` memory and CPU limits, at most ``PIDS_LIMIT``
 processes, no Linux capabilities, ``no-new-privileges``, and a read-only
 root file system. ``/work`` and ``/tmp`` are anonymous volumes that the

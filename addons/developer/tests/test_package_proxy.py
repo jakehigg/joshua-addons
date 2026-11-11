@@ -69,9 +69,12 @@ async def test_connect_to_an_allowed_host_relays_bytes_and_needs_no_credential()
 
 
 async def test_a_host_that_is_not_in_the_list_gets_403_and_one_log_line(caplog) -> None:
-    async with proxy_for(ALLOWED) as port, caplog.at_level(logging.WARNING):
-        reply, _, writer = await send_head(port, "CONNECT registry.npmjs.org:443 HTTP/1.1\r\n\r\n")
-        writer.close()
+    with caplog.at_level(logging.WARNING):
+        async with proxy_for(ALLOWED) as port:
+            reply, _, writer = await send_head(
+                port, "CONNECT registry.npmjs.org:443 HTTP/1.1\r\n\r\n"
+            )
+            writer.close()
     assert reply.startswith(b"HTTP/1.1 403")
     lines = [str(record.msg) for record in caplog.records if record.name == LOGGER]
     assert len(lines) == 1

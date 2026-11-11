@@ -220,6 +220,12 @@ packages:
   push to another host. A `CONNECT` to port 22 gets 403.
 - A worker still sends the content of the repository nowhere but Anthropic,
   its own git host, and the hosts in this list.
+- The proxy variables are a convenience, not the boundary. A worker that
+  ignores them reaches no registry, because the runtime holds it in: on
+  Docker Compose the worker container is on `developer_workers`, an internal
+  Docker network that reaches the manager only; on Kubernetes the
+  NetworkPolicy of the chart lets the worker pod reach the manager ports and
+  the cluster DNS only.
 
 ## Settings
 
