@@ -62,6 +62,8 @@ logger = log.get_logger("joshua_developer_worker.main")
 
 WORKDIR = Path("/work")
 CHECKOUT = "repo"
+# The reference repositories of the task: <workdir>/refs/<host>/<owner>/<name>.
+REFS = "refs"
 DEFAULT_TIMEOUT_S = 2400
 DEFAULT_MAX_TURNS = 80
 # The session stops this long before the persona timeout, so the push and the
@@ -405,6 +407,38 @@ def push_saved(
     )
 
 
+def reference_path(refs_root: Path, repo: str) -> Path:
+    """The folder of the reference repository ``repo`` (host/owner/name) under ``refs_root``."""
+    parts = [part.replace(":", "_") for part in repo.split("/") if part not in ("", ".", "..")]
+    return refs_root.joinpath(*parts)
+
+
+def clone_references(workdir: Path, brief: dict[str, Any], log_: session.SessionLog) -> list[str]:
+    """Clone the reference repositories of the brief, read-only. Returns their paths.
+
+    A kept work directory can hold the clones of an earlier worker. They are
+    deleted and cloned again, so each worker reads the current default branch.
+    """
+    refs = brief.get("refs") or []
+    root = workdir / REFS
+    if root.exists():
+        git.set_read_only(root, False)
+        shutil.rmtree(root)
+    paths: list[str] = []
+    for ref in refs:
+        dest = reference_path(root, str(ref["repo"]))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            git.clone_reference(str(ref["repo_url"]), dest)
+        except git.GitError as exc:
+            raise git.GitError(
+                f"the reference repository {ref['repo']} was not cloned: {exc}"
+            ) from None
+        log_.add(f"cloned the reference repository {ref['repo']} read-only")
+        paths.append(str(dest))
+    return paths
+
+
 def kept_checkout(dest: Path, repo_url: str, log_: session.SessionLog) -> bool:
     """True when ``dest`` holds a checkout of ``repo_url`` that an earlier worker left.
 
@@ -456,6 +490,10 @@ async def _work(
                 urlsplit(str(brief["repo_url"])).netloc,
                 env.proxy_url,
                 brief.get("git_ca_pem") or None,
+                [
+                    (str(c["username"]), str(c["token"]), str(c["host"]))
+                    for c in brief.get("ref_credentials") or []
+                ],
             )
         # A rework, or a resumed task, works on a branch that exists. A task
         # with a bundle, or a kept checkout, can resume a branch that was
@@ -491,6 +529,14 @@ async def _work(
             error = f"the saved commits were not restored: {git.scrub(error)}"
         return Report(status="failed", error=error, log=log_.text())
 
+    reference_dirs: list[str] = []
+    if brief.get("refs") and not brief.get("push_only"):
+        try:
+            with step("clone_references", task_id):
+                reference_dirs = clone_references(workdir, brief, log_)
+        except (git.GitError, OSError) as exc:
+            return Report(status="failed", error=git.scrub(str(exc))[:2000], log=log_.text())
+
     if brief.get("bundle") and brief.get("push_only"):
         with step("push_saved", task_id):
             report = push_saved(dest, brief, clone_head, created_branch, log_, env.manager_grace_s)
@@ -503,7 +549,7 @@ async def _work(
     env.config_dir.mkdir(parents=True, exist_ok=True)
     asker = session.Asker(client, clock, ask_wait_s)
     options = session.build_options(
-        prompt.compose(brief, claude_md),
+        prompt.compose(brief, claude_md, reference_dirs),
         dest,
         persona.get("model"),
         int(persona.get("max_turns") or DEFAULT_MAX_TURNS),
@@ -513,6 +559,7 @@ async def _work(
             env.manager_url, env.token, env.home, env.config_dir, env.manager_grace_s
         ),
         stderr=lambda line: log_.add(f"cli: {line}"),
+        add_dirs=reference_dirs,
     )
     kwargs: dict[str, Any] = {"log": log_, "asker": asker, "fake": env.fake_session}
     if client_factory is not None:

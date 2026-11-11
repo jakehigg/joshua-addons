@@ -36,6 +36,14 @@ directory has no compose file and no `values.yaml`.
    `push_only: true`, the earlier session was complete: the worker pushes
    the restored commits and reports with the summary, the files, and the
    tests in `saved`. It runs no session and skips steps 3 to 5.
+   A brief with `refs` names reference repositories. The worker writes a
+   credential line for the host of each one (`ref_credentials`), clones
+   each one shallow, on its default branch, into
+   `/work/refs/<host>/<owner>/<name>`, sets its push URL to one that goes
+   nowhere, and removes the write bits of its files. A kept work directory
+   gets fresh clones. The session reads the folders through `add_dirs`, and
+   the prompt lists them. A reference repository that does not clone fails
+   the task before the session.
 3. It reads `CLAUDE.md` of the checkout as text, if there is one, and adds
    it to the prompt. It loads no other file from the checkout: no settings,
    no hooks, and no MCP config.

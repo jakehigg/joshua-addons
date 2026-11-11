@@ -270,8 +270,13 @@ def build_options(
     effort: str | None = None,
     env: dict[str, str] | None = None,
     stderr: Callable[[str], None] | None = None,
+    add_dirs: list[str] | None = None,
 ) -> ClaudeAgentOptions:
-    """The SDK options of the session."""
+    """The SDK options of the session.
+
+    ``add_dirs`` are the folders of the reference repositories, which the
+    session can read beside its working folder.
+    """
     kwargs: dict[str, Any] = {
         "system_prompt": system_prompt,
         "cwd": str(cwd),
@@ -293,6 +298,8 @@ def build_options(
         kwargs["effort"] = effort
     if stderr is not None:
         kwargs["stderr"] = stderr
+    if add_dirs:
+        kwargs["add_dirs"] = list(add_dirs)
     options = ClaudeAgentOptions(**kwargs)
     check_options(options)
     return options

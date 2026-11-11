@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     history TEXT,
     asked_at TEXT,
     paused_s INTEGER NOT NULL DEFAULT 0,
-    last_wait_s INTEGER
+    last_wait_s INTEGER,
+    refs TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_person_created ON tasks(person, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -84,6 +85,7 @@ STATUS_COLUMNS = (
     "scope",
     "branch_name",
     "base_branch",
+    "refs",
     "persona",
     "status",
     "pr_url",
@@ -143,13 +145,14 @@ ADDED_COLUMNS = {
     "scan": "TEXT",
     "findings": "TEXT",
     "history": "TEXT",
+    "refs": "TEXT",
     "asked_at": "TEXT",
     "paused_s": "INTEGER NOT NULL DEFAULT 0",
     "last_wait_s": "INTEGER",
 }
 
 # The columns that hold JSON.
-JSON_COLUMNS = ("report", "findings", "history")
+JSON_COLUMNS = ("report", "findings", "history", "refs")
 
 # The session log stops at this size. More text is dropped.
 MAX_SESSION_LOG_BYTES = 1024 * 1024
@@ -250,6 +253,7 @@ class TaskStore:
         pr_url: str | None = None,
         notify: str | None = None,
         worker_token: str | None = None,
+        refs: list[str] | None = None,
     ) -> None:
         if task_type not in TASK_TYPES:
             raise ValueError(f"unknown task type: {task_type!r}")
@@ -258,8 +262,8 @@ class TaskStore:
             INSERT INTO tasks (
                 task_id, person, task_type, repo, scope, persona, status, brief,
                 instructions, branch_name, base_branch, pr_number, pr_url, notify, created_at,
-                worker_token
-            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                worker_token, refs
+            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -277,6 +281,7 @@ class TaskStore:
                 notify,
                 now_iso(),
                 worker_token,
+                json.dumps(refs) if refs else None,
             ),
         )
 
