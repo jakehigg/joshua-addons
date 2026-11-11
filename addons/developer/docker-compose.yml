@@ -19,9 +19,11 @@
 #                      The manager also reaches the Claude API and the git hosts
 #                      through it.
 #   developer_workers  internal. The workers and the manager only. A worker
-#                      reaches the manager at developer:8001 (the worker API)
-#                      and developer:8002 (the git host tunnel), and nothing
-#                      else, unless `network: on` in developer.yaml. With
+#                      reaches the manager at developer:8001 (the worker API),
+#                      developer:8002 (the git host tunnel), and
+#                      developer:8003 (the package proxy, with the packages
+#                      block in developer.yaml on), and nothing else, unless
+#                      `network: on` in developer.yaml. With
 #                      `network: on`, a worker also joins PUBLIC_NETWORK, the
 #                      default bridge, so it can reach the internet, the host
 #                      LAN, and every port the host publishes.

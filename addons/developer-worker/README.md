@@ -76,7 +76,8 @@ data, and it refuses a report with an unknown field.
 ## Environment
 
 The manager sets these four variables. The worker takes no other setting,
-except the test aid `JOSHUA_WORKER_FAKE_SESSION` below.
+except the three proxy variables below and the test aid
+`JOSHUA_WORKER_FAKE_SESSION`.
 
 | Variable | What it is |
 |---|---|
@@ -84,6 +85,14 @@ except the test aid `JOSHUA_WORKER_FAKE_SESSION` below.
 | `MANAGER_URL` | The worker API of the manager, `http://<manager>:8001`. |
 | `GIT_PROXY_URL` | The git tunnel of the manager, `http://task:<TASK_TOKEN>@<manager>:8002`. |
 | `TASK_TOKEN` | The task token. It works only on the routes of this task. |
+
+With the `packages` block on in the manager's `developer.yaml`, the manager
+also sets `HTTPS_PROXY` and `HTTP_PROXY` (`http://<manager>:8003`, the
+package proxy) and `NO_PROXY` (the manager host, the loopback, and the
+cluster domain). `npm ci`, `uv sync`, and the other package tools then reach
+the registries in that block, and no other host. The proxy carries no
+credential and allows no git host. Without the block, the worker gets no
+proxy variable, and a command that downloads fails.
 
 The image sets `HOME=/work/home` and `CLAUDE_CONFIG_DIR=/work/home/.claude`.
 The checkout is `/work/repo`. The worker keeps its files in `/work` and `/tmp`.

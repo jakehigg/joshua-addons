@@ -10,6 +10,10 @@ A worker container gets four variables and nothing else:
     GIT_PROXY_URL    http://task:<TASK_TOKEN>@<MANAGER_HOST>:8002
     TASK_TOKEN       the task token
 
+With ``packages.enabled`` in developer.yaml, it also gets ``HTTPS_PROXY`` and
+``HTTP_PROXY`` (``http://<MANAGER_HOST>:8003``, the package proxy) and
+``NO_PROXY`` (the manager host, the loopback, and the cluster domain).
+
 The one exception is a test aid: when ``WORKER_FAKE_SESSION`` is set, the
 worker also gets ``JOSHUA_WORKER_FAKE_SESSION`` with the same value, and runs
 a scripted session instead of Claude Code.
@@ -57,7 +61,13 @@ import docker
 from docker.errors import DockerException, ImageNotFound, NotFound
 from docker.types import Mount
 
-from joshua_developer.config import GIT_PROXY_PORT, WORKER_API_PORT, Settings
+from joshua_developer.config import (
+    GIT_PROXY_PORT,
+    NO_PROXY_NAMES,
+    PACKAGE_PROXY_PORT,
+    WORKER_API_PORT,
+    Settings,
+)
 from joshua_developer.log import get_logger
 from joshua_developer.runtime import Deadline, Report, Reporter, no_start_report, worker_name
 from joshua_developer.store import utcnow
@@ -93,6 +103,14 @@ def worker_environment(settings: Settings, task: dict[str, Any]) -> dict[str, st
         "GIT_PROXY_URL": f"http://task:{token}@{host}:{GIT_PROXY_PORT}",
         "TASK_TOKEN": token,
     }
+    if settings.config.packages.enabled:
+        # The package proxy takes the installs of the dependencies. NO_PROXY
+        # keeps the manager out of it: the worker API, the Claude forwarder,
+        # and the git tunnel go to the manager on their own.
+        proxy_url = f"http://{host}:{PACKAGE_PROXY_PORT}"
+        env["HTTPS_PROXY"] = proxy_url
+        env["HTTP_PROXY"] = proxy_url
+        env["NO_PROXY"] = ",".join((host, *NO_PROXY_NAMES))
     if settings.worker_fake_session:
         env["JOSHUA_WORKER_FAKE_SESSION"] = settings.worker_fake_session
     return env

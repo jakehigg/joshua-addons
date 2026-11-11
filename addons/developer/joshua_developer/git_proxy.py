@@ -61,7 +61,8 @@ def task_target(manager: Manager, token: str) -> tuple[str, int] | None:
     return host, int(port) if port else 443
 
 
-def _reply(status: int, reason: str, extra: str = "") -> bytes:
+def reply(status: int, reason: str, extra: str = "") -> bytes:
+    """One HTTP reply with no body, for this proxy and for the package proxy."""
     return f"HTTP/1.1 {status} {reason}\r\n{extra}Content-Length: 0\r\n\r\n".encode("latin-1")
 
 
@@ -112,7 +113,7 @@ class GitProxy:
         for _ in range(MAX_ATTEMPTS):
             head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
             if len(head) > MAX_HEAD:
-                await self._send(writer, _reply(400, "Bad Request"))
+                await send(writer, reply(400, "Bad Request"))
                 return
             lines = head.decode("latin-1").split("\r\n")
             parts = lines[0].split(" ")
@@ -128,21 +129,21 @@ class GitProxy:
                 # curl sends the credential only after this challenge, on this
                 # same connection. Flush, keep the connection, read the next head.
                 logger.info({"message": "tunnel: credential challenge sent"})
-                await self._send(writer, _reply(407, "Proxy Authentication Required", _PROXY_AUTH))
+                await send(writer, reply(407, "Proxy Authentication Required", _PROXY_AUTH))
                 continue
 
             if len(parts) != 3 or parts[0] != "CONNECT":
-                await self._send(writer, _reply(403, "Forbidden"))
+                await send(writer, reply(403, "Forbidden"))
                 return
             host, _, port_text = parts[1].rpartition(":")
             if not port_text.isdigit():
-                await self._send(writer, _reply(403, "Forbidden"))
+                await send(writer, reply(403, "Forbidden"))
                 return
             port = int(port_text)
             host = host.strip("[]").lower()
             if port == 22 or (host, port) != allowed:
                 logger.warning({"message": "tunnel refused: destination not allowed", "port": port})
-                await self._send(writer, _reply(403, "Forbidden"))
+                await send(writer, reply(403, "Forbidden"))
                 return
 
             try:
@@ -151,13 +152,13 @@ class GitProxy:
                 )
             except (OSError, TimeoutError):
                 logger.warning({"message": "tunnel: the git host did not answer", "host": host})
-                await self._send(writer, _reply(502, "Bad Gateway"))
+                await send(writer, reply(502, "Bad Gateway"))
                 return
 
-            await self._send(writer, b"HTTP/1.1 200 Connection established\r\n\r\n")
+            await send(writer, b"HTTP/1.1 200 Connection established\r\n\r\n")
             logger.info({"message": "tunnel open", "host": host, "port": port})
             try:
-                await asyncio.gather(_pipe(reader, up_writer), _pipe(up_reader, writer))
+                await asyncio.gather(pipe(reader, up_writer), pipe(up_reader, writer))
             finally:
                 up_writer.close()
                 with contextlib.suppress(Exception):
@@ -165,13 +166,15 @@ class GitProxy:
             return
         logger.warning({"message": "tunnel refused: missing or wrong credential"})
 
-    @staticmethod
-    async def _send(writer: asyncio.StreamWriter, data: bytes) -> None:
-        writer.write(data)
-        await writer.drain()
+
+async def send(writer: asyncio.StreamWriter, data: bytes) -> None:
+    """Write ``data`` and flush it."""
+    writer.write(data)
+    await writer.drain()
 
 
-async def _pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
+async def pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
+    """Copy bytes from ``source`` to ``sink`` until the source ends."""
     try:
         while True:
             data = await source.read(_CHUNK)

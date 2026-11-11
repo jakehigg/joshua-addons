@@ -9,8 +9,10 @@ task and list the personas, and every other tool gives it "403 forbidden".
 A person sees only their own tasks.
 
 ``start`` also builds the worker side: the worker API for port 8001
-(``worker_api``) and the git host tunnel for port 8002 (``git_proxy``).
-``python -m joshua_developer`` serves all three in one process.
+(``worker_api``), the git host tunnel for port 8002 (``git_proxy``), and,
+with ``packages.enabled`` in ``developer.yaml``, the package proxy for port
+8003 (``package_proxy``). ``python -m joshua_developer`` serves them in one
+process.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from joshua_developer.git_proxy import GitProxy, task_target
 from joshua_developer.locks import LockManager
 from joshua_developer.log import get_logger
 from joshua_developer.manager import Manager, rejected
+from joshua_developer.package_proxy import PackageProxy
 from joshua_developer.runtime import Runtime, StubRuntime
 from joshua_developer.store import TaskStore
 from joshua_developer.worker_api import build_worker_app
@@ -48,6 +51,8 @@ _manager: Manager | None = None
 # The worker API app and the git host tunnel that start() built.
 worker_app: Starlette | None = None
 git_proxy: GitProxy | None = None
+# The package proxy, or None when packages.enabled is false.
+package_proxy: PackageProxy | None = None
 
 
 def _get_manager() -> Manager:
@@ -341,9 +346,10 @@ def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | Non
 def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
     """Open the store, build the manager and its runtime, and recover from a restart.
 
-    It also builds the worker API app and the git host tunnel for the manager.
+    It also builds the worker API app, the git host tunnel, and, when
+    ``packages.enabled`` is true, the package proxy for the manager.
     """
-    global _manager, worker_app, git_proxy
+    global _manager, worker_app, git_proxy, package_proxy
     if _manager is not None:
         _manager.store.close()
     store = TaskStore(settings.db_path)
@@ -353,6 +359,8 @@ def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
     manager.runtime = make_runtime(manager, settings, stub_delay_s)
     worker_app = build_worker_app(manager)
     git_proxy = GitProxy(lambda token: task_target(manager, token))
+    packages = settings.config.packages
+    package_proxy = PackageProxy(packages.hosts) if packages.enabled else None
     logger.info(
         {
             "message": "developer ready",
@@ -360,6 +368,7 @@ def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
             "open": settings.open,
             "runtime": settings.worker_runtime,
             "network": settings.config.network,
+            "packages": sorted(packages.hosts) if packages.enabled else [],
             "recovered": len(manager.recovered),
         }
     )

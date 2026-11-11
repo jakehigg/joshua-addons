@@ -1,5 +1,5 @@
 # Mirrors addons/developer/values.yaml: persistence, a mounted config file,
-# extraEnv from the downward API, the two extra Service ports, and both
+# extraEnv from the downward API, the three extra Service ports, and both
 # optional blocks on: rbac (a ServiceAccount, a Role, and a RoleBinding) and
 # networkPolicy (the worker and the manager policies). No other file in this
 # directory renders rbac or networkPolicy.
@@ -17,6 +17,10 @@ configFile:
     network: off
     default_persona: opus
     max_workers: 2
+    packages:
+      enabled: true
+      hosts:
+        - registry.npmjs.org
     repos: []
     people: {}
 env:
@@ -38,10 +42,18 @@ service:
     - name: git-proxy
       port: 8002
       targetPort: 8002
+    - name: package-proxy
+      port: 8003
+      targetPort: 8003
 rbac:
   enabled: true
 networkPolicy:
   enabled: true
   workersInternetEgress: false
+  # The worker API, the git host tunnel, and the package proxy.
+  managerPorts:
+    - 8001
+    - 8002
+    - 8003
   gatewayNamespaces:
     - joshua

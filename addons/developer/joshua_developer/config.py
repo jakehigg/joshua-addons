@@ -38,6 +38,11 @@ FAKE_SESSION_MODES = ("1", "ask")
 # The worker API (brief, report, ask, the Claude forwarder) and the git host tunnel.
 WORKER_API_PORT = 8001
 GIT_PROXY_PORT = 8002
+# The package proxy: the registries a worker may reach for its dependencies.
+PACKAGE_PROXY_PORT = 8003
+# The names a worker reaches without the package proxy, beside the manager
+# host: the loopback and the cluster domain.
+NO_PROXY_NAMES = ("localhost", "127.0.0.1", ".svc", ".cluster.local")
 
 # Text that starts like one of these is a token, not a name.
 TOKEN_PREFIXES = ("sk-ant-", "glpat-", "ghp_", "github_pat_", "xoxb-")
@@ -138,6 +143,19 @@ class WorkerLimits(_Model):
     disk_docker_storage_opt: bool = False
 
 
+class PackagesConfig(_Model):
+    """The package proxy: the hosts a worker may reach for its dependencies.
+
+    ``enabled`` is false by default, and the manager then starts no proxy and
+    gives a worker no proxy variable. Each host is a name, such as
+    ``registry.npmjs.org``, because the proxy reads the name in the
+    ``CONNECT`` line. A pattern or an address is not valid.
+    """
+
+    enabled: bool = False
+    hosts: list[str] = Field(default_factory=list)
+
+
 class DeveloperConfig(_Model):
     """The contents of ``developer.yaml``."""
 
@@ -149,6 +167,7 @@ class DeveloperConfig(_Model):
     # The other built-in personas stay.
     personas: dict[str, Persona] = Field(default_factory=builtin_personas)
     worker: WorkerLimits = Field(default_factory=WorkerLimits)
+    packages: PackagesConfig = Field(default_factory=PackagesConfig)
     platforms: dict[str, Platform] = Field(default_factory=dict)
     repos: list[str] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
@@ -241,6 +260,8 @@ def _check_references(config: DeveloperConfig) -> None:
         )
     for host in config.platforms:
         _check_host(f"platforms.{host}", host)
+    for index, host in enumerate(config.packages.hosts):
+        _check_package_host(f"packages.hosts[{index}]", host)
     for person_id, person in config.people.items():
         if not _NAME_RE.match(person_id):
             raise ConfigError(f"developer.yaml: people.{person_id} is not a valid person id")
@@ -261,6 +282,16 @@ def _check_references(config: DeveloperConfig) -> None:
 def _check_host(key: str, host: str) -> None:
     if host != host.lower() or "/" in host or not host.strip():
         raise ConfigError(f"developer.yaml: {key}: a host is a lowercase name, such as github.com")
+
+
+def _check_package_host(key: str, host: str) -> None:
+    """A package host is one lowercase name: no pattern, no port, no address."""
+    last_label = host.rpartition(".")[2]
+    if host != host.lower() or not _HOSTNAME_RE.match(host) or last_label.isdigit():
+        raise ConfigError(
+            f"developer.yaml: {key}: a package host is a lowercase name, "
+            "such as registry.npmjs.org, and not a pattern, a port, or an address"
+        )
 
 
 def load_config(path: Path) -> DeveloperConfig:

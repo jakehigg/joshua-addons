@@ -424,6 +424,20 @@ def test_worker_environment_uses_the_manager_host(tmp_path) -> None:
     assert set(env) == {"TASK_ID", "MANAGER_URL", "GIT_PROXY_URL", "TASK_TOKEN"}
 
 
+def test_worker_environment_has_the_package_proxy_when_the_block_is_on(tmp_path) -> None:
+    packages = {"enabled": True, "hosts": ["registry.npmjs.org", "pypi.org"]}
+    settings = make_settings(tmp_path, manager_host="mgr", config={"packages": packages})
+    env = worker_environment(settings, TASK)
+    assert env["HTTPS_PROXY"] == "http://mgr:8003"
+    assert env["HTTP_PROXY"] == "http://mgr:8003"
+    assert env["NO_PROXY"] == "mgr,localhost,127.0.0.1,.svc,.cluster.local"
+
+
+def test_worker_environment_has_no_proxy_variable_when_the_block_is_off(tmp_path) -> None:
+    env = worker_environment(make_settings(tmp_path), TASK)
+    assert not [name for name in env if name.endswith("_PROXY")]
+
+
 @pytest.mark.parametrize("mode", ["1", "ask"])
 def test_worker_environment_forwards_the_fake_session_switch(tmp_path, mode: str) -> None:
     settings = make_settings(tmp_path, worker_fake_session=mode)

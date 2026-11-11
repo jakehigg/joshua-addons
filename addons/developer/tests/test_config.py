@@ -131,10 +131,42 @@ def test_worker_limits_have_defaults_and_refuse_a_bad_value() -> None:
         assert "worker" in str(exc.value)
 
 
+def test_the_packages_block_is_off_by_default_and_takes_host_names() -> None:
+    config = parse_config({})
+    assert config.packages.enabled is False
+    assert config.packages.hosts == []
+    on = parse_config(
+        {"packages": {"enabled": True, "hosts": ["registry.npmjs.org", "files.pythonhosted.org"]}}
+    )
+    assert on.packages.enabled is True
+    assert on.packages.hosts == ["registry.npmjs.org", "files.pythonhosted.org"]
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "*.npmjs.org",
+        "https://registry.npmjs.org",
+        "registry.npmjs.org/path",
+        "registry.npmjs.org:443",
+        "Registry.NpmJS.org",
+        "203.0.113.7",
+        "",
+    ],
+)
+def test_a_package_host_that_is_not_a_name_is_refused(host: str) -> None:
+    with pytest.raises(ConfigError) as exc:
+        parse_config({"packages": {"enabled": True, "hosts": [host]}})
+    assert "packages.hosts[0]" in str(exc.value)
+
+
 @pytest.mark.parametrize(
     ("data", "key"),
     [
         ({"default_persona": "haiku"}, "default_persona"),
+        ({"packages": {"enabled": "maybe"}}, "packages.enabled"),
+        ({"packages": {"hosts": "registry.npmjs.org"}}, "packages.hosts"),
+        ({"packages": {"allow": ["registry.npmjs.org"]}}, "packages.allow"),
         ({"people": {"alex": {"default_persona": "haiku"}}}, "people.alex.default_persona"),
         ({"network": "maybe"}, "network"),
         ({"max_workers": 0}, "max_workers"),
