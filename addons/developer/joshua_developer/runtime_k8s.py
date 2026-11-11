@@ -13,7 +13,9 @@ else:
     TASK_TOKEN       the task token
 
 On Kubernetes, ``MANAGER_HOST`` is the name of the manager's Service, which
-is the Helm release name.
+is the Helm release name. With ``packages.enabled`` in developer.yaml, the
+pod also gets the three proxy variables of the package proxy (see
+``runtime_docker``).
 
 The pod runs as uid 1000 with no Linux capabilities, no privilege
 escalation, and a read-only root file system. ``/work`` and ``/tmp`` are

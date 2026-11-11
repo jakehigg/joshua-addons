@@ -17,8 +17,9 @@ pushes one branch, sends one report, and stops.
   credential scan.
 - Ask Joshua questions in the middle of a task, and wait for the answers,
   for up to `ask_wait_s` in total (see "The task clock").
-- Run the tests of the project, when the tests need no download (see "The
-  network setting").
+- Install the dependencies of the project and run its tests, when the
+  `packages` block names the registries the project needs (see "The package
+  proxy").
 
 ## What it cannot do
 
@@ -145,8 +146,10 @@ hostile, and these rules limit what it can read and where its data can go:
    other paths with 403. It answers the CLI probe `api/hello` itself.
 3. **By default, a worker reaches the manager and nothing else.** The
    manager forwards two destinations for it: the Claude API, and the git host
-   of the task's repository. On Kubernetes, a worker can also use the cluster
-   DNS resolver, so a DNS tunnel through the resolver stays possible.
+   of the task's repository. With the `packages` block on, it also forwards
+   the package hosts in that block, with no credential (see "The package
+   proxy"). On Kubernetes, a worker can also use the cluster DNS resolver, so
+   a DNS tunnel through the resolver stays possible.
 4. **The manager gates the pull request.** It scans the diff of the worker's
    commits for credentials before it opens the pull request. A hit fails the
    task, and deletes the branch only when the task made it. A person reads
@@ -173,13 +176,56 @@ can also send that content to any address.
 ## The network setting
 
 `network` in `developer.yaml` is `off` or `on`, and `off` is the default. With
-`network: off`, a worker cannot install dependencies, so it cannot run most
-test suites. With `network: on`, a worker can connect to the internet, so
-dependency installs work, and a bad repository can send its content anywhere.
+`network: off`, a worker reaches the manager only. To let it install
+dependencies, turn on the `packages` block, and keep `network: off`. With
+`network: on`, a worker can connect to the internet, so dependency installs
+work, and a bad repository can send its content anywhere.
 On Docker Compose, `network: on` also puts each worker on the default
 bridge, so it can reach the host LAN and every port that the host
 publishes. On Kubernetes, the chart blocks private addresses (see "Run it on
 Kubernetes").
+
+## The package proxy
+
+With the `packages` block on, a worker can install dependencies and run the
+tests of the project, and it still reaches no other address. The manager
+listens on port 8003 and speaks HTTP `CONNECT`. It allows a connection only
+when the host in the `CONNECT` line is in `packages.hosts`, and refuses every
+other host with 403 and one log line that names it. The worker gets
+`HTTPS_PROXY` and `HTTP_PROXY` (`http://<MANAGER_HOST>:8003`) and `NO_PROXY`
+(the manager host, the loopback, and the cluster domain), so `npm ci`,
+`uv sync`, and the other package tools use the proxy, and the manager API,
+the Claude forwarder, and the git tunnel do not.
+
+```yaml
+packages:
+  enabled: true
+  hosts:
+    - registry.npmjs.org
+    - pypi.org
+    - files.pythonhosted.org
+```
+
+- `enabled: false` is the default. The manager then starts no proxy, nothing
+  listens on 8003, and a worker gets no proxy variable.
+- Each host is a name, such as `registry.npmjs.org`. A pattern, a port, an
+  address, or a URL is refused at start. The check is on the name, because a
+  registry sits behind a CDN whose addresses change, and a rule on addresses
+  would break.
+- The proxy carries no credential: a public registry needs none. The tunnel
+  carries TLS from end to end, so the proxy reads nothing in it.
+- The proxy gives a worker no new access to a repository. A git host belongs
+  in `platforms`, not here: a worker reaches a git host only through the
+  tunnel on port 8002, which injects the token of the task and refuses a
+  push to another host. A `CONNECT` to port 22 gets 403.
+- A worker still sends the content of the repository nowhere but Anthropic,
+  its own git host, and the hosts in this list.
+- The proxy variables are a convenience, not the boundary. A worker that
+  ignores them reaches no registry, because the runtime holds it in: on
+  Docker Compose the worker container is on `developer_workers`, an internal
+  Docker network that reaches the manager only; on Kubernetes the
+  NetworkPolicy of the chart lets the worker pod reach the manager ports and
+  the cluster DNS only.
 
 ## Settings
 
@@ -191,6 +237,12 @@ default_persona: opus              # the persona when neither the call nor the p
 max_workers: 2                     # tasks that run at the same time
 ask_wait_s: 7200                   # the total wait for answers in one task. See "The task clock".
 worker: { memory: 2g, cpus: 2.0, disk: 4Gi }  # the limits of one worker
+packages:                          # the package proxy. See "The package proxy".
+  enabled: false                   # the default: no proxy, and no proxy variable in a worker
+  hosts:                           # host names, never a pattern or an address
+    - registry.npmjs.org
+    - pypi.org
+    - files.pythonhosted.org
 personas:                          # a model, its effort, and its limits
   sonnet: { model: claude-sonnet-5,  effort: medium, max_turns: 60,  timeout_s: 1200 }
   opus:   { model: claude-opus-5,    effort: high,   max_turns: 80,  timeout_s: 2400 }
@@ -355,7 +407,8 @@ its digest, so a moved tag cannot change the code that has the socket.
 The compose file makes two internal networks:
 
 - `developer_workers`: the workers and the manager. A worker reaches the
-  manager on port 8001 (the worker API) and port 8002 (the git host tunnel).
+  manager on port 8001 (the worker API), port 8002 (the git host tunnel),
+  and port 8003 (the package proxy, with the `packages` block on).
 - `developer_control`: the manager and the proxy.
 
 The manager is also on the joshua-ai network, where the gateway reaches it
@@ -420,14 +473,14 @@ The two chart blocks are on:
 - `rbac` makes a ServiceAccount, a Role, and a RoleBinding. The Role lets the
   manager create, read, and delete Jobs, and read pods and pod logs, in its
   own namespace only.
-- `networkPolicy` lets a worker connect to the manager on ports 8001 and
-  8002, and to DNS on the cluster resolver, and to no other address. Set
+- `networkPolicy` lets a worker connect to the manager on ports 8001, 8002,
+  and 8003, and to DNS on the cluster resolver, and to no other address. Set
   `networkPolicy.dns` in the chart values when your cluster DNS pods are not
   `k8s-app: kube-dns` in `kube-system`. The resolver sends queries for other
   names on, so a DNS tunnel through it stays possible. The policy lets the
-  manager accept ports 8001 and 8002 from the workers only. The CNI of the cluster must
-  enforce NetworkPolicy. If it does not, a worker can connect to all
-  addresses.
+  manager accept ports 8001, 8002, and 8003 from the workers only. The CNI of
+  the cluster must enforce NetworkPolicy. If it does not, a worker can connect
+  to all addresses.
 
 For `network: on`, set `networkPolicy.workersInternetEgress: true`, and set
 `networkPolicy.clusterCidrs` to the pod and Service CIDRs of the cluster. A

@@ -109,6 +109,7 @@ networkPolicy:
   managerPorts: # the addon ports the workers call
     - 8001
     - 8002
+    - 8003
   allowDns: true # let a worker use DNS on port 53 of the cluster resolver, to find the addon Service by name
   dns:
     namespace: kube-system # the namespace of the cluster DNS pods

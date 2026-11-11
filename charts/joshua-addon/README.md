@@ -58,7 +58,7 @@ helm install hello charts/joshua-addon -f addons/hello/values.yaml
 | `rbac.rules` | jobs, pods, `pods/log` | The rules of the Role. |
 | `networkPolicy.enabled` | `false` | Make the two NetworkPolicies. See "NetworkPolicy". |
 | `networkPolicy.workerSelector` | `joshua-addon: developer`, `app.kubernetes.io/name: joshua-addon-developer-worker` | The labels of the worker pods. |
-| `networkPolicy.managerPorts` | `[8001, 8002]` | The addon ports that the workers call. |
+| `networkPolicy.managerPorts` | `[8001, 8002, 8003]` | The addon ports that the workers call. |
 | `networkPolicy.allowDns` | `true` | Let a worker use DNS on port 53 of the cluster DNS pods, to find the addon Service by name. |
 | `networkPolicy.dns.namespace` | `kube-system` | The namespace of the cluster DNS pods. |
 | `networkPolicy.dns.podLabels` | `k8s-app: kube-dns` | The labels of the cluster DNS pods. |

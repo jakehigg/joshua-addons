@@ -6,7 +6,25 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+### Added
+
+- `developer`: a package proxy in the manager, so a worker can install
+  dependencies and run the tests of the project. The new `packages` block in
+  `developer.yaml` holds the host names a worker may reach, such as
+  `registry.npmjs.org`, `pypi.org`, and `files.pythonhosted.org`. With
+  `enabled: true`, the manager listens on port 8003, allows a `CONNECT` to a
+  host in the list, and refuses every other host with 403 and one log line.
+  A worker gets `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`. The proxy
+  carries no credential, allows no git host, and gives a worker no new
+  access to a repository. `enabled: false` is the default, so an instance
+  that does not set the block keeps its behavior. To use it, add the block,
+  add port 8003 to `service.extraPorts` (the chart values of the addon do),
+  and keep `networkPolicy.workersInternetEgress: false`.
+
 ### Changed
+
+- The chart value `networkPolicy.managerPorts` is now `[8001, 8002, 8003]`,
+  so a worker pod can reach the package proxy of the `developer` manager.
 
 - `tasks`: a task list of a project shows one row for each task, with the
   number, the title, the size, the due date, the assignee, the done state,
