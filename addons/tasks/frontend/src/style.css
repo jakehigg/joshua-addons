@@ -390,7 +390,13 @@ main.finished .group-add { display: none; }
 .group-header .delete:hover { color: var(--j-bad); background: var(--j-bad-soft); }
 .group-header .delete.confirming { width: auto; padding: 0 10px; color: var(--j-bad); background: var(--j-bad-soft); font-size: 12.5px; }
 
-/* notes */
+/* notes: a pill on the row opens the description, which starts closed */
+.notes-toggle {
+  height: 20px; padding: 0 8px; gap: 4px; flex: none;
+  font-size: 11.5px; font-weight: 600; color: var(--j-muted);
+  background: var(--j-surface-2); border-color: transparent; border-radius: 999px;
+}
+.notes-toggle:hover { color: var(--j-text); border-color: transparent; }
 .task-notes {
   margin: 6px 0 2px; padding-left: 62px; padding-right: 8px;
   color: var(--j-muted); font-size: 14px; line-height: 1.5;

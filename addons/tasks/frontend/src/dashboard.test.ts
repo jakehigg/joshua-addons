@@ -17,6 +17,7 @@ import {
   searchView,
   taskHref,
   taskLinksView,
+  taskNotesView,
 } from "./dashboard.ts";
 
 function project(fields: Partial<Project> & { name: string }): Project {
@@ -310,6 +311,28 @@ test("a found task that waits for an open blocker says it is blocked", () => {
     tasks: [{ task: waiting, project: hallway, group: null }],
   });
   assert.equal(view.tasks[0].blocked, true);
+});
+
+// --- the description disclosure -------------------------------------------------
+
+test("a task with a description keeps it closed until a person opens it", () => {
+  const long = task({ id: "t1", title: "Build the API", notes: "A long description." });
+  const closed = taskNotesView(long, false);
+  assert.equal(closed.hasNotes, true);
+  assert.equal(closed.open, false);
+  assert.equal(closed.title, "Show the note");
+  const open = taskNotesView(long, true);
+  assert.equal(open.open, true);
+  assert.equal(open.title, "Hide the note");
+  assert.notEqual(open.label, closed.label);
+});
+
+test("a task with no description, or only spaces, shows no control", () => {
+  assert.equal(taskNotesView(task({ id: "t1", title: "Buy the paint" }), false).hasNotes, false);
+  const blank = taskNotesView(task({ id: "t2", title: "Paint the trim", notes: "  \n" }), true);
+  assert.equal(blank.hasNotes, false);
+  // Nothing to show, so the row is never open.
+  assert.equal(blank.open, false);
 });
 
 // --- the blocking links ---------------------------------------------------------

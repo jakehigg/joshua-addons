@@ -218,6 +218,35 @@ export function taskLinksView(task: Task): TaskLinksView {
   };
 }
 
+// --- the description disclosure -------------------------------------------------
+// A task list shows the title row only, so twelve tasks fit on one screen. The
+// description sits behind a control that starts closed on every row, on first
+// load and after a reload. One open row says nothing about the others.
+
+export interface TaskNotesView {
+  // True when the task has a description for the control to show.
+  hasNotes: boolean;
+  // True while the description is visible. A task with no description is
+  // never open.
+  open: boolean;
+  // The text on the control.
+  label: string;
+  // The hint on the control, which also names its action.
+  title: string;
+}
+
+/** The description of one task, ready to render. */
+export function taskNotesView(task: { notes: string }, open: boolean): TaskNotesView {
+  const hasNotes = task.notes.trim().length > 0;
+  const shown = hasNotes && open;
+  return {
+    hasNotes,
+    open: shown,
+    label: shown ? "▾ note" : "▸ note",
+    title: shown ? "Hide the note" : "Show the note",
+  };
+}
+
 // --- the search ----------------------------------------------------------------
 
 export interface SearchTaskView {

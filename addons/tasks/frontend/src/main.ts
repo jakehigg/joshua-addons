@@ -20,6 +20,7 @@ import {
   projectHref,
   searchView,
   taskLinksView,
+  taskNotesView,
   type CardView,
   type Route,
   type SearchTaskView,
@@ -927,7 +928,7 @@ function taskRow(task: Task): HTMLLIElement {
   title.addEventListener("click", editTitle);
 
   // --- notes (issue #5) -------------------------------------------------------
-  // Shown below the row when present; empty notes stay hidden behind a
+  // The description of the task. Empty notes stay hidden behind a
   // hover-revealed "add note" affordance so the display stays uncluttered.
   // Inline edit mirrors the group-rename pattern: click to edit, blur saves,
   // Escape cancels (Ctrl/Cmd+Enter also commits, since Enter adds a newline).
@@ -937,20 +938,40 @@ function taskRow(task: Task): HTMLLIElement {
 
   const notes = document.createElement("div");
   notes.className = "task-notes";
+  notes.id = `task-notes-${task.id}`;
+
+  // The disclosure control (issue #66): a long description fills the screen,
+  // so each row holds its description closed until a person opens it. The
+  // state is of this row alone, and a new row starts closed.
+  let notesOpen = false;
+  const notesToggle = document.createElement("button");
+  notesToggle.type = "button";
+  notesToggle.className = "notes-toggle";
+  notesToggle.setAttribute("aria-controls", notes.id);
+  notesToggle.addEventListener("click", () => {
+    notesOpen = !notesOpen;
+    renderNotes();
+  });
 
   function renderNotes() {
-    const has = task.notes.trim().length > 0;
-    notes.hidden = !has;
-    notes.classList.toggle("has-notes", has);
-    if (has) renderLinkedText(notes, task.notes); // URLs → clickable links (#6)
+    const view = taskNotesView(task, notesOpen);
+    notesOpen = view.open;
+    notesToggle.hidden = !view.hasNotes;
+    notesToggle.textContent = view.label;
+    notesToggle.title = view.title;
+    notesToggle.ariaExpanded = String(view.open);
+    notes.hidden = !view.open;
+    notes.classList.toggle("has-notes", view.hasNotes);
+    if (view.hasNotes) renderLinkedText(notes, task.notes); // URLs → links (#6)
     else notes.replaceChildren();
-    notes.title = has ? "Click to edit note" : "";
-    noteBtn.classList.toggle("active", has); // hide the add button once noted
-    noteBtn.title = has ? "Edit note" : "Add note";
+    notes.title = view.hasNotes ? "Click to edit note" : "";
+    noteBtn.classList.toggle("active", view.hasNotes); // hide the add button
+    noteBtn.title = view.hasNotes ? "Edit note" : "Add note";
   }
 
   function editNotes() {
     if (notes.querySelector(".task-notes-input")) return; // already editing
+    notesOpen = true; // an edit needs the description in view
     const textarea = document.createElement("textarea");
     textarea.className = "task-notes-input";
     textarea.value = task.notes;
@@ -1038,7 +1059,7 @@ function taskRow(task: Task): HTMLLIElement {
   // under the title on a narrow screen instead of squeezing it.
   const tags = document.createElement("span");
   tags.className = "task-tags";
-  tags.append(nextBadge, blockedBadge, meta);
+  tags.append(nextBadge, blockedBadge, meta, notesToggle);
   const body = document.createElement("div");
   body.className = "task-body";
   body.append(number, title, tags);

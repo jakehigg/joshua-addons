@@ -148,9 +148,16 @@ A project page shows the goal (click it to edit), the progress bar, the
 health, the target date, and the status; the Complete button is enabled when
 every task is done. Phases come first, then the backlog. The first open task
 that waits for nothing carries an "up next" mark. Drag a task by its handle
-to reorder it, or drag it into a group. Click a title or a note to edit it in
-place; the "⋯" button on a task opens its size, due date, and assignee. Done
-tasks sink to the bottom of their list.
+to reorder it, or drag it into a group. Click a title to edit it in place;
+the "⋯" button on a task opens its size, due date, and assignee. Done tasks
+sink to the bottom of their list.
+
+A task row shows the number, the title, the size, the due date, the
+assignee, the done state, and the blocked state. A task with a note also
+shows a "note" control. The row keeps the note out of view, also after a
+reload, so a long note does not fill the screen. Click the control to open
+the note of that task. The other tasks stay closed. Click an open note to
+edit it in place.
 
 A task that waits carries a "blocked" mark and names the tasks it waits for,
 each with its number and a link to that task in its own project. A task also names the tasks that
