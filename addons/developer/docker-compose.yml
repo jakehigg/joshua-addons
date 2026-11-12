@@ -50,6 +50,10 @@ services:
       DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
       DEVELOPER_DATA_DIR: /data
       CHANNELS_URL: ${CHANNELS_URL:-}
+      # The tasks addon and joshua-ai core, for run_project. The defaults are
+      # the service names on the joshua network.
+      TASKS_URL: ${TASKS_URL:-http://tasks:8000}
+      CORE_URL: ${CORE_URL:-http://core:8000}
       JOSHUA_TOKEN_DEVELOPER: ${JOSHUA_TOKEN_DEVELOPER:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       WORKER_RUNTIME: ${WORKER_RUNTIME:-docker}

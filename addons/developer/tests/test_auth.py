@@ -74,6 +74,10 @@ PERSON_TOOLS = [
     ("answer", {"task_id": "x", "text": "x"}),
     ("get_settings", {}),
     ("set_settings", {"notify": "x"}),
+    ("run_project", {"repo": "github.com/example-home/app", "project": "x"}),
+    ("pause_run", {"project": "x"}),
+    ("resume_run", {"project": "x"}),
+    ("stop_run", {"project": "x"}),
 ]
 
 
@@ -90,7 +94,7 @@ async def test_every_person_tool_is_in_the_negative_test() -> None:
     from joshua_developer.server import mcp
 
     tools = {tool.name for tool in await mcp.list_tools()}
-    read_tools = {"task_status", "task_output", "list_tasks", "list_personas"}
+    read_tools = {"task_status", "task_output", "list_tasks", "list_personas", "run_status"}
     assert tools - read_tools == {name for name, _ in PERSON_TOOLS}
 
 

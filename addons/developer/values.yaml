@@ -45,6 +45,11 @@ configFile:
     # with worker.workClaim set. The sweeper then deletes it.
     work:
       keep_failed: 7
+    # The limits ceilings of a run (run_project), in percent used. A run
+    # pauses before a task when a window is at or over its ceiling.
+    runs:
+      ceiling_five_hour_pct: 80
+      ceiling_seven_day_pct: 90
     # The package proxy of the manager, on port 8003. With enabled: true, a
     # worker gets HTTPS_PROXY, HTTP_PROXY, and NO_PROXY, and reaches these
     # hosts only, so it can install dependencies and run the tests. The
@@ -76,6 +81,10 @@ env:
   # Where a task report goes. Set the address of the joshua-ai channels
   # Service, and put JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   # CHANNELS_URL: http://<joshua-ai channels service>:8000
+  # run_project: the tasks addon (its release name is the Service name) and
+  # joshua-ai core. Neither needs a bearer inside the namespace.
+  TASKS_URL: http://tasks:8000
+  CORE_URL: http://joshua-core:8000
   # A CA bundle for a git host with a private certificate authority. Mount
   # the file, and give its path. The manager also gives it to each worker.
   # GIT_CA_BUNDLE: /etc/ssl/certs/git-host-ca.pem

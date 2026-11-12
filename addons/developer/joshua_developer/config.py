@@ -176,6 +176,17 @@ class WorkConfig(_Model):
     keep_failed: int = Field(default=DEFAULT_KEEP_FAILED_DAYS, gt=0, strict=True)
 
 
+class RunsConfig(_Model):
+    """The ceilings of a run (``runs`` in ``developer.yaml``), in percent used.
+
+    A run pauses before it starts a task when a limits window is at or over
+    its ceiling. A window that core cannot give is unknown, and a run goes on.
+    """
+
+    ceiling_five_hour_pct: int = Field(default=80, ge=1, le=100, strict=True)
+    ceiling_seven_day_pct: int = Field(default=90, ge=1, le=100, strict=True)
+
+
 class DeveloperConfig(_Model):
     """The contents of ``developer.yaml``."""
 
@@ -189,6 +200,7 @@ class DeveloperConfig(_Model):
     worker: WorkerLimits = Field(default_factory=WorkerLimits)
     packages: PackagesConfig = Field(default_factory=PackagesConfig)
     work: WorkConfig = Field(default_factory=WorkConfig)
+    runs: RunsConfig = Field(default_factory=RunsConfig)
     platforms: dict[str, Platform] = Field(default_factory=dict)
     repos: list[str] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
@@ -346,6 +358,10 @@ class Settings:
     tokens: Mapping[str, Caller] = field(default_factory=dict, repr=False)
     channels_url: str | None = None
     channels_token: str = field(default="", repr=False)
+    # The tasks addon (its /api) and joshua-ai core (its limits), for a run.
+    # None means a run cannot start, and the limits are unknown.
+    tasks_url: str | None = None
+    core_url: str | None = None
     worker_image: str = ""
     worker_runtime: str = "stub"
     # The Claude token the forwarder puts on each worker request.
@@ -442,6 +458,12 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if bool(channels_url) != bool(channels_token):
         raise ConfigError("CHANNELS_URL and JOSHUA_TOKEN_DEVELOPER must be set together")
 
+    tasks_url = env.get("TASKS_URL", "").strip() or None
+    core_url = env.get("CORE_URL", "").strip() or None
+    for name, value in (("TASKS_URL", tasks_url), ("CORE_URL", core_url)):
+        if value and not value.startswith(("http://", "https://")):
+            raise ConfigError(f"{name} must start with http:// or https://")
+
     runtime = env.get("WORKER_RUNTIME", "").strip() or "stub"
     if runtime not in RUNTIMES:
         raise ConfigError(f"WORKER_RUNTIME must be one of {', '.join(RUNTIMES)}")
@@ -504,6 +526,8 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         tokens=tokens,
         channels_url=channels_url,
         channels_token=channels_token,
+        tasks_url=tasks_url,
+        core_url=core_url,
         worker_image=worker_image,
         worker_runtime=runtime,
         claude_token=env.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip(),

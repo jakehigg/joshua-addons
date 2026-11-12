@@ -1,11 +1,11 @@
 """The task store: SQLite at ``<DEVELOPER_DATA_DIR>/developer.db``.
 
-Two tables, created on first open. A column added after the first release
+Three tables, created on first open. A column added after the first release
 is added to an old database when it opens. ``tasks`` holds one row for each
 ``develop`` or ``rework`` call; ``history`` holds the reports of the
 earlier workers of a resumed task. ``settings`` holds the values a person changed
-from chat. One connection serves the process, behind a lock, so a call from
-any thread is safe.
+from chat. ``runs`` holds the auto-runs (see ``runs``). One connection serves
+the process, behind a lock, so a call from any thread is safe.
 """
 
 from __future__ import annotations
@@ -23,6 +23,9 @@ TASK_TYPES = ("develop", "rework")
 STATUSES = ("dispatched", "running", "success", "failed", "blocked", "timed_out")
 ACTIVE_STATUSES = ("dispatched", "running")
 TERMINAL_STATUSES = ("success", "failed", "blocked", "timed_out")
+RUN_STATUSES = ("active", "paused", "stopped", "done")
+# A run in one of these still has work to do, or waits for a person.
+OPEN_RUN_STATUSES = ("active", "paused")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -64,6 +67,27 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_person_created ON tasks(person, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+
+CREATE TABLE IF NOT EXISTS runs (
+    run_id TEXT PRIMARY KEY,
+    person TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    project TEXT NOT NULL,
+    project_name TEXT,
+    branch TEXT NOT NULL,
+    pr_url TEXT,
+    pr_number INTEGER,
+    workspace TEXT,
+    persona TEXT,
+    notify TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    current_task_number INTEGER,
+    current_task_id TEXT,
+    retried INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runs_person_status ON runs(person, status);
 
 CREATE TABLE IF NOT EXISTS settings (
     person TEXT PRIMARY KEY,
@@ -150,7 +174,24 @@ ADDED_COLUMNS = {
     "paused_s": "INTEGER NOT NULL DEFAULT 0",
     "last_wait_s": "INTEGER",
     "workspace": "TEXT",
+    "run_id": "TEXT",
+    "tasks_task_id": "TEXT",
+    "tasks_task_number": "INTEGER",
 }
+
+# The fields update_run may change.
+ALLOWED_RUN_FIELDS = frozenset(
+    {
+        "project_name",
+        "branch",
+        "pr_url",
+        "pr_number",
+        "status",
+        "current_task_number",
+        "current_task_id",
+        "retried",
+    }
+)
 
 # The columns that hold JSON.
 JSON_COLUMNS = ("report", "findings", "history", "refs")
@@ -210,6 +251,14 @@ def _row(row: sqlite3.Row | None, columns: Iterable[str] | None = None) -> dict[
     return data
 
 
+def _run_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    data = dict(row)
+    data["retried"] = bool(data["retried"])
+    return data
+
+
 class TaskStore:
     """The SQLite store for tasks and person settings."""
 
@@ -256,6 +305,9 @@ class TaskStore:
         worker_token: str | None = None,
         refs: list[str] | None = None,
         workspace: str | None = None,
+        run_id: str | None = None,
+        tasks_task_id: str | None = None,
+        tasks_task_number: int | None = None,
     ) -> None:
         if task_type not in TASK_TYPES:
             raise ValueError(f"unknown task type: {task_type!r}")
@@ -264,8 +316,8 @@ class TaskStore:
             INSERT INTO tasks (
                 task_id, person, task_type, repo, scope, persona, status, brief,
                 instructions, branch_name, base_branch, pr_number, pr_url, notify, created_at,
-                worker_token, refs, workspace
-            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                worker_token, refs, workspace, run_id, tasks_task_id, tasks_task_number
+            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -285,6 +337,9 @@ class TaskStore:
                 worker_token,
                 json.dumps(refs) if refs else None,
                 workspace,
+                run_id,
+                tasks_task_id,
+                tasks_task_number,
             ),
         )
 
@@ -375,6 +430,96 @@ class TaskStore:
                 (waited, waited, task_id),
             )
         return waited
+
+    # --- runs --------------------------------------------------------------
+
+    def create_run(
+        self,
+        *,
+        run_id: str,
+        person: str,
+        repo: str,
+        project: str,
+        branch: str,
+        project_name: str | None = None,
+        workspace: str | None = None,
+        persona: str | None = None,
+        notify: str | None = None,
+    ) -> None:
+        stamp = now_iso()
+        self._execute(
+            """
+            INSERT INTO runs (
+                run_id, person, repo, project, project_name, branch, workspace, persona,
+                notify, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            """,
+            (
+                run_id,
+                person,
+                repo,
+                project,
+                project_name,
+                branch,
+                workspace,
+                persona,
+                notify,
+                stamp,
+                stamp,
+            ),
+        )
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        cursor = self._execute("SELECT * FROM runs WHERE run_id = ?", (run_id,))
+        return _run_row(cursor.fetchone())
+
+    def update_run(self, run_id: str, **fields: Any) -> None:
+        unknown = set(fields) - ALLOWED_RUN_FIELDS
+        if unknown:
+            raise ValueError(f"unknown run fields: {sorted(unknown)}")
+        if fields.get("status") not in (None, *RUN_STATUSES):
+            raise ValueError(f"unknown run status: {fields['status']!r}")
+        if "retried" in fields:
+            fields["retried"] = int(bool(fields["retried"]))
+        fields["updated_at"] = now_iso()
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        self._execute(f"UPDATE runs SET {assignments} WHERE run_id = ?", (*fields.values(), run_id))
+
+    def list_runs(
+        self, person: str | None, statuses: Iterable[str] | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """The newest runs first. ``person`` None lists every person's runs."""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if person is not None:
+            clauses.append("person = ?")
+            params.append(person)
+        if statuses is not None:
+            names = list(statuses)
+            clauses.append(f"status IN ({', '.join('?' for _ in names)})")
+            params.extend(names)
+        where = f"WHERE {' AND '.join(clauses)} " if clauses else ""
+        cursor = self._execute(
+            f"SELECT * FROM runs {where}ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (*params, limit),
+        )
+        return [row for row in (_run_row(r) for r in cursor.fetchall()) if row is not None]
+
+    def find_open_run(self, repo: str, project: str) -> dict[str, Any] | None:
+        """The ``active`` or ``paused`` run of ``project`` on ``repo``, or None."""
+        cursor = self._execute(
+            "SELECT * FROM runs WHERE repo = ? AND project = ? "
+            "AND status IN ('active', 'paused') ORDER BY created_at DESC LIMIT 1",
+            (repo, project),
+        )
+        return _run_row(cursor.fetchone())
+
+    def run_has_active_task(self, run_id: str) -> bool:
+        cursor = self._execute(
+            "SELECT 1 FROM tasks WHERE run_id = ? AND status IN ('dispatched', 'running') LIMIT 1",
+            (run_id,),
+        )
+        return cursor.fetchone() is not None
 
     # --- worker tokens and the session log ---------------------------------
 

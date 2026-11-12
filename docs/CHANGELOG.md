@@ -8,6 +8,24 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: development auto-run. The new tool `run_project(repo, project,
+  branch?, persona?, notify?)` works through the open tasks of a tasks
+  project, in roadmap order, on one branch and one pull request. When a task
+  ends, the manager marks it done in tasks, checks the limits ceilings, and
+  starts the next task as `rework` of the pull request. A finished task
+  sends a verbatim line to the chat, which costs no model turn. Joshua gets a
+  model turn only at the end of a phase, at a ceiling, on a question, on a
+  failure that one retry did not fix, and at the end of the project. The new
+  tools `run_status`, `pause_run`, `resume_run`, and `stop_run` steer a run.
+  `run_project` replaces the project loop of the `40-projects.md` prompt. A
+  new `runs` table and new `run_id`, `tasks_task_id`, and `tasks_task_number`
+  columns on `tasks` are added when the manager starts. New settings:
+  `TASKS_URL` (the tasks addon; without it `run_project` is refused),
+  `CORE_URL` (the limits; without it they are unknown and a run goes on), and
+  the `runs` block of `developer.yaml` (`ceiling_five_hour_pct`, default 80,
+  and `ceiling_seven_day_pct`, default 90). A task that no run started
+  behaves as before.
+
 - `developer`: a task that starts in a Joshua workspace keeps the workspace.
   The manager reads `_meta["joshua/workspace"]` on `develop` and `rework`,
   stores it on the task, and sends it as `workspace` in each report and
