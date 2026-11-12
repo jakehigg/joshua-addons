@@ -200,6 +200,103 @@ async def rework(
     return _linked(result, workspace)
 
 
+def _run_result(result: dict[str, Any], ctx: Context) -> dict | CallToolResult:
+    """``result`` of a run tool, with the pull request link on a workspace call."""
+    if not origin_of(ctx) or not result.get("pr_url"):
+        return result
+    return with_links(result, task_links({**result, "task_id": result.get("run_id")}))
+
+
+def _own_run(ctx: Context, run_id: str | None, project: str | None) -> dict[str, Any]:
+    """The run for a ``run_id`` or a ``project`` of the caller, or a rejection dict."""
+    return _get_manager().runs.find(_person(ctx), run_id, project)
+
+
+@mcp.tool()
+async def run_project(
+    repo: str,
+    project: str,
+    ctx: Context,
+    branch: str | None = None,
+    persona: str | None = None,
+    notify: str | None = None,
+) -> dict:
+    """Work through the open tasks of a tasks project on one branch and one pull request.
+
+    project is a project id, slug, or name from the tasks addon. The run starts
+    the first open task in roadmap order, as develop on branch (default
+    feat-<project slug>). Each finished task is marked done in tasks, and the
+    next one starts as rework of the same pull request, with no model turn. The
+    person gets a verbatim line for each finished task, and a message at the end
+    of a phase (a task group), at the limits ceiling, on a question, on a
+    failure that one retry did not fix, and at the end of the project. A run
+    never merges. repo, persona, and notify are as for develop. A call is
+    rejected when the tasks addon is not set (TASKS_URL), when the project is
+    unknown or has no ready task, or when the project already has an active or
+    paused run on the repository. Use run_status, pause_run, resume_run, and
+    stop_run to follow and steer it.
+    """
+    person = _person(ctx)
+    result = await _get_manager().runs.start(
+        person,
+        repo,
+        project,
+        branch=branch,
+        persona=persona,
+        notify_to=notify,
+        workspace=origin_of(ctx),
+    )
+    return _run_result(result, ctx)
+
+
+@mcp.tool()
+async def run_status(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """The state of a run: its status, branch, pull request, and current task.
+
+    Give run_id or project. With neither, the result lists your recent runs.
+    status is active, paused, stopped, or done.
+    """
+    caller = _caller(ctx)
+    manager = _get_manager()
+    if not run_id and not project:
+        return {"runs": manager.store.list_runs(caller.person, limit=20)}
+    run = manager.runs.find(caller.person, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(manager.runs.describe(run), ctx)
+
+
+@mcp.tool()
+async def pause_run(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """Pause a run. The task that runs now goes on to its end; no next task starts."""
+    run = _own_run(ctx, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(await _get_manager().runs.pause(run), ctx)
+
+
+@mcp.tool()
+async def resume_run(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """Resume a paused run: it starts the next open task, and goes on from there.
+
+    A run pauses at the end of a phase, at the limits ceiling, after a second
+    failure, and when you call pause_run. Resume skips the ceiling check once.
+    """
+    run = _own_run(ctx, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(await _get_manager().runs.resume(run), ctx)
+
+
+@mcp.tool()
+async def stop_run(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """Stop a run for good. The task that runs now goes on to its end; no next task starts."""
+    run = _own_run(ctx, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(await _get_manager().runs.stop(run), ctx)
+
+
 @mcp.tool()
 async def answer(task_id: str, text: str, ctx: Context) -> dict:
     """Give a task the answer to its question.

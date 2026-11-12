@@ -199,7 +199,51 @@ def test_an_old_database_gets_the_new_columns(tmp_path: Path) -> None:
     assert full["paused_s"] == 0
     assert full["asked_at"] is None and full["last_wait_s"] is None
     assert full["workspace"] is None
+    assert full["run_id"] is None and full["tasks_task_id"] is None
+    assert full["tasks_task_number"] is None
+    # The runs table is made when an old database opens.
+    store.create_run(run_id="r", person="alex", repo="r", project="p", branch="b")
+    assert store.get_run("r")["status"] == "active"  # type: ignore[index]
     store.close()
+
+
+def test_runs_are_stored_listed_and_updated(store: TaskStore) -> None:
+    store.create_run(
+        run_id="r1",
+        person="alex",
+        repo="a",
+        project="p1",
+        branch="b",
+        workspace="w",
+        persona="opus",
+        notify="chat",
+        project_name="Name",
+    )
+    store.create_run(run_id="r2", person="mia", repo="a", project="p1", branch="b")
+    run = store.get_run("r1")
+    assert run is not None
+    assert (run["status"], run["retried"], run["workspace"]) == ("active", False, "w")
+    assert store.get_run("nope") is None
+    add(store, "t1", run_id="r1", tasks_task_id="x", tasks_task_number=3)
+    assert store.run_has_active_task("r1") is True
+    assert store.run_has_active_task("r2") is False
+    store.update_task("t1", status="success")
+    assert store.run_has_active_task("r1") is False
+    full = store.get_task_full("t1")
+    assert full is not None and (full["run_id"], full["tasks_task_number"]) == ("r1", 3)
+    store.update_run("r1", status="paused", retried=True, pr_number=4, current_task_id="t1")
+    assert store.get_run("r1")["retried"] is True  # type: ignore[index]
+    assert store.find_open_run("a", "p1")["run_id"] == "r2"  # type: ignore[index]
+    store.update_run("r2", status="done")
+    assert store.find_open_run("a", "p1")["run_id"] == "r1"  # type: ignore[index]
+    assert store.find_open_run("a", "other") is None
+    assert [r["run_id"] for r in store.list_runs(None)] == ["r2", "r1"]
+    assert [r["run_id"] for r in store.list_runs("alex")] == ["r1"]
+    assert [r["run_id"] for r in store.list_runs(None, ["done"])] == ["r2"]
+    with pytest.raises(ValueError, match="unknown run fields"):
+        store.update_run("r1", person="x")
+    with pytest.raises(ValueError, match="unknown run status"):
+        store.update_run("r1", status="weird")
 
 
 def test_end_wait_adds_the_wait_to_paused_s(store: TaskStore) -> None:

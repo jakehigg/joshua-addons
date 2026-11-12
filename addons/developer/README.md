@@ -43,6 +43,11 @@ pushes one branch, sends one report, and stops.
 | `get_settings()` | The git name, the git email, the default persona, and the chat for reports. |
 | `set_settings(git_name?, git_email?, default_persona?, notify?)` | Changes these four settings. An empty string removes the change. |
 | `list_personas()` | The personas, and the default persona of the person. |
+| `run_project(repo, project, branch?, persona?, notify?)` | Starts a run: it works through the open tasks of a tasks project on one branch and one pull request (see [Development auto-run](#development-auto-run)). |
+| `run_status(run_id?, project?)` | The status, the branch, the pull request, and the current task of a run. With no argument, it lists the recent runs of the person. |
+| `pause_run(run_id?, project?)` | Pauses a run. The task that runs now goes on; no next task starts. |
+| `resume_run(run_id?, project?)` | Resumes a paused run, and starts its next open task. |
+| `stop_run(run_id?, project?)` | Stops a run for good. |
 
 A worker that needs a fact calls `ask`. The manager sends the question to the
 person's chat as an event, and Joshua answers with `answer`, from what it
@@ -61,7 +66,10 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
 `repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
 `platform_error`, `unknown_persona`, `concurrency_limit`, `locked`,
-`not_waiting`, `not_resumable`, and `branch_is_base`. The rules:
+`not_waiting`, `not_resumable`, and `branch_is_base`. The run tools add
+`tasks_not_configured`, `tasks_unreachable`, `project_not_found`, `no_tasks`,
+`run_exists`, `run_not_found`, `run_ambiguous`, `run_not_pausable`, and
+`run_not_resumable`. The rules:
 
 - One task at a time works on one branch of a repository. A `rework` works
   on the source branch of its pull request, so a `develop` and a `rework` on
@@ -86,6 +94,65 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
   `history`.
 - A manager restart does not end a task whose worker still runs. See
   [What a restart does to a running task](#what-a-restart-does-to-a-running-task).
+
+## Development auto-run
+
+`run_project` replaces the project loop that a manager prompt (such as
+`40-projects.md`) runs by hand. A **run** works through the open tasks of one
+project of the tasks addon, in roadmap order. It owns one branch (default
+`feat-<project slug>`) and one pull request in one repository. It never merges.
+
+How a run goes:
+
+1. `run_project` starts the first task as `develop`. The brief is the task
+   title, the task notes, and the line "Commit and push your work." The first
+   line is the title of the pull request. A project that has an `active` or
+   `paused` run in the same repository gets `run_exists`.
+2. The task ends. The manager records the report. When the task is a task of
+   a run, the manager then takes one step. A step never raises into the
+   report.
+3. On `success`, the step marks the tasks task done, and adds "done in
+   `<pull request>`" to its notes. It then reads the limits and the next task:
+   - No open task is left: the run is `done`, and Joshua gets a model turn:
+     "Project `<name>` finished".
+   - Every open task waits for a blocker: the run pauses, and Joshua gets a
+     model turn.
+   - The next task is in another task group (a phase): the run pauses, and
+     Joshua gets a model turn: "Phase `<name>` done". Say `resume` to go on.
+   - A limits window is at or over its ceiling: the run pauses, and Joshua
+     gets a model turn.
+   - Else the next task starts as `rework` of the pull request (or `develop`
+     again, when no pull request exists yet). The step adds "dispatched as
+     developer task `<id>` on `<branch>`" to its notes, and sends a verbatim
+     line to the chat: `✓ #3 Title — next: #4 Title`. A verbatim line costs
+     no model turn.
+4. On a failure (`failed`, `timed_out`, or `blocked` with no question), the
+   step starts the same task one more time and sends a verbatim line. On the
+   second failure the run pauses, and the normal report event gives Joshua a
+   model turn.
+5. On a question, the normal report event goes out, and the run stays
+   `active`. The `answer` tool goes on as for any task, and the step runs
+   when the task ends.
+
+The normal report event of a task goes out only for a task with no run, and
+for a failure that the retry did not fix, and for a question. A run does not
+cost a model turn for each task. Each verbatim line and each model turn
+carries the `workspace` of the run, when the run has one.
+
+`pause_run` and `stop_run` let the task that runs now go on to its end. The
+step then marks it done, and starts no next task. `resume_run` makes a paused
+run `active` and starts its next task. It does not check the ceilings. It also
+restarts an `active` run whose task a manager restart ended.
+
+Set `TASKS_URL` for the tasks addon and `CORE_URL` for joshua-ai core (see
+"Environment"). Without `TASKS_URL`, `run_project` returns `tasks_not_configured`.
+Without `CORE_URL`, the limits are unknown, and a run goes on. A window that
+core cannot give is unknown too. The ceilings are the `runs` block of
+`developer.yaml`: `ceiling_five_hour_pct` (default 80) and
+`ceiling_seven_day_pct` (default 90).
+
+A call with a workspace stamp gets a `resource_link` to the pull request in
+the result of each run tool, once the run has a pull request.
 
 ## Workspaces
 
@@ -278,6 +345,9 @@ max_workers: 2                     # tasks that run at the same time
 ask_wait_s: 7200                   # the total wait for answers in one task. See "The task clock".
 worker: { memory: 2g, cpus: 2.0, disk: 4Gi, manager_grace: 600 }  # the limits of one worker
 work: { keep_failed: 7 }           # days a kept work directory stays. See "The work directories".
+runs:                              # the limits ceilings of a run, in percent used. See "Development auto-run".
+  ceiling_five_hour_pct: 80
+  ceiling_seven_day_pct: 90
 packages:                          # the package proxy. See "The package proxy".
   enabled: false                   # the default: no proxy, and no proxy variable in a worker
   hosts:                           # host names, never a pattern or an address
@@ -343,11 +413,13 @@ applies before the value in the file.
 | Variable | Default | What it does |
 |---|---|---|
 | `DEVELOPER_TOKENS` | empty | One bearer for each person, `alex=<token>,mia=<token>`. Each person must be in `people`. |
-| `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, and `list_personas` only. |
+| `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, `list_personas`, and `run_status` only. |
 | `DEVELOPER_CONFIG` | `/etc/joshua-addon/developer.yaml` | The path of `developer.yaml`. No file means the defaults. |
 | `DEVELOPER_DATA_DIR` | `/data` | The folder of `developer.db`, and of `bundles/`: the saved commits of failed pushes. |
 | `CHANNELS_URL` | empty | The address of joshua-ai channels. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
 | `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the manager sends to channels. |
+| `TASKS_URL` | empty | The address of the tasks addon, such as `http://tasks:8000`. The manager adds `/api`, which needs no bearer. Without it, `run_project` is refused. |
+| `CORE_URL` | empty | The address of joshua-ai core, such as `http://core:8000` (Compose) or `http://joshua-core:8000` (Kubernetes). A run reads `GET /v1/limits` from it, which needs no bearer. Without it, the limits are unknown. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token of the forwarder. Without it, the forwarder answers 503. |
 | `WORKER_RUNTIME` | `stub` | `docker`, `kubernetes`, or `stub`. `stub` starts no worker and records a fake `success` report, to test the tools. |
 | `WORKER_IMAGE` | empty | The worker image. `docker` and `kubernetes` need it. Use the worker of the same release. |

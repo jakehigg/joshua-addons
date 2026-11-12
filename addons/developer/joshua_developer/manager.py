@@ -5,7 +5,10 @@ The MCP tools call this class. A call that breaks a rule gets a dict with
 ``invalid_arguments``, ``repo_not_allowed``, ``repo_not_configured``,
 ``token_missing``, ``pr_not_found``, ``pr_not_open``, ``platform_error``,
 ``unknown_persona``, ``concurrency_limit``, ``locked``, ``not_waiting``,
-``not_resumable``, and ``branch_is_base``.
+``not_resumable``, and ``branch_is_base``. The run tools (see ``runs``) add
+``tasks_not_configured``, ``tasks_unreachable``, ``project_not_found``,
+``no_tasks``, ``run_exists``, ``run_not_found``, ``run_ambiguous``,
+``run_not_pausable``, and ``run_not_resumable``.
 
 A task never works on its base branch, ``main``, or ``master``
 (``branch_is_base``). This is a guard, not a boundary: the git token can
@@ -64,6 +67,7 @@ from joshua_developer.repos import (
     parse_pr,
     repo_allowed,
 )
+from joshua_developer.runs import Runs
 from joshua_developer.runtime import Report, Runtime, TaskClock
 from joshua_developer.scan import Finding, scan_diff
 from joshua_developer.store import (
@@ -210,6 +214,7 @@ class Manager:
         # Held around the capacity check, the lock, and the row write of a
         # dispatch or a resume, so two calls cannot both take the last slot.
         self._admission = threading.Lock()
+        self.runs = Runs(self)
         self.workspaces = Workspaces(settings.work_dir, store, settings.config.work.keep_failed)
 
     @property
@@ -406,7 +411,10 @@ class Manager:
         notify_to: str | None = None,
         refs: list[str] | None = None,
         workspace: str | None = None,
+        **run_link: Any,
     ) -> dict[str, Any]:
+        """Start a task. ``run_link`` holds ``run_id``, ``tasks_task_id``, and
+        ``tasks_task_number`` of a task that a run starts."""
         if not brief or not brief.strip():
             return rejected("invalid_arguments", "brief is required")
         if len(brief) > MAX_TEXT:
@@ -432,6 +440,7 @@ class Manager:
             task_type="develop",
             refs=checked or None,
             workspace=workspace,
+            **run_link,
             repo=admitted[0],
             scope=f"branch:{branch_name}",
             persona=persona,
@@ -452,6 +461,7 @@ class Manager:
         branch: str | None = None,
         refs: list[str] | None = None,
         workspace: str | None = None,
+        **run_link: Any,
     ) -> dict[str, Any]:
         """Start a task on the source branch of a pull request.
 
@@ -500,6 +510,7 @@ class Manager:
                 branch_name=branch_name,
                 refs=checked or None,
                 workspace=workspace,
+                **run_link,
             )
         if number is None:
             return rejected("invalid_arguments", "pr is required")
@@ -526,6 +537,7 @@ class Manager:
             base_branch=found.base_branch,
             refs=checked or None,
             workspace=workspace,
+            **run_link,
         )
 
     def _admit_refs(
@@ -657,6 +669,12 @@ class Manager:
                 worker_token=secrets.token_urlsafe(32),
                 **fields,
             )
+            if fields.get("run_id"):
+                self.store.update_run(
+                    fields["run_id"],
+                    current_task_number=fields.get("tasks_task_number"),
+                    current_task_id=task_id,
+                )
         logger.info(
             {
                 "message": "task dispatched",
@@ -864,6 +882,10 @@ class Manager:
         logger.info({"message": "task ended", "task_id": task_id, "status": fields["status"]})
         full = self.store.get_task_full(task_id)
         assert full is not None
+        # A task of a run reports through the run: the step sends its own
+        # event, and the report event goes only when a person must see it.
+        if full.get("run_id") and not await self.runs.step(full):
+            return self.store.get_task(task_id)
         await notify.send_report(self.settings, full, self._default_notify(full))
         return self.store.get_task(task_id)
 

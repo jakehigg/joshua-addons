@@ -46,6 +46,22 @@ def test_defaults_without_a_file(tmp_path: Path) -> None:
     assert config.ask_wait_of("opus") == 7200
 
 
+def test_the_run_settings(tmp_path: Path) -> None:
+    missing = {"DEVELOPER_CONFIG": str(tmp_path / "missing.yaml")}
+    unset = settings_from_env(missing)
+    assert unset.tasks_url is None and unset.core_url is None
+    assert unset.config.runs.ceiling_five_hour_pct == 80
+    assert unset.config.runs.ceiling_seven_day_pct == 90
+    path = write_config(tmp_path, {**CONFIG, "runs": {"ceiling_five_hour_pct": 70}})
+    settings = settings_from_env(
+        env_for(path, TASKS_URL="http://tasks:8000", CORE_URL="http://joshua-core:8000")
+    )
+    assert settings.tasks_url == "http://tasks:8000"
+    assert settings.core_url == "http://joshua-core:8000"
+    assert settings.config.runs.ceiling_five_hour_pct == 70
+    assert settings.config.runs.ceiling_seven_day_pct == 90
+
+
 def test_the_plan_example_loads(tmp_path: Path) -> None:
     path = write_config(tmp_path, CONFIG)
     settings = settings_from_env(
@@ -272,6 +288,8 @@ def test_a_person_in_developer_tokens_must_be_in_people(tmp_path: Path) -> None:
             "CHANNELS_URL",
         ),
         ({"WORKER_RUNTIME": "podman"}, "WORKER_RUNTIME"),
+        ({"TASKS_URL": "tasks:8000"}, "TASKS_URL"),
+        ({"CORE_URL": "joshua-core:8000"}, "CORE_URL"),
     ],
 )
 def test_a_bad_environment_names_the_variable(tmp_path: Path, env: dict, key: str) -> None:

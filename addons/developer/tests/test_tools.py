@@ -23,8 +23,13 @@ async def test_the_tool_list_is_final(app) -> None:
         "get_settings",
         "list_personas",
         "list_tasks",
+        "pause_run",
+        "resume_run",
         "rework",
+        "run_project",
+        "run_status",
         "set_settings",
+        "stop_run",
         "task_output",
         "task_status",
     ]
