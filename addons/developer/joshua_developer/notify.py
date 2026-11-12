@@ -89,20 +89,24 @@ async def send_event(
     text: str,
     task_id: str | None = None,
     workspace: str | None = None,
+    verbatim: bool = False,
 ) -> bool:
     """Post one event to channels. Returns True when channels accepted it.
 
     ``workspace`` is the id of the workspace that started the task. Channels runs
     the event in that workspace. Without it, the event is a normal chat turn.
+    ``verbatim`` makes channels deliver the text as it is, with no model turn.
     """
     if not settings.will_notify or not settings.channels_url:
         logger.info({"message": "event not sent: channels is not configured", "task_id": task_id})
         return False
     url = settings.channels_url.rstrip("/") + "/v1/events"
     headers = {"Authorization": f"Bearer {settings.channels_token}"}
-    body: dict[str, str] = {"destination": destination, "text": text}
+    body: dict[str, Any] = {"destination": destination, "text": text}
     if workspace:
         body["workspace"] = workspace
+    if verbatim:
+        body["verbatim"] = True
     where = {"task_id": task_id, "destination_ref": destination_ref(destination)}
     logger.debug({"message": "event destination", "destination": destination, **where})
     async with _make_client() as client:

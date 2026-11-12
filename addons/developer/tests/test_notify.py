@@ -76,6 +76,14 @@ async def test_a_202_is_sent_with_the_bearer_and_the_body(settings, channels) ->
     assert json.loads(request.content) == {"destination": "telegram:dm:alex", "text": "hello"}
 
 
+async def test_a_verbatim_event_says_so(settings, channels) -> None:
+    assert await send_event(settings, "d", "line", "t1", verbatim=True) is True
+    assert await send_event(settings, "d", "line", "t1", verbatim=False) is True
+    first, second = (json.loads(r.content) for r in channels.requests)
+    assert first == {"destination": "d", "text": "line", "verbatim": True}
+    assert "verbatim" not in second
+
+
 async def test_a_200_ignored_is_not_sent_and_not_tried_again(settings, channels) -> None:
     channels.replies = [httpx.Response(200, json={"ignored": True})]
     assert await send_event(settings, "d", "t") is False
