@@ -405,6 +405,7 @@ class Manager:
         persona: str | None = None,
         notify_to: str | None = None,
         refs: list[str] | None = None,
+        workspace: str | None = None,
     ) -> dict[str, Any]:
         if not brief or not brief.strip():
             return rejected("invalid_arguments", "brief is required")
@@ -430,6 +431,7 @@ class Manager:
             person=person,
             task_type="develop",
             refs=checked or None,
+            workspace=workspace,
             repo=admitted[0],
             scope=f"branch:{branch_name}",
             persona=persona,
@@ -449,6 +451,7 @@ class Manager:
         notify_to: str | None = None,
         branch: str | None = None,
         refs: list[str] | None = None,
+        workspace: str | None = None,
     ) -> dict[str, Any]:
         """Start a task on the source branch of a pull request.
 
@@ -496,6 +499,7 @@ class Manager:
                 instructions=feedback,
                 branch_name=branch_name,
                 refs=checked or None,
+                workspace=workspace,
             )
         if number is None:
             return rejected("invalid_arguments", "pr is required")
@@ -521,6 +525,7 @@ class Manager:
             branch_name=found.source_branch,
             base_branch=found.base_branch,
             refs=checked or None,
+            workspace=workspace,
         )
 
     def _admit_refs(

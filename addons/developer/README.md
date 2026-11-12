@@ -87,6 +87,23 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - A manager restart does not end a task whose worker still runs. See
   [What a restart does to a running task](#what-a-restart-does-to-a-running-task).
 
+## Workspaces
+
+A call from a Joshua workspace carries the workspace id in
+`params._meta["joshua/workspace"]`. The gateway sets it. A call from any other
+chat has no such key, and then nothing here applies.
+
+- `develop` and `rework` store the id on the task, in the `workspace` column.
+  An older database gets the column when the manager starts.
+- Each report event and each question event of that task has a `workspace`
+  field with the same id in its body to `/v1/events`. Channels then runs the
+  event in the workspace. An event of a task without an id has no `workspace`
+  field.
+- `develop`, `rework`, and `task_status` add an MCP `resource_link` block to
+  their result when the call has the id and the task has a pull request. The
+  link is the URL of the pull request. A task has no report page, so no link
+  names one. A call with no id gets the same result as before, with no link.
+
 ## Reference repositories
 
 A task can read other repositories beside its own: for example, to move code

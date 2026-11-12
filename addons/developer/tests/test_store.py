@@ -198,6 +198,7 @@ def test_an_old_database_gets_the_new_columns(tmp_path: Path) -> None:
     assert full["session_log"] == "line\n"
     assert full["paused_s"] == 0
     assert full["asked_at"] is None and full["last_wait_s"] is None
+    assert full["workspace"] is None
     store.close()
 
 

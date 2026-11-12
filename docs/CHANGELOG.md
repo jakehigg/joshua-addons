@@ -8,6 +8,13 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: a task that starts in a Joshua workspace keeps the workspace.
+  The manager reads `_meta["joshua/workspace"]` on `develop` and `rework`,
+  stores it on the task, and sends it as `workspace` in each report and
+  question event. With the stamp, `develop`, `rework`, and `task_status` also
+  return a `resource_link` to the pull request. A call with no stamp behaves
+  as before.
+
 - `developer`: a package proxy in the manager, so a worker can install
   dependencies and run the tests of the project. The new `packages` block in
   `developer.yaml` holds the host names a worker may reach, such as

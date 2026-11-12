@@ -149,6 +149,7 @@ ADDED_COLUMNS = {
     "asked_at": "TEXT",
     "paused_s": "INTEGER NOT NULL DEFAULT 0",
     "last_wait_s": "INTEGER",
+    "workspace": "TEXT",
 }
 
 # The columns that hold JSON.
@@ -254,6 +255,7 @@ class TaskStore:
         notify: str | None = None,
         worker_token: str | None = None,
         refs: list[str] | None = None,
+        workspace: str | None = None,
     ) -> None:
         if task_type not in TASK_TYPES:
             raise ValueError(f"unknown task type: {task_type!r}")
@@ -262,8 +264,8 @@ class TaskStore:
             INSERT INTO tasks (
                 task_id, person, task_type, repo, scope, persona, status, brief,
                 instructions, branch_name, base_branch, pr_number, pr_url, notify, created_at,
-                worker_token, refs
-            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                worker_token, refs, workspace
+            ) VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -282,6 +284,7 @@ class TaskStore:
                 now_iso(),
                 worker_token,
                 json.dumps(refs) if refs else None,
+                workspace,
             ),
         )
 

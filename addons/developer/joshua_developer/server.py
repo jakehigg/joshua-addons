@@ -25,6 +25,7 @@ from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp_types import CallToolResult
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -35,6 +36,7 @@ from joshua_developer.git_proxy import GitProxy, task_target
 from joshua_developer.locks import LockManager
 from joshua_developer.log import get_logger
 from joshua_developer.manager import Manager, rejected
+from joshua_developer.origin import origin_of, task_links, with_links
 from joshua_developer.package_proxy import PackageProxy
 from joshua_developer.runtime import Runtime, StubRuntime
 from joshua_developer.store import TaskStore
@@ -109,6 +111,14 @@ def _own_task(caller: Caller, task_id: str) -> dict[str, Any]:
     return task
 
 
+def _linked(result: dict[str, Any], workspace: str | None) -> dict | CallToolResult:
+    """``result`` of a start tool, with the pull request link on a workspace call."""
+    task_id = result.get("task_id")
+    if not workspace or not task_id:
+        return result
+    return with_links(result, task_links(_get_manager().store.get_task(str(task_id))))
+
+
 # --- tools ---------------------------------------------------------------
 
 
@@ -141,7 +151,8 @@ async def develop(
     another task works on the same branch.
     """
     person = _person(ctx)
-    return await _get_manager().develop(
+    workspace = origin_of(ctx)
+    result = await _get_manager().develop(
         person,
         repo,
         brief,
@@ -150,7 +161,9 @@ async def develop(
         persona=persona,
         notify_to=notify,
         refs=refs,
+        workspace=workspace,
     )
+    return _linked(result, workspace)
 
 
 @mcp.tool()
@@ -172,9 +185,19 @@ async def rework(
     the same as for develop. One task at a time works on one pull request.
     """
     person = _person(ctx)
-    return await _get_manager().rework(
-        person, repo, pr, feedback, persona=persona, notify_to=notify, branch=branch, refs=refs
+    workspace = origin_of(ctx)
+    result = await _get_manager().rework(
+        person,
+        repo,
+        pr,
+        feedback,
+        persona=persona,
+        notify_to=notify,
+        branch=branch,
+        refs=refs,
+        workspace=workspace,
     )
+    return _linked(result, workspace)
 
 
 @mcp.tool()
@@ -203,7 +226,8 @@ async def task_status(task_id: str, ctx: Context) -> dict:
     summary, the error, the open question, and the scan result: clean,
     partial, hit, or unavailable.
     """
-    return _own_task(_caller(ctx), task_id)
+    task = _own_task(_caller(ctx), task_id)
+    return with_links(task, task_links(task)) if origin_of(ctx) else task
 
 
 @mcp.tool()
