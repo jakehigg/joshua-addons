@@ -231,6 +231,37 @@ def test_the_disk_limit_comes_from_worker_disk(tmp_path) -> None:
     assert [v["emptyDir"]["sizeLimit"] for v in pod["volumes"]] == ["10Gi", "10Gi"]
 
 
+def test_worker_env_reaches_the_pod(tmp_path) -> None:
+    worker = {"env": {"CARGO_HOME": "/tmp/cargo", "RUSTUP_HOME": "/tmp/rustup"}}
+    settings = settings_for(tmp_path, config={"worker": worker})
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    env = {item["name"]: item["value"] for item in pod["containers"][0]["env"]}
+    assert env["CARGO_HOME"] == "/tmp/cargo"
+    assert env["RUSTUP_HOME"] == "/tmp/rustup"
+    assert env["TASK_ID"] == TASK["task_id"]
+
+
+def test_worker_env_cannot_override_a_reserved_name(tmp_path) -> None:
+    worker = {"env": {"TASK_TOKEN": "stolen", "HOME": "/work/home", "CARGO_HOME": "/tmp/cargo"}}
+    settings = settings_for(
+        tmp_path, config={"worker": worker}, work_dir=tmp_path, worker_work_claim="work"
+    )
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    env = pod["containers"][0]["env"]
+    assert {"name": "TASK_TOKEN", "value": "tok-value"} in env
+    assert {"name": "HOME", "value": "/tmp/home"} in env
+    assert {"name": "CARGO_HOME", "value": "/tmp/cargo"} in env
+    assert [item["name"] for item in env].count("HOME") == 1
+
+
+def test_the_image_pull_policy_defaults_and_takes_the_setting(tmp_path) -> None:
+    pod = job_manifest(settings_for(tmp_path), TASK, "joshua", 60)["spec"]["template"]["spec"]
+    assert pod["containers"][0]["imagePullPolicy"] == "IfNotPresent"
+    settings = settings_for(tmp_path, worker_image_pull_policy="Always")
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    assert pod["containers"][0]["imagePullPolicy"] == "Always"
+
+
 def test_the_pull_secret_goes_on_the_pod_when_it_is_set(tmp_path) -> None:
     settings = settings_for(tmp_path, worker_image_pull_secret="ghcr-pull")
     pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]

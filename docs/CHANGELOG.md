@@ -8,6 +8,21 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: your own worker image, on both runtimes. The new `worker.env`
+  block of `developer.yaml` holds extra environment variables for each
+  worker, such as `CARGO_HOME: /tmp/cargo`, which the Docker runtime and the
+  Kubernetes runtime both give it. The addon's own variables win: a
+  reserved name (`TASK_ID`, `MANAGER_URL`, `GIT_PROXY_URL`, `TASK_TOKEN`,
+  `MANAGER_GRACE_S`, `HOME`, `CLAUDE_CONFIG_DIR`, `HTTP_PROXY`,
+  `HTTPS_PROXY`, `NO_PROXY`, or `JOSHUA_WORKER_FAKE_SESSION`) in the block
+  has no effect. The new `WORKER_IMAGE_PULL_POLICY` sets when a worker pod
+  pulls its image, `IfNotPresent` by default, on Kubernetes only. The chart
+  gets the named values `worker.image`, `worker.imagePullSecret`, and
+  `worker.imagePullPolicy`, so an Application needs no raw `env` override; a
+  named value wins over the same name in `env`, and `env` still works. The
+  new README section "Using your own worker image" has the run-time contract
+  that an image must keep.
+
 - `developer`: development auto-run. The new tool `run_project(repo, project,
   branch?, persona?, notify?)` works through the open tasks of a tasks
   project, in roadmap order, on one branch and one pull request. When a task

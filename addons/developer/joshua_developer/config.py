@@ -47,6 +47,26 @@ PACKAGE_PROXY_PORT = 8003
 # The names a worker reaches without the package proxy, beside the manager
 # host: the loopback and the cluster domain.
 NO_PROXY_NAMES = ("localhost", "127.0.0.1", ".svc", ".cluster.local")
+# The variables the addon owns. A name in it that is also in ``worker.env``
+# has no effect: a user cannot break a worker with its own value.
+RESERVED_WORKER_ENV = frozenset(
+    {
+        "TASK_ID",
+        "MANAGER_URL",
+        "GIT_PROXY_URL",
+        "TASK_TOKEN",
+        "MANAGER_GRACE_S",
+        "HOME",
+        "CLAUDE_CONFIG_DIR",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "JOSHUA_WORKER_FAKE_SESSION",
+    }
+)
+# When a worker pod pulls its image. Kubernetes only.
+IMAGE_PULL_POLICIES = ("Always", "IfNotPresent", "Never")
+DEFAULT_IMAGE_PULL_POLICY = "IfNotPresent"
 
 # Text that starts like one of these is a token, not a name.
 TOKEN_PREFIXES = ("sk-ant-", "glpat-", "ghp_", "github_pat_", "xoxb-")
@@ -136,12 +156,16 @@ class Person(_Model):
 
 
 class WorkerLimits(_Model):
-    """The memory, CPU, and disk limits of one worker container.
+    """The limits and the extra environment of one worker container.
 
     ``disk`` is a Kubernetes quantity. On Kubernetes it is the ``sizeLimit``
     of each emptyDir and the ``ephemeral-storage`` limit of the pod. Docker
     has no disk limit for a container unless its storage driver supports
     ``storage_opt``; ``disk_docker_storage_opt`` turns that on.
+
+    ``env`` holds extra environment variables for a worker, which both
+    runtimes give it. A reserved name (``RESERVED_WORKER_ENV``) has no
+    effect: the addon's own value always wins.
     """
 
     memory: str = Field(default="2g", pattern=r"^[0-9]+[bkmg]?$")
@@ -151,6 +175,17 @@ class WorkerLimits(_Model):
     # The seconds a worker keeps trying to reach a manager that does not
     # answer, such as one that restarts. The worker gets it as MANAGER_GRACE_S.
     manager_grace: int = Field(default=DEFAULT_MANAGER_GRACE_S, gt=0, strict=True)
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("env")
+    @classmethod
+    def _env_names(cls, value: dict[str, str]) -> dict[str, str]:
+        for name in value:
+            if not _ENV_NAME_RE.match(name):
+                raise ValueError(
+                    f"{name!r} is not the name of an environment variable, such as CARGO_HOME"
+                )
+        return value
 
 
 class PackagesConfig(_Model):
@@ -378,6 +413,9 @@ class Settings:
     pod_namespace: str = ""
     # The image pull Secret of a worker pod. Empty means none.
     worker_image_pull_secret: str = ""
+    # When a worker pod pulls its image. The Docker runtime does not use it:
+    # it pulls an image that is missing, and no other time.
+    worker_image_pull_policy: str = DEFAULT_IMAGE_PULL_POLICY
     # The longest time a started worker takes to call GET /worker/brief.
     worker_start_grace_s: int = DEFAULT_WORKER_START_GRACE_S
     # A test aid, not for production: the Docker runtime gives this value to
@@ -479,6 +517,12 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if not _HOSTNAME_RE.match(manager_host):
         raise ConfigError("MANAGER_HOST must be a host name, such as developer")
 
+    pull_policy = env.get("WORKER_IMAGE_PULL_POLICY", "").strip() or DEFAULT_IMAGE_PULL_POLICY
+    if pull_policy not in IMAGE_PULL_POLICIES:
+        raise ConfigError(
+            f"WORKER_IMAGE_PULL_POLICY must be one of {', '.join(IMAGE_PULL_POLICIES)}"
+        )
+
     git_ca_bundle = env.get("GIT_CA_BUNDLE", "").strip()
     if git_ca_bundle and not Path(git_ca_bundle).is_file():
         raise ConfigError("GIT_CA_BUNDLE must be the path of a file")
@@ -538,6 +582,7 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         git_ca_bundle=git_ca_bundle,
         pod_namespace=env.get("POD_NAMESPACE", "").strip(),
         worker_image_pull_secret=env.get("WORKER_IMAGE_PULL_SECRET", "").strip(),
+        worker_image_pull_policy=pull_policy,
         worker_start_grace_s=start_grace,
         worker_fake_session=fake_session,
         work_dir=work_dir,
