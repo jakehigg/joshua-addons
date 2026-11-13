@@ -7,6 +7,8 @@
 #
 # The worker image: WORKER_IMAGE in `.env`, else the worker of
 # JOSHUA_ADDONS_VERSION. `make up-dev ADDON=developer` builds both images.
+# For your own worker image, read "Using your own worker image" in README.md:
+# it has the run-time contract and the `worker.env` block.
 #
 # Config: developer.yaml sits next to this file and is mounted read-only.
 # Copy the example in README.md to start.

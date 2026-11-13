@@ -343,7 +343,12 @@ network: off                       # off or on. See "The network setting".
 default_persona: opus              # the persona when neither the call nor the person names one
 max_workers: 2                     # tasks that run at the same time
 ask_wait_s: 7200                   # the total wait for answers in one task. See "The task clock".
-worker: { memory: 2g, cpus: 2.0, disk: 4Gi, manager_grace: 600 }  # the limits of one worker
+worker:                            # the limits of one worker
+  memory: 2g
+  cpus: 2.0
+  disk: 4Gi
+  manager_grace: 600
+  env: {}                          # extra variables for your own worker image. See "Using your own worker image".
 work: { keep_failed: 7 }           # days a kept work directory stays. See "The work directories".
 runs:                              # the limits ceilings of a run, in percent used. See "Development auto-run".
   ceiling_five_hour_pct: 80
@@ -397,6 +402,11 @@ writable layer of the container only, so with this setting `/work` and
 reach a manager that does not answer, default 600. See "What a restart does
 to a running task".
 
+`worker.env` is a map of extra environment variables for each worker. Both
+runtimes give them to the worker. A name must be upper-case letters, digits,
+and underscores. A reserved name is not valid, and the manager stops at
+start with the name in the message. See "Using your own worker image".
+
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks is told to set `blocked`. `notify` is a
 channels destination: a logical name or a reference such as
@@ -422,13 +432,14 @@ applies before the value in the file.
 | `CORE_URL` | empty | The address of joshua-ai core, such as `http://core:8000` (Compose) or `http://joshua-core:8000` (Kubernetes). A run reads `GET /v1/limits` from it, which needs no bearer. Without it, the limits are unknown. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token of the forwarder. Without it, the forwarder answers 503. |
 | `WORKER_RUNTIME` | `stub` | `docker`, `kubernetes`, or `stub`. `stub` starts no worker and records a fake `success` report, to test the tools. |
-| `WORKER_IMAGE` | empty | The worker image. `docker` and `kubernetes` need it. Use the worker of the same release. |
+| `WORKER_IMAGE` | empty | The worker image. `docker` and `kubernetes` need it. Use the worker of the same release, or your own image (see "Using your own worker image"). On Kubernetes, the chart value `worker.image` sets it. |
 | `MANAGER_HOST` | `developer` | The name a worker uses to reach the manager. |
 | `WORKER_NETWORK` | `developer_workers` | The Docker network of the workers. |
 | `PUBLIC_NETWORK` | `bridge` | The Docker network a worker also joins with `network: on`. |
 | `DOCKER_HOST` | empty | The Docker API address. Empty means the Docker SDK default. |
 | `POD_NAMESPACE` | the namespace of the pod | The namespace of the worker Jobs. |
-| `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. |
+| `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. The chart sets it from `worker.imagePullSecret`. |
+| `WORKER_IMAGE_PULL_POLICY` | `IfNotPresent` | Kubernetes: when a worker pod pulls its image. `Always`, `IfNotPresent`, or `Never`. The chart sets it from `worker.imagePullPolicy`. The Docker runtime does not read it: it pulls an image that is missing, and no other time. |
 | `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. The manager trusts it for the host API, and sends its text to each worker, which trusts it for git. |
 | `DEVELOPER_WORK_DIR` | empty | Where the manager has the work storage mounted, such as `/work`. Set, each task gets its own directory on it, which a restart keeps. Empty, each worker has a scratch `/work`. See "The work directories". |
 | `WORKER_WORK_CLAIM` | empty | Kubernetes: the ReadWriteMany PersistentVolumeClaim of the work storage, which the manager also mounts at `DEVELOPER_WORK_DIR`. Required with `DEVELOPER_WORK_DIR` on `kubernetes`. The chart sets it from `worker.workClaim`. |
@@ -586,7 +597,9 @@ helm install developer charts/joshua-addon -f addons/developer/values.yaml
 - Set `MANAGER_HOST` to the release name. The release name is the Service
   name, and a worker finds the manager by it.
 - Set `CHANNELS_URL` to the address of the joshua-ai channels Service.
-- For a private registry, set `WORKER_IMAGE_PULL_SECRET` to the name of an
+- For your own worker image, set `worker.image`. It wins over
+  `env.WORKER_IMAGE`. See "Using your own worker image".
+- For a private registry, set `worker.imagePullSecret` to the name of an
   image pull Secret in the namespace.
 - To keep the work of a task through a restart, make a ReadWriteMany
   PersistentVolumeClaim in the namespace, and set `worker.workClaim` to its
@@ -809,6 +822,107 @@ The git token is not on the kept storage: with `DEVELOPER_WORK_DIR` set, a
 worker gets `HOME=/tmp/home`, which goes with the worker. The manager runs
 as uid 1000 and must be able to write the root of the storage. When it
 cannot, a task fails with `the work directory was not made`.
+
+## Using your own worker image
+
+A task needs the toolchain of its project. `WORKER_IMAGE` can be your own
+image, with the compilers and the tools that your repositories need. Build it
+`FROM` the worker image of your release, so it keeps the worker program:
+
+```dockerfile
+FROM ghcr.io/jakehigg/joshua-addons-developer-worker:0.2.0
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends <your tools> \
+    && rm -rf /var/lib/apt/lists/*
+USER 1000
+```
+
+### The run-time contract
+
+The manager starts your image the same way on both runtimes, and the code
+enforces these rules. An image that does not keep them fails its tasks.
+
+| Rule | What it means for your image |
+|---|---|
+| The process runs as uid 1000 | Install your tools as root at build time. The worker is not root and cannot install at run time. |
+| The root file system is read-only | A path such as `/opt/<name>` or `/usr/local` is read-only at run time. A tool that writes beside itself fails. |
+| Only `/work` and `/tmp` are writable | Nothing else takes a write. Each is a volume with the size `worker.disk` on Kubernetes. |
+| `/work` is the directory of the task | With work storage, the runtime mounts one directory of it, the task id (`subPath` on Kubernetes, `subpath` on Docker), at `/work`. The checkout is there, and it stays after the task. |
+| `HOME` is `/tmp/home` | With work storage. `CLAUDE_CONFIG_DIR` is `/tmp/home/.claude`. Both go with the worker, so no credential stays on the work storage. |
+| The entrypoint starts the worker | Keep `ENTRYPOINT ["python", "-m", "joshua_developer_worker"]`. The manager gives the container no command. |
+| `WORKDIR` is `/work` | Keep it. The worker clones into the current directory. |
+| `/app/.venv/bin` is first on `PATH` | Keep that order. Your own directory goes after it. |
+| The image labels stay | `FROM` keeps `org.opencontainers.image.version` and `org.opencontainers.image.revision` of the upstream image. Do not set them again: they name the release and the commit your worker came from. |
+| `imagePullPolicy` is `IfNotPresent` | Kubernetes pulls a tag it already has again only with `WORKER_IMAGE_PULL_POLICY: Always`. Give each build its own tag, or set the policy. The Docker runtime pulls the image at start, and a task pulls it only when it is missing. |
+
+The compose file and the chart values of this repository give a worker the
+work storage, so the rows above apply as written. `worker.disk` limits each
+volume on Kubernetes only. On Docker, the root file system is writable only
+with `worker.disk_docker_storage_opt: true` (see "developer.yaml"), and an
+image must not need that.
+
+The read-only root file system has one consequence for every toolchain: each
+variable that names a writable directory must point into `/tmp`. Rust shows
+it. `CARGO_HOME` and `RUSTUP_HOME` are in `$HOME` by default, and a
+`cargo build` writes to them. npm, pip, Go, and Gradle have the same need.
+Set each of these variables in an `ENV` line of your image.
+
+### worker.env
+
+`worker.env` in `developer.yaml` holds the values that change with the
+deployment: the URL of an internal registry, the path of a CA bundle, a
+package mirror. Both runtimes give them to each worker, so the Compose user
+and the Kubernetes user write the same block:
+
+```yaml
+worker:
+  memory: 4g
+  cpus: 4.0
+  disk: 8Gi
+  env:
+    PIP_INDEX_URL: https://nexus.example.com/repository/pypi/simple
+    NODE_EXTRA_CA_CERTS: /etc/ssl/certs/example-ca.pem
+```
+
+A variable of the toolchain in the image, such as `CARGO_HOME`,
+`RUSTUP_HOME`, or `PATH`, belongs in an `ENV` line of that image. The person
+who builds the image sets it there, and it travels with the image, so it
+cannot get out of step with the toolchain that it points at.
+
+These names are reserved, because the addon sets them itself:
+
+`TASK_ID`, `MANAGER_URL`, `GIT_PROXY_URL`, `TASK_TOKEN`, `MANAGER_GRACE_S`,
+`HOME`, `CLAUDE_CONFIG_DIR`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and
+`JOSHUA_WORKER_FAKE_SESSION`.
+
+One of these names in `worker.env` stops the manager at start, with an error
+that names it. The addon does not drop the value and does not take it.
+
+Put no credential in `worker.env`. The addon treats a worker as hostile (see
+"Security"), and it refuses a value in `developer.yaml` that looks like a
+token.
+
+### Point the manager at the image
+
+On Docker Compose, set `WORKER_IMAGE` in `.env`:
+
+```
+WORKER_IMAGE=ghcr.io/<you>/my-worker:2026-11-13
+```
+
+On Kubernetes, set the chart values. `worker.image` wins over
+`env.WORKER_IMAGE`:
+
+```yaml
+worker:
+  image: ghcr.io/<you>/my-worker:2026-11-13
+  imagePullSecret: ghcr-pull   # for a private registry
+  imagePullPolicy: IfNotPresent
+```
+
+A worker still reaches the manager only. To install dependencies at run
+time, turn on the `packages` block (see "The package proxy"), or put the
+dependencies in the image.
 
 ## The first run
 

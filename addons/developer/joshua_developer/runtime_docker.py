@@ -18,6 +18,10 @@ With ``DEVELOPER_WORK_DIR`` set, it also gets ``HOME`` (``/tmp/home``) and
 ``HTTP_PROXY`` (``http://<MANAGER_HOST>:8003``, the package proxy) and
 ``NO_PROXY`` (the manager host, the loopback, and the cluster domain).
 
+The ``worker.env`` block of developer.yaml adds the variables that another
+worker image needs. A name in ``RESERVED_WORKER_ENV`` is not valid there,
+and the manager stops at start, so no value in the file reaches a worker.
+
 The one exception is a test aid: when ``WORKER_FAKE_SESSION`` is set, the
 worker also gets ``JOSHUA_WORKER_FAKE_SESSION`` with the same value, and runs
 a scripted session instead of Claude Code.
@@ -79,6 +83,7 @@ from joshua_developer.config import (
     GIT_PROXY_PORT,
     NO_PROXY_NAMES,
     PACKAGE_PROXY_PORT,
+    RESERVED_WORKER_ENV,
     WORKER_API_PORT,
     Settings,
 )
@@ -143,7 +148,15 @@ def worker_environment(settings: Settings, task: dict[str, Any]) -> dict[str, st
         env["CLAUDE_CONFIG_DIR"] = f"{WORKER_HOME}/.claude"
     if settings.worker_fake_session:
         env["JOSHUA_WORKER_FAKE_SESSION"] = settings.worker_fake_session
-    return env
+    # worker.env adds the variables of another worker image. The settings
+    # refuse a reserved name at start, and the addon's own variables win here
+    # too, so no value in the file can break a worker.
+    extra = {
+        name: value
+        for name, value in settings.config.worker.env.items()
+        if name not in RESERVED_WORKER_ENV
+    }
+    return {**extra, **env}
 
 
 class DockerRuntime:

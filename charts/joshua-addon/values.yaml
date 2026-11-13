@@ -77,13 +77,20 @@ configFile:
   content: "" # the file's contents, as a string
   mountPath: /etc/joshua-addon/config.yaml # where the addon container mounts the file
 
-# The work storage of the worker pods, for an addon that starts them, such as
-# developer. Empty keeps a scratch emptyDir at /work in each worker, which goes
-# with the worker. Set it to an existing ReadWriteMany claim: the chart mounts
-# the claim into the addon at workMountPath and sets DEVELOPER_WORK_DIR and
-# WORKER_WORK_CLAIM, and the addon mounts one directory of the claim, the
-# directory of the task, at /work in each worker. The chart makes no claim.
+# The worker pods of an addon that starts them, such as developer. Each value
+# below becomes the environment variable the addon reads, and a value here
+# wins over the same name in `env`.
+#
+# The work storage: empty keeps a scratch emptyDir at /work in each worker,
+# which goes with the worker. Set workClaim to an existing ReadWriteMany
+# claim: the chart mounts the claim into the addon at workMountPath and sets
+# DEVELOPER_WORK_DIR and WORKER_WORK_CLAIM, and the addon mounts one directory
+# of the claim, the directory of the task, at /work in each worker. The chart
+# makes no claim.
 worker:
+  image: "" # the worker image (WORKER_IMAGE); empty takes `env`
+  imagePullSecret: "" # an image pull Secret in this namespace, for a private registry (WORKER_IMAGE_PULL_SECRET)
+  imagePullPolicy: "" # when a worker pod pulls its image (WORKER_IMAGE_PULL_POLICY); empty means IfNotPresent
   workClaim: "" # the name of an existing ReadWriteMany PersistentVolumeClaim
   workMountPath: /work # where the addon container mounts the claim
 

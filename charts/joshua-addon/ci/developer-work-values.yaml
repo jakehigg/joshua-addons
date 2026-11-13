@@ -1,5 +1,6 @@
 # The developer addon with worker.workClaim set: the addon mounts the work
-# claim at /work and gets DEVELOPER_WORK_DIR and WORKER_WORK_CLAIM.
+# claim at /work and gets DEVELOPER_WORK_DIR and WORKER_WORK_CLAIM. The other
+# worker values become WORKER_IMAGE_PULL_SECRET and WORKER_IMAGE_PULL_POLICY.
 image:
   repository: ghcr.io/jakehigg/joshua-addons-developer
 persistence:
@@ -55,4 +56,6 @@ networkPolicy:
   gatewayNamespaces:
     - joshua
 worker:
+  imagePullSecret: ghcr-pull
+  imagePullPolicy: Always
   workClaim: developer-work

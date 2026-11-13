@@ -36,11 +36,17 @@ configFile:
     # the ephemeral-storage limit of the worker pod.
     # manager_grace is the seconds a worker waits for a manager that
     # restarts, such as on a deploy.
+    # env adds environment variables for your own worker image. The addon
+    # keeps its own variables: TASK_ID, MANAGER_URL, GIT_PROXY_URL,
+    # TASK_TOKEN, MANAGER_GRACE_S, HOME, CLAUDE_CONFIG_DIR, HTTP_PROXY,
+    # HTTPS_PROXY, and NO_PROXY. See "Using your own worker image" in the
+    # README of the addon.
     worker:
       memory: 2g
       cpus: 2.0
       disk: 4Gi
       manager_grace: 600
+      env: {}
     # The days a task that did not end success keeps its work directory,
     # with worker.workClaim set. The sweeper then deletes it.
     work:
@@ -71,13 +77,12 @@ env:
   DEVELOPER_DATA_DIR: /data
   DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
   WORKER_RUNTIME: kubernetes
-  # The worker image. Use the same version as this chart.
+  # The worker image. Use the same version as this chart. For your own
+  # worker image, set worker.image below: it wins over this value.
   WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:0.2.0
   # The name a worker uses to reach the manager: the Service name, which is
   # the release name. Set it to the name of your release.
   MANAGER_HOST: developer
-  # An image pull Secret for the worker pods, for a private registry.
-  # WORKER_IMAGE_PULL_SECRET: ghcr-pull
   # Where a task report goes. Set the address of the joshua-ai channels
   # Service, and put JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   # CHANNELS_URL: http://<joshua-ai channels service>:8000
@@ -92,12 +97,23 @@ env:
   # image pull). A worker that takes longer fails its task.
   # WORKER_START_GRACE_S: "600"
 
-# The work storage of the workers. Empty keeps a scratch emptyDir at /work in
-# each worker, so a restart or a failed push loses the commits of a task. Set
-# it to an existing ReadWriteMany claim, and each task gets its own directory
-# on it, which is deleted only when the task ends success. The chart does not
-# make the claim.
+# The worker pods.
+#
+# image is your own worker image. It wins over env.WORKER_IMAGE above. Keep
+# the contract in "Using your own worker image" in the README of the addon.
+# imagePullSecret is an image pull Secret in this namespace, for a private
+# registry. imagePullPolicy is Always, IfNotPresent, or Never; empty means
+# IfNotPresent.
+#
+# workClaim is the work storage of the workers. Empty keeps a scratch
+# emptyDir at /work in each worker, so a restart or a failed push loses the
+# commits of a task. Set it to an existing ReadWriteMany claim, and each task
+# gets its own directory on it, which is deleted only when the task ends
+# success. The chart does not make the claim.
 worker:
+  image: ""
+  imagePullSecret: ""
+  imagePullPolicy: ""
   workClaim: ""
 
 # The namespace of the worker Jobs: the namespace of the manager pod.

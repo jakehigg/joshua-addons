@@ -15,8 +15,12 @@ else:
 
 On Kubernetes, ``MANAGER_HOST`` is the name of the manager's Service, which
 is the Helm release name. With ``packages.enabled`` in developer.yaml, the
-pod also gets the three proxy variables of the package proxy (see
-``runtime_docker``).
+pod also gets the three proxy variables of the package proxy, and the
+``worker.env`` block of developer.yaml adds the variables of another worker
+image (see ``runtime_docker``).
+
+The container pulls its image with ``WORKER_IMAGE_PULL_POLICY``, which is
+``IfNotPresent`` by default.
 
 The pod runs as uid 1000 with no Linux capabilities, no privilege
 escalation, and a read-only root file system. ``/work`` and ``/tmp`` are
@@ -160,7 +164,7 @@ def job_manifest(
             {
                 "name": "worker",
                 "image": settings.worker_image,
-                "imagePullPolicy": "IfNotPresent",
+                "imagePullPolicy": settings.worker_image_pull_policy,
                 "env": env,
                 "resources": {"requests": dict(quantities), "limits": dict(quantities)},
                 "securityContext": {

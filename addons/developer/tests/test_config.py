@@ -354,11 +354,41 @@ def test_the_kubernetes_settings_come_from_the_environment(tmp_path: Path) -> No
     base = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml")}
     defaults = settings_from_env(base)
     assert (defaults.pod_namespace, defaults.worker_image_pull_secret) == ("", "")
+    assert defaults.worker_image_pull_policy == "IfNotPresent"
     settings = settings_from_env(
         {**base, "POD_NAMESPACE": " joshua ", "WORKER_IMAGE_PULL_SECRET": "ghcr-pull"}
     )
     assert settings.pod_namespace == "joshua"
     assert settings.worker_image_pull_secret == "ghcr-pull"
+
+
+def test_the_image_pull_policy_comes_from_the_environment(tmp_path: Path) -> None:
+    base = {"DEVELOPER_CONFIG": str(tmp_path / "x.yaml")}
+    for policy in ("Always", "IfNotPresent", "Never"):
+        settings = settings_from_env({**base, "WORKER_IMAGE_PULL_POLICY": f" {policy} "})
+        assert settings.worker_image_pull_policy == policy
+    with pytest.raises(
+        ConfigError, match="WORKER_IMAGE_PULL_POLICY must be one of Always, IfNotPresent, Never"
+    ):
+        settings_from_env({**base, "WORKER_IMAGE_PULL_POLICY": "always"})
+
+
+def test_the_extra_worker_environment_takes_variable_names_only(tmp_path: Path) -> None:
+    path = write_config(tmp_path, {**CONFIG, "worker": {"env": {"PIP_INDEX_URL": "http://pypi"}}})
+    settings = settings_from_env(env_for(path))
+    assert settings.config.worker.env == {"PIP_INDEX_URL": "http://pypi"}
+    bad = write_config(tmp_path, {**CONFIG, "worker": {"env": {"pip index url": "http://pypi"}}})
+    with pytest.raises(ConfigError, match="worker.env"):
+        settings_from_env(env_for(bad))
+
+
+def test_a_reserved_name_in_the_extra_worker_environment_stops_the_start(tmp_path: Path) -> None:
+    for name in ("TASK_TOKEN", "MANAGER_URL", "HOME", "NO_PROXY"):
+        path = write_config(
+            tmp_path, {**CONFIG, "worker": {"env": {name: "x", "PIP_INDEX_URL": "http://pypi"}}}
+        )
+        with pytest.raises(ConfigError, match=f"worker.env.*{name} is reserved"):
+            settings_from_env(env_for(path))
 
 
 def test_the_worker_settings_come_from_the_environment(tmp_path: Path) -> None:
