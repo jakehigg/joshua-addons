@@ -19,8 +19,8 @@ With ``DEVELOPER_WORK_DIR`` set, it also gets ``HOME`` (``/tmp/home``) and
 ``NO_PROXY`` (the manager host, the loopback, and the cluster domain).
 
 The ``worker.env`` block of developer.yaml adds the variables that another
-worker image needs. The addon's own variables win: a name in
-``RESERVED_WORKER_ENV`` in the file has no effect.
+worker image needs. A name in ``RESERVED_WORKER_ENV`` is not valid there,
+and the manager stops at start, so no value in the file reaches a worker.
 
 The one exception is a test aid: when ``WORKER_FAKE_SESSION`` is set, the
 worker also gets ``JOSHUA_WORKER_FAKE_SESSION`` with the same value, and runs
@@ -148,8 +148,9 @@ def worker_environment(settings: Settings, task: dict[str, Any]) -> dict[str, st
         env["CLAUDE_CONFIG_DIR"] = f"{WORKER_HOME}/.claude"
     if settings.worker_fake_session:
         env["JOSHUA_WORKER_FAKE_SESSION"] = settings.worker_fake_session
-    # worker.env adds the variables of another worker image. The addon's own
-    # variables win, so no value in the file can break a worker.
+    # worker.env adds the variables of another worker image. The settings
+    # refuse a reserved name at start, and the addon's own variables win here
+    # too, so no value in the file can break a worker.
     extra = {
         name: value
         for name, value in settings.config.worker.env.items()

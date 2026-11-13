@@ -232,26 +232,17 @@ def test_the_disk_limit_comes_from_worker_disk(tmp_path) -> None:
 
 
 def test_worker_env_reaches_the_pod(tmp_path) -> None:
-    worker = {"env": {"CARGO_HOME": "/tmp/cargo", "RUSTUP_HOME": "/tmp/rustup"}}
-    settings = settings_for(tmp_path, config={"worker": worker})
-    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
-    env = {item["name"]: item["value"] for item in pod["containers"][0]["env"]}
-    assert env["CARGO_HOME"] == "/tmp/cargo"
-    assert env["RUSTUP_HOME"] == "/tmp/rustup"
-    assert env["TASK_ID"] == TASK["task_id"]
-
-
-def test_worker_env_cannot_override_a_reserved_name(tmp_path) -> None:
-    worker = {"env": {"TASK_TOKEN": "stolen", "HOME": "/work/home", "CARGO_HOME": "/tmp/cargo"}}
+    worker = {"env": {"PIP_INDEX_URL": "http://pypi", "NODE_EXTRA_CA_CERTS": "/etc/ca.pem"}}
     settings = settings_for(
         tmp_path, config={"worker": worker}, work_dir=tmp_path, worker_work_claim="work"
     )
     pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
-    env = pod["containers"][0]["env"]
-    assert {"name": "TASK_TOKEN", "value": "tok-value"} in env
-    assert {"name": "HOME", "value": "/tmp/home"} in env
-    assert {"name": "CARGO_HOME", "value": "/tmp/cargo"} in env
-    assert [item["name"] for item in env].count("HOME") == 1
+    env = {item["name"]: item["value"] for item in pod["containers"][0]["env"]}
+    assert env["PIP_INDEX_URL"] == "http://pypi"
+    assert env["NODE_EXTRA_CA_CERTS"] == "/etc/ca.pem"
+    assert env["TASK_ID"] == TASK["task_id"]
+    assert env["HOME"] == "/tmp/home"
+    assert [item["name"] for item in pod["containers"][0]["env"]].count("HOME") == 1
 
 
 def test_the_image_pull_policy_defaults_and_takes_the_setting(tmp_path) -> None:

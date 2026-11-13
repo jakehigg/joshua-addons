@@ -404,8 +404,8 @@ to a running task".
 
 `worker.env` is a map of extra environment variables for each worker. Both
 runtimes give them to the worker. A name must be upper-case letters, digits,
-and underscores. The addon's own variables win, so a reserved name in the
-map has no effect. See "Using your own worker image".
+and underscores. A reserved name is not valid, and the manager stops at
+start with the name in the message. See "Using your own worker image".
 
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks is told to set `blocked`. `notify` is a
@@ -865,13 +865,14 @@ The read-only root file system has one consequence for every toolchain: each
 variable that names a writable directory must point into `/tmp`. Rust shows
 it. `CARGO_HOME` and `RUSTUP_HOME` are in `$HOME` by default, and a
 `cargo build` writes to them. npm, pip, Go, and Gradle have the same need.
-Set each of these variables in `worker.env`.
+Set each of these variables in an `ENV` line of your image.
 
 ### worker.env
 
-`worker.env` in `developer.yaml` holds the extra variables. Both runtimes
-give them to each worker, so the Compose user and the Kubernetes user write
-the same block:
+`worker.env` in `developer.yaml` holds the values that change with the
+deployment: the URL of an internal registry, the path of a CA bundle, a
+package mirror. Both runtimes give them to each worker, so the Compose user
+and the Kubernetes user write the same block:
 
 ```yaml
 worker:
@@ -879,19 +880,23 @@ worker:
   cpus: 4.0
   disk: 8Gi
   env:
-    CARGO_HOME: /tmp/cargo
-    RUSTUP_HOME: /tmp/rustup
+    PIP_INDEX_URL: https://nexus.example.com/repository/pypi/simple
+    NODE_EXTRA_CA_CERTS: /etc/ssl/certs/example-ca.pem
 ```
 
-These names are reserved. The addon sets them itself, and a value for one of
-them in `worker.env` has no effect:
+A variable of the toolchain in the image, such as `CARGO_HOME`,
+`RUSTUP_HOME`, or `PATH`, belongs in an `ENV` line of that image. The person
+who builds the image sets it there, and it travels with the image, so it
+cannot get out of step with the toolchain that it points at.
+
+These names are reserved, because the addon sets them itself:
 
 `TASK_ID`, `MANAGER_URL`, `GIT_PROXY_URL`, `TASK_TOKEN`, `MANAGER_GRACE_S`,
 `HOME`, `CLAUDE_CONFIG_DIR`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and
 `JOSHUA_WORKER_FAKE_SESSION`.
 
-`PATH` is not reserved, and a value for it replaces the `PATH` of the image.
-Write the full value, and keep `/app/.venv/bin` first.
+One of these names in `worker.env` stops the manager at start, with an error
+that names it. The addon does not drop the value and does not take it.
 
 Put no credential in `worker.env`. The addon treats a worker as hostile (see
 "Security"), and it refuses a value in `developer.yaml` that looks like a

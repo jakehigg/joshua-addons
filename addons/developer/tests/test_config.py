@@ -374,12 +374,21 @@ def test_the_image_pull_policy_comes_from_the_environment(tmp_path: Path) -> Non
 
 
 def test_the_extra_worker_environment_takes_variable_names_only(tmp_path: Path) -> None:
-    path = write_config(tmp_path, {**CONFIG, "worker": {"env": {"CARGO_HOME": "/tmp/cargo"}}})
+    path = write_config(tmp_path, {**CONFIG, "worker": {"env": {"PIP_INDEX_URL": "http://pypi"}}})
     settings = settings_from_env(env_for(path))
-    assert settings.config.worker.env == {"CARGO_HOME": "/tmp/cargo"}
-    bad = write_config(tmp_path, {**CONFIG, "worker": {"env": {"cargo home": "/tmp/cargo"}}})
+    assert settings.config.worker.env == {"PIP_INDEX_URL": "http://pypi"}
+    bad = write_config(tmp_path, {**CONFIG, "worker": {"env": {"pip index url": "http://pypi"}}})
     with pytest.raises(ConfigError, match="worker.env"):
         settings_from_env(env_for(bad))
+
+
+def test_a_reserved_name_in_the_extra_worker_environment_stops_the_start(tmp_path: Path) -> None:
+    for name in ("TASK_TOKEN", "MANAGER_URL", "HOME", "NO_PROXY"):
+        path = write_config(
+            tmp_path, {**CONFIG, "worker": {"env": {name: "x", "PIP_INDEX_URL": "http://pypi"}}}
+        )
+        with pytest.raises(ConfigError, match=f"worker.env.*{name} is reserved"):
+            settings_from_env(env_for(path))
 
 
 def test_the_worker_settings_come_from_the_environment(tmp_path: Path) -> None:

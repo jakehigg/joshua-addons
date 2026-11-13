@@ -47,8 +47,8 @@ PACKAGE_PROXY_PORT = 8003
 # The names a worker reaches without the package proxy, beside the manager
 # host: the loopback and the cluster domain.
 NO_PROXY_NAMES = ("localhost", "127.0.0.1", ".svc", ".cluster.local")
-# The variables the addon owns. A name in it that is also in ``worker.env``
-# has no effect: a user cannot break a worker with its own value.
+# The variables the addon owns. A name in it is not valid in ``worker.env``:
+# the manager refuses to start, because it cannot honor such a value.
 RESERVED_WORKER_ENV = frozenset(
     {
         "TASK_ID",
@@ -164,8 +164,8 @@ class WorkerLimits(_Model):
     ``storage_opt``; ``disk_docker_storage_opt`` turns that on.
 
     ``env`` holds extra environment variables for a worker, which both
-    runtimes give it. A reserved name (``RESERVED_WORKER_ENV``) has no
-    effect: the addon's own value always wins.
+    runtimes give it. A reserved name (``RESERVED_WORKER_ENV``) is not
+    valid: the addon owns that variable, and the manager does not start.
     """
 
     memory: str = Field(default="2g", pattern=r"^[0-9]+[bkmg]?$")
@@ -183,8 +183,10 @@ class WorkerLimits(_Model):
         for name in value:
             if not _ENV_NAME_RE.match(name):
                 raise ValueError(
-                    f"{name!r} is not the name of an environment variable, such as CARGO_HOME"
+                    f"{name!r} is not the name of an environment variable, such as PIP_INDEX_URL"
                 )
+            if name in RESERVED_WORKER_ENV:
+                raise ValueError(f"{name} is reserved: the addon owns this variable")
         return value
 
 
