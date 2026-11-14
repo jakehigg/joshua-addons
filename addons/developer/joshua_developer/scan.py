@@ -50,10 +50,23 @@ def mixed(value: str) -> bool:
     return sum(classes) >= MIN_SECRET_CLASSES
 
 
+def placeholder(value: str) -> bool:
+    """True when ``value`` reads as a placeholder, not a credential.
+
+    A value with whitespace in it is prose, such as
+    ``<home assistant token, set by the Ansible role>``: a real token has no
+    spaces. A value wrapped in angle brackets is the usual placeholder form.
+    """
+    return any(c.isspace() for c in value) or (value.startswith("<") and value.endswith(">"))
+
+
 def _matches(name: str, pattern: re.Pattern[str], text: str) -> bool:
     if name != "assigned_secret":
         return pattern.search(text) is not None
-    return any(mixed(match.group(1)) for match in pattern.finditer(text))
+    return any(
+        mixed(match.group(1)) and not placeholder(match.group(1))
+        for match in pattern.finditer(text)
+    )
 
 
 _HUNK_RE = re.compile(r"^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,[0-9]+)? @@")
