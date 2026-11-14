@@ -55,6 +55,8 @@ def test_the_private_key_forms(header: str) -> None:
         'CLIENT_SECRET="' + "s-3" * 10 + '"',
         "auth_token = '" + "T_t" * 6 + "'",
         'API-KEY: "' + "K9k" * 6 + '"',
+        # Only the whole value counts: a bracket at one end is not a placeholder.
+        'token = "<' + "Zq8" * 6 + '"',
     ],
 )
 def test_the_assigned_secret_forms(line: str) -> None:
@@ -76,6 +78,10 @@ def test_the_assigned_secret_forms(line: str) -> None:
         'token = "' + "x" * 20 + '"',
         "api_key = '" + "q" * 20 + "'",
         'secret = "' + "a1" * 10 + '"',
+        # Placeholders: prose with spaces, or a value in angle brackets.
+        'token = "<home assistant long-lived token, set by the Ansible role>"',
+        'password = "Your-Password Goes Here 123"',
+        "api_key = '<YOUR_API_KEY_123>'",
     ],
 )
 def test_ordinary_text_does_not_match(line: str) -> None:

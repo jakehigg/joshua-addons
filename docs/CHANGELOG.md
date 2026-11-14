@@ -86,6 +86,12 @@ releases, with the images and the packaged chart, are at
   control, which starts closed on every task, also after a reload. A long
   note no longer fills the screen. The API and the MCP tools do not change.
 
+- `developer`: the credential scan no longer fails a task for a placeholder.
+  An `assigned_secret` value with a space in it, or a value in angle
+  brackets, such as `token = "<long-lived token, set by the Ansible role>"`,
+  is not a finding. The prefix patterns (`glpat-`, `sk-ant-`, `AKIA`, and the
+  others) do not change.
+
 ## 0.2.0 - 2026-11-08
 
 Three new addons: `tasks` (projects, phases, goals, and blocking links, with a
