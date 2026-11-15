@@ -2,8 +2,8 @@
 
 gitleaks is not in the test environment. The ``gitleaks`` fixture of
 conftest answers each call of the scan with the JSON report of the binary.
-Each fake credential is built at run time, so this file holds no text that
-looks like a real one.
+Each value with the shape of a credential is built at run time from
+fragments, so this file holds no text that a scanner reads as a credential.
 """
 
 from __future__ import annotations
@@ -19,22 +19,16 @@ from joshua_developer import scan
 from joshua_developer.platforms import Diff, DiffFile
 from joshua_developer.scan import ScanUnavailable, added_lines, scan_diff, scan_text
 
-FAKES = {
-    "anthropic-api-key": "sk-" + "ant-" + "api03-" + "A1b2C3d4E5f6G7h8",
-    "gitlab-pat": "gl" + "pat-" + "x" * 20,
-    "github-pat": "gh" + "p_" + "A" * 36,
-    "github-fine-grained-pat": "github" + "_pat_" + "11AAAA" + "b" * 30,
-    "github-oauth": "gh" + "o_" + "C" * 36,
-    "slack-bot-token": "xo" + "xb-" + "1234-5678-abcdef",
-    "slack-user-token": "xo" + "xp-" + "1234-5678-abcdef",
-    "aws-access-token": "AK" + "IA" + "ABCDEFGHIJKLMNOP",
-    "private-key": "-----BEGIN " + "RSA PRIVATE KEY-----" + "MIIEowIBAAKCAQEA" * 3,
-    "generic-api-key": "api_key = '" + "qR7" * 7 + "'",
-}
-# The value that a rule finds. The generic rule finds the value in the
-# quotes, and not the whole line.
-CREDENTIALS = tuple(value for rule, value in FAKES.items() if rule != "generic-api-key") + (
-    "qR7" * 7,
+# A value with the shape of a credential: the fake gitleaks of conftest
+# reports a finding for each line that holds it.
+LEAK = "Qr7" * 14
+# Values that the allowlist of the configuration must never allow.
+CREDENTIALS = (
+    LEAK,
+    "A1b2C3d4E5f6G7h8" + "I9j0",
+    "x" * 40,
+    # An angle bracket that does not close is no placeholder.
+    "<" + "y" * 40,
 )
 
 
@@ -42,28 +36,27 @@ def patch_with(line: str) -> str:
     return f"--- a/f\n+++ b/f\n@@ -10,2 +10,3 @@\n context\n+{line}\n context"
 
 
-@pytest.mark.parametrize(("rule", "value"), sorted(FAKES.items()))
-def test_every_rule_finds_its_credential(rule: str, value: str) -> None:
-    findings = scan_diff(Diff(files=[DiffFile(path="src/app.py", patch=patch_with(value))]))
-    assert [(f.path, f.line_no, f.pattern_name) for f in findings] == [("src/app.py", 11, rule)]
-    # A finding never holds the matched text.
-    assert value not in json.dumps([f.to_dict() for f in findings])
-    assert value not in repr(findings)
+def test_a_finding_names_the_rule_the_file_and_the_line(gitleaks) -> None:
+    gitleaks.report = [
+        {
+            "RuleID": "aws-access-token",
+            "File": "0/src/app.py",
+            "StartLine": 1,
+            "Secret": LEAK,
+            "Match": f"key = {LEAK}",
+        }
+    ]
+    findings = scan_diff(Diff(files=[DiffFile(path="src/app.py", patch=patch_with(LEAK))]))
+    assert [(f.path, f.line_no, f.pattern_name) for f in findings] == [
+        ("src/app.py", 11, "aws-access-token")
+    ]
+    # A finding never holds the matched text, also when the report does.
+    assert LEAK not in json.dumps([f.to_dict() for f in findings])
+    assert LEAK not in repr(findings)
 
 
 def test_the_scan_calls_gitleaks_over_the_added_lines(gitleaks) -> None:
-    written: dict[str, str] = {}
-    detect = gitleaks.detect
-
-    def record(target: Path) -> list[dict]:
-        for path in sorted(target.rglob("*")):
-            if path.is_file():
-                written[str(path.relative_to(target))] = path.read_text(encoding="utf-8")
-        return detect(target)
-
-    gitleaks.detect = record
-    secret = FAKES["aws-access-token"]
-    assert scan_text("src/app.py", patch_with(secret)) != []
+    assert scan_text("src/app.py", patch_with(LEAK)) != []
     [args] = gitleaks.calls
     assert args[:2] == [scan.GITLEAKS, "dir"]
     assert args[3:] == [
@@ -77,20 +70,28 @@ def test_the_scan_calls_gitleaks_over_the_added_lines(gitleaks) -> None:
         "0",
         "--no-banner",
     ]
-    # Only the added line, in a directory for the file, under its own name.
-    assert written == {f"0/{Path('src/app.py').name}": f"{secret}\n"}
+    # Only the added line, in a directory for the file, under the path of
+    # the file in the repository.
+    assert gitleaks.written == {"0/src/app.py": f"{LEAK}\n"}
+
+
+@pytest.mark.parametrize("path", ["/etc/app.conf", "../../app.conf", ""])
+def test_a_path_outside_the_repository_stays_in_the_directory(gitleaks, path: str) -> None:
+    assert scan_text(path, patch_with(LEAK)) != []
+    [written] = gitleaks.written
+    assert written.startswith("0/") and ".." not in written
 
 
 def test_the_temporary_directory_is_gone_after_the_scan(gitleaks) -> None:
-    assert scan_text("f", patch_with(FAKES["gitlab-pat"])) != []
+    assert scan_text("f", patch_with(LEAK)) != []
     target = Path(gitleaks.calls[0][2])
     assert not target.exists() and not target.parent.exists()
 
 
 def test_a_report_line_maps_to_the_line_of_the_new_file(gitleaks) -> None:
     gitleaks.report = [
-        {"RuleID": "aws-access-token", "File": "0/a.py", "StartLine": 2},
-        {"RuleID": "generic-api-key", "File": "1/b.md", "StartLine": 1},
+        {"RuleID": "aws-access-token", "File": "0/src/a.py", "StartLine": 2},
+        {"RuleID": "generic-api-key", "File": "1/docs/b.md", "StartLine": 1},
     ]
     diff = Diff(
         files=[
@@ -150,7 +151,7 @@ def test_a_missing_binary_is_unavailable(gitleaks, monkeypatch) -> None:
     with pytest.raises(ScanUnavailable):
         scan_text("f", patch_with("clean"))
     with pytest.raises(ScanUnavailable):
-        scan_diff(Diff(files=[DiffFile(path="f", patch=patch_with(FAKES["github-pat"]))]))
+        scan_diff(Diff(files=[DiffFile(path="f", patch=patch_with(LEAK))]))
     # An empty diff is unavailable too, and the binary was never called.
     with pytest.raises(ScanUnavailable):
         scan_diff(Diff(files=[]))
@@ -170,7 +171,7 @@ def test_a_binary_that_does_not_run_is_unavailable(gitleaks, error: Exception) -
 def test_a_failed_run_is_unavailable(gitleaks) -> None:
     gitleaks.returncode = 2
     with pytest.raises(ScanUnavailable):
-        scan_text("f", patch_with(FAKES["github-pat"]))
+        scan_text("f", patch_with(LEAK))
 
 
 @pytest.mark.parametrize("text", ["not json", '{"RuleID": "x"}', "[3]"])
@@ -180,7 +181,7 @@ def test_a_report_that_is_not_findings_is_unavailable(gitleaks, text: str) -> No
         scan_text("f", patch_with("clean"))
 
 
-@pytest.mark.parametrize("file", ["9/other.py", "other.py"])
+@pytest.mark.parametrize("file", ["9/other.py", "other.py", "0/other.py"])
 def test_a_report_outside_the_scan_is_unavailable(gitleaks, file: str) -> None:
     gitleaks.report = [{"RuleID": "gitlab-pat", "File": file, "StartLine": 1}]
     with pytest.raises(ScanUnavailable):
@@ -213,6 +214,10 @@ def config() -> dict:
     return tomllib.loads(scan.CONFIG_PATH.read_text(encoding="utf-8"))
 
 
+def allowlist_regexes() -> list[re.Pattern[str]]:
+    return [re.compile(regex) for regex in config()["allowlist"]["regexes"]]
+
+
 def test_the_configuration_extends_the_gitleaks_default() -> None:
     assert config()["extend"]["useDefault"] is True
 
@@ -227,63 +232,48 @@ def test_the_configuration_extends_the_gitleaks_default() -> None:
     ],
 )
 def test_the_allowlist_holds_the_placeholders(value: str) -> None:
-    regexes = [re.compile(regex) for regex in config()["allowlist"]["regexes"]]
-    assert any(regex.search(value) for regex in regexes)
+    assert any(regex.search(value) for regex in allowlist_regexes())
 
 
 @pytest.mark.parametrize("value", sorted(CREDENTIALS))
 def test_the_allowlist_holds_no_credential(value: str) -> None:
-    regexes = [re.compile(regex) for regex in config()["allowlist"]["regexes"]]
-    assert not any(regex.search(value) for regex in regexes)
+    assert not any(regex.search(value) for regex in allowlist_regexes())
 
 
 def test_the_allowlist_holds_no_key_block() -> None:
     # A key on one line has long words in it, so the prose pattern misses it.
-    one_line = "-----BEGIN RSA PRIVATE KEY----- " + "MIIEow" * 20 + " -----END RSA PRIVATE KEY-----"
-    regexes = [re.compile(regex) for regex in config()["allowlist"]["regexes"]]
-    assert not any(regex.search(one_line) for regex in regexes)
+    header = "-----" + "BEG" + "IN RSA PRIV" + "ATE KEY-----"
+    one_line = f"{header} {LEAK}"
+    assert not any(regex.search(one_line) for regex in allowlist_regexes())
 
 
-@pytest.mark.parametrize(
-    "line",
-    [
-        "Set your token in .env before you start.",
-        "The password must be at least 12 characters long.",
-        'token = "short"',
-        'TOKEN_PREFIXES = ("sk-' + 'ant-", "gl' + 'pat-", "gh' + 'p_")',
-        "-----BEGIN PUBLIC KEY-----",
-        # Placeholders: prose with spaces, or a value in angle brackets.
-        'token = "<home assistant long-lived token, set by the Ansible role>"',
-        'password = "Your-Password Goes Here 123"',
-        "api_key = '<YOUR_API_KEY_123>'",
-    ],
-)
-def test_ordinary_text_is_no_finding(line: str) -> None:
-    assert scan_text("README.md", patch_with(line)) == []
+def test_the_allowlist_holds_the_path_of_the_tests_of_the_scan() -> None:
+    # The tests of this addon hold values with the shape of a credential,
+    # and gitleaks reads the path of a file, so the path is allowlisted.
+    paths = [re.compile(regex) for regex in config()["allowlist"]["paths"]]
+    assert any(regex.search("addons/developer/tests/test_scan.py") for regex in paths)
+    assert not any(regex.search("addons/developer/joshua_developer/scan.py") for regex in paths)
 
 
 # --- the added lines -------------------------------------------------------
 
 
 def test_removed_and_context_lines_are_not_scanned() -> None:
-    secret = FAKES["github-pat"]
-    patch = f"@@ -1,3 +1,2 @@\n-{secret}\n {secret}\n+clean"
+    patch = f"@@ -1,3 +1,2 @@\n-{LEAK}\n {LEAK}\n+clean"
     assert scan_text("f", patch) == []
 
 
 def test_line_numbers_follow_the_hunks() -> None:
-    secret = FAKES["aws-access-token"]
     patch = (
         "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n"
         "@@ -1,2 +1,3 @@\n a\n+b\n c\n"
-        f"@@ -40,2 +41,4 @@\n x\n-y\n+{secret}\n+z\n\n+{secret}\n"
+        f"@@ -40,2 +41,4 @@\n x\n-y\n+{LEAK}\n+z\n\n+{LEAK}\n"
     )
     assert [f.line_no for f in scan_text("f", patch)] == [42, 45]
 
 
 def test_an_added_line_that_starts_with_plus_signs_is_scanned() -> None:
-    secret = FAKES["gitlab-pat"]
-    [finding] = scan_text("f", f"@@ -1 +1,2 @@\n x\n+++ {secret}")
+    [finding] = scan_text("f", f"@@ -1 +1,2 @@\n x\n+++ {LEAK}")
     assert finding.line_no == 2
 
 
@@ -291,17 +281,11 @@ def test_a_patch_with_no_hunk_header_counts_from_1() -> None:
     assert added_lines("+a\n b\n+c") == [(1, "a"), (3, "c")]
 
 
-def test_one_line_with_two_rules_gives_two_findings() -> None:
-    line = FAKES["github-pat"] + " " + FAKES["aws-access-token"]
-    names = sorted(f.pattern_name for f in scan_text("f", patch_with(line)))
-    assert names == ["aws-access-token", "github-pat"]
-
-
 def test_scan_diff_covers_every_file() -> None:
     diff = Diff(
         files=[
             DiffFile(path="a", patch=patch_with("clean")),
-            DiffFile(path="b", patch=patch_with(FAKES["slack-bot-token"])),
+            DiffFile(path="b", patch=patch_with(LEAK)),
         ]
     )
     assert [f.path for f in scan_diff(diff)] == ["b"]

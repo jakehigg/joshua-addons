@@ -701,7 +701,11 @@ After the worker pushes, the manager:
    `joshua_developer/gitleaks.toml`: every rule of the gitleaks default
    configuration, and an allowlist for placeholder values. A value in angle
    brackets, such as `token = "<set by the Ansible role>"`, and a line of
-   prose are not findings. The image holds the `gitleaks` binary.
+   prose are not findings. The allowlist also holds one path,
+   `addons/developer/tests/`: the tests of the scan itself hold values with
+   the shape of a credential, and no credential. The scan keeps the path of
+   each file of the diff, so a path rule and a path allowlist read the same
+   path as in the repository. The image holds the `gitleaks` binary.
 3. On a hit, fails the task. The error names the gitleaks rule, the file,
    and the line, and never the text. The manager deletes the branch only when
    this task made it: a `develop` whose worker found no branch on the remote.

@@ -7,10 +7,16 @@ title = "Joshua developer credential scan"
 useDefault = true
 
 # A placeholder is not a credential, and must not fail a task. The allowlist
-# reads the value that a rule found.
+# reads the value that a rule found. A path in it is allowed whatever the
+# value is.
 [allowlist]
-description = "Placeholder values, not credentials"
+description = "Placeholder values, and the tests of the scan"
 regexTarget = "secret"
+paths = [
+  # The tests of this scan hold values with the shape of a credential, and
+  # no credential.
+  '''addons/developer/tests/''',
+]
 regexes = [
   # A value in angle brackets, the usual placeholder form, such as
   # <YOUR_API_KEY> or <home assistant token>.

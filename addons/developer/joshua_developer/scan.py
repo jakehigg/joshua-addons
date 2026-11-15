@@ -64,6 +64,7 @@ class _ScannedFile:
     """One file of the diff, as it was written for gitleaks."""
 
     path: str
+    written: str
     line_numbers: tuple[int, ...]
 
 
@@ -140,8 +141,9 @@ def _write(lines_dir: Path, files: list[tuple[str, str]]) -> list[_ScannedFile]:
     """Write the added lines of each file of the diff. Returns what was written.
 
     Each file goes into its own directory, named with the index of the file
-    in the list, and keeps its own file name, so a rule that reads the name
-    still holds. A file that adds no line is not written.
+    in the list, and keeps its own path in the repository, so a rule or an
+    allowlist that reads the path still holds. A file that adds no line is
+    not written.
 
     Every line ends with a newline, the last line also: gitleaks counts the
     line of a match in a file that ends with a newline right.
@@ -151,17 +153,25 @@ def _write(lines_dir: Path, files: list[tuple[str, str]]) -> list[_ScannedFile]:
         lines = added_lines(patch)
         if not lines:
             continue
-        target = lines_dir / str(len(scanned))
-        target.mkdir()
+        written = f"{len(scanned)}/{_relative(path)}"
+        target = lines_dir / written
+        target.parent.mkdir(parents=True, exist_ok=True)
         content = "".join(f"{text}\n" for _, text in lines)
-        (target / _name(path)).write_text(content, encoding="utf-8")
-        scanned.append(_ScannedFile(path=path, line_numbers=tuple(no for no, _ in lines)))
+        target.write_text(content, encoding="utf-8")
+        scanned.append(
+            _ScannedFile(path=path, written=written, line_numbers=tuple(no for no, _ in lines))
+        )
     return scanned
 
 
-def _name(path: str) -> str:
-    """The file name of ``path``, for the copy in the temporary directory."""
-    return PurePosixPath(path).name or "file"
+def _relative(path: str) -> str:
+    """The path of the copy in the temporary directory, under the index directory.
+
+    A part that leaves the directory, and a leading separator, are dropped,
+    so every copy stays in the directory that gitleaks reads.
+    """
+    parts = [part for part in PurePosixPath(path).parts if part not in ("/", ".", "..")]
+    return "/".join(parts) or "file"
 
 
 def _report(target: Path, report: Path) -> list[dict[str, Any]]:
@@ -213,8 +223,8 @@ def _findings(items: list[dict[str, Any]], scanned: list[_ScannedFile]) -> list[
     """
     keys: set[tuple[int, int, str]] = set()
     for item in items:
-        index = _index(str(item.get("File", "")))
-        if index is None or index >= len(scanned):
+        index = _index(str(item.get("File", "")), scanned)
+        if index is None:
             # A finding the scan cannot place is a failure of the scan,
             # never a clean diff.
             raise ScanUnavailable(f"the {GITLEAKS} report names a file outside the scan")
@@ -226,12 +236,17 @@ def _findings(items: list[dict[str, Any]], scanned: list[_ScannedFile]) -> list[
     ]
 
 
-def _index(file: str) -> int | None:
-    """The index of the file of the diff, from the path in the report."""
-    parts = PurePosixPath(file).parts
-    if len(parts) < 2 or not parts[-2].isdigit():
-        return None
-    return int(parts[-2])
+def _index(file: str, scanned: list[_ScannedFile]) -> int | None:
+    """The index of the file of the diff, from the path in the report.
+
+    The report names the copy in the temporary directory. The index
+    directory makes the end of that path unique for each file of the diff.
+    """
+    found = PurePosixPath(file).as_posix()
+    for index, item in enumerate(scanned):
+        if found == item.written or found.endswith(f"/{item.written}"):
+            return index
+    return None
 
 
 def _line_no(line_numbers: tuple[int, ...], start_line: object) -> int:
