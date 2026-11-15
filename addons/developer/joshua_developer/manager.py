@@ -38,6 +38,9 @@ the task ends ``success``.
 The task clock pauses while a question waits. ``asked_at`` holds the start
 of the open wait, and ``paused_s`` the seconds of the waits that ended. The
 supervisor of the runtime adds both to the deadline of the worker.
+
+A task that ends reports the tokens of its model calls to core, one row for
+each task, when ``CORE_URL`` is set (see ``usage``).
 """
 
 from __future__ import annotations
@@ -53,7 +56,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from joshua_developer import notify, platforms
+from joshua_developer import notify, platforms, usage
 from joshua_developer.config import DeveloperConfig, Settings
 from joshua_developer.locks import LockedError, LockManager
 from joshua_developer.log import get_logger
@@ -214,6 +217,9 @@ class Manager:
         # Held around the capacity check, the lock, and the row write of a
         # dispatch or a resume, so two calls cannot both take the last slot.
         self._admission = threading.Lock()
+        # The tokens of the model calls of each task that runs. The Claude
+        # forwarder counts them, and record_report reports them to core.
+        self.usage = usage.UsageTracker()
         self.runs = Runs(self)
         self.workspaces = Workspaces(settings.work_dir, store, settings.config.work.keep_failed)
 
@@ -880,6 +886,7 @@ class Manager:
             event.set()
         self._log_full.discard(task_id)
         logger.info({"message": "task ended", "task_id": task_id, "status": fields["status"]})
+        await self._report_usage(task_id)
         full = self.store.get_task_full(task_id)
         assert full is not None
         # A task of a run reports through the run: the step sends its own
@@ -888,6 +895,23 @@ class Manager:
             return self.store.get_task(task_id)
         await notify.send_report(self.settings, full, self._default_notify(full))
         return self.store.get_task(task_id)
+
+    async def _report_usage(self, task_id: str) -> None:
+        """Report the tokens of a task that ended to core, and drop its counts.
+
+        A failure of the report never fails the task: the usage page then
+        misses the row of this task only.
+        """
+        try:
+            await usage.report_task(self.settings, self.usage, task_id)
+        except Exception as exc:
+            logger.warning(
+                {
+                    "message": "usage not reported",
+                    "task_id": task_id,
+                    "error_type": type(exc).__name__,
+                }
+            )
 
     async def _after_push(self, task: dict[str, Any], report: Report) -> dict[str, Any]:
         """Gate a pushed branch. Returns the task fields to change.

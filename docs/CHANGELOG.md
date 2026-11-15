@@ -8,6 +8,17 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: the token usage of each task goes to joshua-ai core, so the
+  usage page counts the work of the addon beside the chat turns. The Claude
+  forwarder counts the tokens of each `v1/messages` answer, streaming and
+  not, and the manager sends one row to `POST <CORE_URL>/v1/usage` when the
+  task ends, with the `JOSHUA_TOKEN_DEVELOPER` bearer. The row holds the kind
+  `developer`, the task id, the model, the number of calls, and the input,
+  output, cache read, and cache write counts. It needs `CORE_URL`, which a
+  run already uses for the limits. Without `CORE_URL`, nothing is reported.
+  A core that does not know the kind `developer` answers 400, and the manager
+  logs one warning for the task.
+
 - `developer`: development auto-run. The new tool `run_project(repo, project,
   branch?, persona?, notify?)` works through the open tasks of a tasks
   project, in roadmap order, on one branch and one pull request. When a task

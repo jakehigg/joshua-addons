@@ -51,6 +51,10 @@ the API, and passes the other headers on. The worker sets:
 
 The Claude CLI then sends its task token as a Claude token. It is a fake
 Claude token: the real token stays in the manager.
+
+The forwarder also counts the tokens of each ``v1/messages`` answer as it
+passes, for the task of the worker (see ``usage``). The counting never
+changes the bytes that reach the worker.
 """
 
 from __future__ import annotations
@@ -71,7 +75,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from joshua_developer import platforms
+from joshua_developer import platforms, usage
 from joshua_developer.log import get_logger
 from joshua_developer.manager import BUNDLE_SIGNATURES, MAX_BUNDLE, MAX_QUESTION, Manager
 from joshua_developer.platforms import PlatformConfigError
@@ -501,8 +505,14 @@ def build_worker_app(
             for key, value in upstream.headers.items()
             if key.lower() not in _DROP_RESPONSE
         }
+        body = upstream.aiter_raw()
+        counter = usage.counter_for(
+            path, upstream.status_code, upstream.headers.get("content-type", "")
+        )
+        if counter is not None:
+            body = usage.counted_stream(body, counter, manager.usage, task_id)
         return StreamingResponse(
-            upstream.aiter_raw(),
+            body,
             status_code=upstream.status_code,
             headers=response_headers,
             background=BackgroundTask(upstream.aclose),
