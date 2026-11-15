@@ -63,7 +63,9 @@ class Migration:
 # the preferred-product pointer and its confidence/source to items; the new
 # ``products`` table itself needs no entry here — ``create_all`` (see
 # ``run_migrations`` below) creates any missing table, including one that did
-# not exist in a pre-P2.3 database.
+# not exist in a pre-P2.3 database. The quantity on consumption_events is how
+# much of an item one event used; every event in an older database gets it as
+# NULL, which still means "used up".
 ADDITIVE_MIGRATIONS: list[Migration] = [
     Migration("purchase_records", "sku", Text()),
     Migration("purchase_records", "upc", Text()),
@@ -77,6 +79,7 @@ ADDITIVE_MIGRATIONS: list[Migration] = [
     ),
     Migration("items", "preference_confidence", Text()),
     Migration("items", "preference_source", Text()),
+    Migration("consumption_events", "quantity", Float()),
 ]
 
 

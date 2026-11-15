@@ -356,8 +356,10 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
     The lookup also matches aliases; matched_via says whether the name hit
     the item's own name, an alias, or a fuzzy match. recent_purchases
     carries the sku, upc, and quantity recorded on each purchase, when set.
-    preferred_product is null when no product preference is set — use
-    resolve_product to see candidates and set one.
+    recent_consumptions carries the id of each consumption event, which
+    delete_consumption takes to undo one. preferred_product is null when no
+    product preference is set — use resolve_product to see candidates and
+    set one.
 
     Args:
         item_name: The item to look up (alias and fuzzy matched).
@@ -377,11 +379,15 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
 
         inv_result = await session.execute(select(Inventory).where(Inventory.item_id == match.id))
         inv = inv_result.scalar_one_or_none()
-        last_consumed_at = await session.scalar(
-            select(func.max(ConsumptionEvent.occurred_at)).where(
-                ConsumptionEvent.item_id == match.id
-            )
+
+        ce_result = await session.execute(
+            select(ConsumptionEvent)
+            .where(ConsumptionEvent.item_id == match.id)
+            .order_by(ConsumptionEvent.occurred_at.desc())
+            .limit(20)
         )
+        consumptions = ce_result.scalars().all()
+        empty_at = await inv_service.get_depleted_at(session, match.id)
 
         preferred_product = (
             await session.get(Product, match.preferred_product_id)
@@ -410,7 +416,7 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
             "matched_via": matched_via,
             "preferred_store": match.preferred_store,
             "preferred_product": product_dict(preferred_product),
-            "status": inv_service.get_item_status(inv, last_consumed_at),
+            "status": inv_service.get_item_status(inv, empty_at),
             "avg_cycle_days": inv.avg_cycle_days if inv else None,
             "last_purchased_at": (
                 inv.last_purchased_at.isoformat() if inv and inv.last_purchased_at else None
@@ -431,6 +437,16 @@ async def get_item_history(item_name: str) -> dict[str, Any]:
                     "quantity": p.quantity,
                 }
                 for p in purchases
+            ],
+            "recent_consumptions": [
+                {
+                    "id": c.id,
+                    "occurred_at": c.occurred_at.isoformat(),
+                    "quantity": c.quantity,
+                    "note": c.note,
+                    "source": c.source,
+                }
+                for c in consumptions
             ],
         }
 
@@ -703,16 +719,32 @@ async def get_item_cost(item_names: list[str]) -> dict[str, Any]:
     return {"items": out}
 
 
+class ConsumptionLine(BaseModel):
+    """One item used, and how much of it was used."""
+
+    name: str
+    quantity: float | None = None
+
+
 @mcp.tool()
-async def consume_items(items: list[str], note: str | None = None) -> dict[str, Any]:
+async def consume_items(
+    items: list[str | ConsumptionLine], note: str | None = None
+) -> dict[str, Any]:
     """Mark items consumed, for example after a meal.
 
     Updates each item's inventory status. An item not yet tracked is
     created automatically — call this freely for any ingredient used,
     whether or not it has been tracked before.
 
+    An item is a bare name, which uses the item up, or an object with a name
+    and a quantity, which takes only that much of the stock on hand. The
+    item stays in stock while stock remains. A purchase with no quantity on
+    file counts as one unit. To undo a consumption, use delete_consumption.
+
     Args:
-        items: Item names consumed (alias and fuzzy matched).
+        items: Items consumed (alias and fuzzy matched). Each is a name, or
+            an object with a name and a quantity, e.g.
+            {"name": "chia seeds", "quantity": 0.25}.
         note: Optional context, e.g. "chicken thigh tacos".
     """
     if not items:
@@ -724,10 +756,13 @@ async def consume_items(items: list[str], note: str | None = None) -> dict[str, 
         touched: set[int] = set()
         now = datetime.now(UTC)
 
-        for name in items:
-            cleaned = name.strip()
+        for entry in items:
+            line = ConsumptionLine(name=entry) if isinstance(entry, str) else entry
+            cleaned = line.name.strip()
             if not cleaned:
                 raise ToolError("Every item needs a non-empty name.")
+            if line.quantity is not None and line.quantity <= 0:
+                raise ToolError(f"The quantity of '{cleaned}' must be more than 0.")
             match = await resolve_item(session, cleaned)
             if match is None:
                 display = cleaned.lower()
@@ -738,7 +773,13 @@ async def consume_items(items: list[str], note: str | None = None) -> dict[str, 
                 await session.flush()
                 created.append(match.name.title())
             session.add(
-                ConsumptionEvent(item_id=match.id, note=note, occurred_at=now, source="agent")
+                ConsumptionEvent(
+                    item_id=match.id,
+                    note=note,
+                    occurred_at=now,
+                    source="agent",
+                    quantity=line.quantity,
+                )
             )
             consumed.append(match.name.title())
             touched.add(match.id)
@@ -914,6 +955,35 @@ async def delete_purchase(item_name: str, purchased_at: str) -> dict[str, Any]:
         await inv_service.recalculate_inventory(session, match.id)
 
     return {"item": match.name.title(), "deleted_purchase_date": target_day.isoformat()}
+
+
+@mcp.tool()
+async def delete_consumption(consumption_id: int) -> dict[str, Any]:
+    """Delete a single consumption event, to undo a wrong "used up".
+
+    Use this when a meal used another item, or less of an item than the
+    event says. The item's status is computed again from the events that
+    remain, and its purchases are kept. The id of an event is in
+    recent_consumptions, from get_item_history.
+
+    Args:
+        consumption_id: The id of the consumption event to delete.
+    """
+    async with _session_factory()() as session:
+        item_id = await inv_service.delete_consumption(session, consumption_id)
+        if item_id is None:
+            raise ToolError(f"No consumption event with id {consumption_id}.")
+
+        item = await session.get(Item, item_id)
+        inv_result = await session.execute(select(Inventory).where(Inventory.item_id == item_id))
+        inv = inv_result.scalar_one_or_none()
+        empty_at = await inv_service.get_depleted_at(session, item_id)
+
+    return {
+        "deleted_consumption_id": consumption_id,
+        "item": item.name.title(),
+        "status": inv_service.get_item_status(inv, empty_at),
+    }
 
 
 async def _find_purchase(

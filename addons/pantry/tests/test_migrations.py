@@ -148,3 +148,34 @@ async def test_pre_p2_3_upgrade_is_idempotent(raw_engine: AsyncEngine) -> None:
 
     after = await _columns(raw_engine, "items")
     assert "preferred_product_id" in after
+
+
+async def test_consumption_quantity_is_added_to_an_older_schema(raw_engine: AsyncEngine) -> None:
+    """A consumption_events table from before the quantity column picks it up."""
+    async with raw_engine.begin() as conn:
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE consumption_events (
+                id INTEGER PRIMARY KEY,
+                item_id INTEGER NOT NULL,
+                note TEXT,
+                occurred_at TIMESTAMP NOT NULL,
+                source TEXT NOT NULL DEFAULT 'agent'
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            "INSERT INTO consumption_events (id, item_id, occurred_at) "
+            "VALUES (1, 1, '2026-01-01 00:00:00')"
+        )
+
+    assert "quantity" not in await _columns(raw_engine, "consumption_events")
+
+    await run_migrations(raw_engine)
+
+    assert "quantity" in await _columns(raw_engine, "consumption_events")
+
+    # The event on file keeps its meaning: a null quantity is "used up".
+    async with raw_engine.begin() as conn:
+        result = await conn.exec_driver_sql("SELECT quantity FROM consumption_events WHERE id = 1")
+        assert result.scalar_one() is None

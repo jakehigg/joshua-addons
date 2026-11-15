@@ -36,7 +36,10 @@ Everything else reads that state back (`get_inventory`, `get_item_history`,
 `get_price_stats`, `resolve_product`) or makes a small manual correction to
 it (`add_alias`, `merge_items`, `set_preferred_product`, `delete_purchase`). Use
 `consume_items` when something runs out between shopping trips, so
-depletion estimates stay honest. For a first-time load from another system,
+depletion estimates stay honest. Give an item a quantity on that call to use
+only part of the stock; the item stays in stock while stock remains. To undo
+a consumption event, use `delete_consumption` with the id of the event from
+`get_item_history`. For a first-time load from another system,
 use `import_data` (see "Bulk import" below) instead of replaying old
 receipts through `record_purchase`.
 
@@ -56,11 +59,12 @@ items, and `check_items` finds all of them.
 | `set_preferred_product` | Pin, or clear, the exact product an item resolves to. |
 | `get_price_stats` | Cost statistics for one item: overall, per store, and per product. |
 | `get_item_cost` | Average and most recent cost for one or more items, e.g. to price a planned trip. |
-| `consume_items` | Mark items consumed, for example after a meal. |
+| `consume_items` | Mark items consumed, for example after a meal. A quantity takes only part of the stock. |
 | `set_preferred_store` | Set or clear the store an item is usually bought at (a display hint only). |
 | `set_purchase_cost` | Attach a price to a purchase that already exists. |
 | `set_purchase_store` | Tag which store one or more existing purchases came from. |
 | `delete_purchase` | Delete a single purchase record without removing the item. |
+| `delete_consumption` | Delete a single consumption event, to undo a wrong "used up". |
 | `delete_item` | Permanently delete a tracked item and all its history. Needs `confirm=true`. |
 | `add_alias` | Teach the pantry that one name refers to an existing item. |
 | `merge_items` | Combine two tracked items that are the same food. The source becomes an alias of the target. |
@@ -95,8 +99,9 @@ family app. It shows:
   hide it.
 - **Analytics** — purchase frequency and cost per item: how often it is
   bought, the cost trend, and the cycle length the depletion estimate uses.
-- **Admin** — every purchase record, paginated, newest first. Edit a
-  purchase's cost or store, or delete one.
+- **Admin** — every purchase record, then every consumption event, both
+  paginated and newest first. Edit a purchase's cost or store, delete a
+  purchase, or delete a consumption event.
 
 `/` and its REST API at `/api/*` are open: they take no bearer token, the
 same posture the old family UI had. `/mcp` still needs `ADDON_TOKEN` when
