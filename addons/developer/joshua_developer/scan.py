@@ -142,6 +142,9 @@ def _write(lines_dir: Path, files: list[tuple[str, str]]) -> list[_ScannedFile]:
     Each file goes into its own directory, named with the index of the file
     in the list, and keeps its own file name, so a rule that reads the name
     still holds. A file that adds no line is not written.
+
+    Every line ends with a newline, the last line also: gitleaks counts the
+    line of a match in a file that ends with a newline right.
     """
     scanned: list[_ScannedFile] = []
     for path, patch in files:
