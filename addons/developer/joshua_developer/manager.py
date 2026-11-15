@@ -72,7 +72,7 @@ from joshua_developer.repos import (
 )
 from joshua_developer.runs import Runs
 from joshua_developer.runtime import Report, Runtime, TaskClock
-from joshua_developer.scan import Finding, scan_diff
+from joshua_developer.scan import Finding, ScanUnavailable, scan_diff
 from joshua_developer.store import (
     ACTIVE_STATUSES,
     TERMINAL_STATUSES,
@@ -919,8 +919,9 @@ class Manager:
         1. Read the diff from ``clone_head`` (the branch before the session)
            to the pushed branch, so the scan reads only the worker's commits,
            and scan it. Without a ``clone_head``, the diff starts at the base
-           branch. A hit fails the task (``_reject_push``). A ``git`` host has
-           no diff API, so the scan is ``unavailable``.
+           branch. A hit fails the task (``_reject_push``). The scan is
+           ``unavailable`` when a ``git`` host has no diff API, and when
+           gitleaks did not run.
         2. On a successful ``develop``, find the open pull request of the
            branch, or open one. On a ``rework``, check that the pull request
            is still there.
@@ -956,10 +957,17 @@ class Manager:
             if diff is None or diff.unavailable:
                 out["scan"] = "unavailable"
             else:
-                findings = scan_diff(diff)
-                if findings:
-                    return await self._reject_push(platform, task, report, findings)
-                out["scan"] = "partial" if diff.unscanned or diff.truncated else "clean"
+                try:
+                    findings = scan_diff(diff)
+                except ScanUnavailable as exc:
+                    logger.warning(
+                        {"message": "scan unavailable", "task_id": task_id, "error": str(exc)}
+                    )
+                    out["scan"] = "unavailable"
+                else:
+                    if findings:
+                        return await self._reject_push(platform, task, report, findings)
+                    out["scan"] = "partial" if diff.unscanned or diff.truncated else "clean"
             if report.status != "success" or platform.kind == "git":
                 return out
             if task["task_type"] == "develop":

@@ -21,7 +21,7 @@ from conftest import (
     mcp_session,
     payload,
 )
-from joshua_developer import notify
+from joshua_developer import notify, scan
 from joshua_developer.locks import LockManager
 from joshua_developer.manager import Manager, finding_error, retry_5xx
 from joshua_developer.platforms import PlatformError
@@ -362,10 +362,10 @@ async def test_a_scan_hit_deletes_the_branch_and_fails(manager, git_host, report
     assert row["status"] == "failed"
     assert row["scan"] == "hit"
     assert row["error"] == (
-        "the diff holds what looks like a credential (github_token in config.py:4)"
+        "the diff holds what looks like a credential (github-pat in config.py:4)"
     )
     assert row["findings"] == [
-        {"path": "config.py", "line_no": 4, "pattern_name": "github_token"},
+        {"path": "config.py", "line_no": 4, "pattern_name": "github-pat"},
     ]
     assert row["pr_url"] is None
     assert git_host.calls() == [
@@ -415,7 +415,7 @@ async def test_a_scan_hit_on_a_branch_that_was_there_keeps_it(manager, git_host)
         task["task_id"], pushed(head="feature/old", clone_head=CLONE_HEAD, created_branch=False)
     )
     assert row is not None and (row["status"], row["scan"]) == ("failed", "hit")
-    assert "github_token in k:1" in row["error"]
+    assert "github-pat in k:1" in row["error"]
     assert "kept, because it existed before the task" in row["error"]
     assert not [call for call in git_host.calls() if call.startswith("DELETE")]
 
@@ -491,6 +491,21 @@ async def test_a_git_host_ends_at_the_branch(manager, git_host) -> None:
     assert row["branch_name"] == "feature/x"
     assert row["pr_url"] is None
     assert git_host.requests == []
+
+
+async def test_a_scan_without_gitleaks_is_unavailable_and_never_clean(
+    manager, git_host, gitleaks, monkeypatch, caplog
+) -> None:
+    git_host.compare_files = [{"filename": "k", "patch": f"@@ -0,0 +1 @@\n+{SECRET}"}]
+    monkeypatch.setattr(scan.shutil, "which", lambda name, *args, **kw: None)
+    task = await develop(manager)
+    row = await manager.record_report(task["task_id"], pushed())
+    assert row is not None
+    assert (row["status"], row["scan"]) == ("success", "unavailable")
+    assert row["pr_number"] == 42
+    assert gitleaks.calls == []
+    text = " ".join(str(record.msg) for record in caplog.records)
+    assert "scan unavailable" in text and SECRET not in text
 
 
 async def test_a_push_with_files_without_patch_is_partial(manager, git_host) -> None:
