@@ -117,6 +117,28 @@ async def delete_purchase(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+async def list_consumptions(request: Request) -> JSONResponse:
+    limit = _int_param(request.query_params.get("limit"), 100, minimum=1, maximum=500)
+    offset = _int_param(request.query_params.get("offset"), 0, minimum=0)
+    if limit is None:
+        return _detail(400, "limit must be between 1 and 500")
+    if offset is None:
+        return _detail(400, "offset must be 0 or more")
+
+    async with server._session_factory()() as session:
+        rows, total = await inv_service.list_consumptions(session, limit=limit, offset=offset)
+    return JSONResponse({"consumptions": rows, "total": total, "limit": limit, "offset": offset})
+
+
+async def delete_consumption(request: Request) -> JSONResponse:
+    consumption_id = request.path_params["consumption_id"]
+    async with server._session_factory()() as session:
+        item_id = await inv_service.delete_consumption(session, consumption_id)
+    if item_id is None:
+        return _detail(404, "Consumption not found")
+    return JSONResponse({"ok": True})
+
+
 async def list_categories(request: Request) -> JSONResponse:
     async with server._session_factory()() as session:
         cats = await cat_service.list_categories(session)
@@ -294,6 +316,8 @@ def _routes() -> list[Route]:
         Route("/purchases", list_purchases, methods=["GET"]),
         Route("/purchases/{purchase_id:int}", update_purchase, methods=["PATCH"]),
         Route("/purchases/{purchase_id:int}", delete_purchase, methods=["DELETE"]),
+        Route("/consumptions", list_consumptions, methods=["GET"]),
+        Route("/consumptions/{consumption_id:int}", delete_consumption, methods=["DELETE"]),
         Route("/categories", list_categories, methods=["GET"]),
         Route("/items/{item_id:int}/aliases", list_item_aliases, methods=["GET"]),
         Route("/items/{item_id:int}/aliases", add_item_alias, methods=["POST"]),

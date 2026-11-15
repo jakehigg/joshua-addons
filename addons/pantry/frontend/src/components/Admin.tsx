@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { api, type PurchaseRecord } from "../api";
+import { api, type ConsumptionRecord, type PurchaseRecord } from "../api";
 
 const PAGE_SIZE = 100;
 
@@ -32,6 +32,15 @@ interface Props {
 }
 
 export function Admin({ onRefresh }: Props) {
+  return (
+    <>
+      <Purchases onRefresh={onRefresh} />
+      <Consumptions onRefresh={onRefresh} />
+    </>
+  );
+}
+
+function Purchases({ onRefresh }: Props) {
   const [rows, setRows] = useState<PurchaseRecord[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -227,6 +236,121 @@ export function Admin({ onRefresh }: Props) {
                     </tr>
                   )}
                 </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {hasMore && (
+        <div className="admin-load-more">
+          <button className="j-btn" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? "Loading…" : `Load more (${rows.length} of ${total})`}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Every consumption event, newest first. A delete undoes one wrong "used
+// up": the item's status is computed again from the events that remain.
+function Consumptions({ onRefresh }: Props) {
+  const [rows, setRows] = useState<ConsumptionRecord[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Two-step delete: first click arms, second click confirms.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.listConsumptions(PAGE_SIZE, 0)
+      .then((res) => { setRows(res.consumptions); setTotal(res.total); setError(null); })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  const hasMore = rows !== null && rows.length < total;
+
+  function loadMore() {
+    if (!rows) return;
+    setLoadingMore(true);
+    api.listConsumptions(PAGE_SIZE, rows.length)
+      .then((res) => {
+        setRows((prev) => [...(prev ?? []), ...res.consumptions]);
+        setTotal(res.total);
+        setError(null);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoadingMore(false));
+  }
+
+  async function handleDelete(c: ConsumptionRecord) {
+    if (confirmDeleteId !== c.id) {
+      setConfirmDeleteId(c.id);
+      return;
+    }
+    setBusyId(c.id);
+    try {
+      await api.deleteConsumption(c.id);
+      setRows((prev) => (prev ?? []).filter((r) => r.id !== c.id));
+      setTotal((t) => Math.max(0, t - 1));
+      setConfirmDeleteId(null);
+      setError(null);
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (error && rows === null) return <div className="error">{error}</div>;
+  if (rows === null) return <div className="j-empty loading"><span className="j-spinner" />Loading…</div>;
+  if (rows.length === 0) return <div className="j-empty">No consumption events recorded yet.</div>;
+
+  return (
+    <section className="stock-section">
+      <h2 className="j-label">
+        All consumptions <span className="j-count">{total}</span>
+      </h2>
+
+      {error && <div className="error">{error}</div>}
+
+      <div className="j-table-wrap">
+        <table className="j-table data-table">
+          <thead>
+            <tr>
+              <th className="ta-left">Item</th>
+              <th className="ta-left">Used</th>
+              <th className="num">Quantity</th>
+              <th className="ta-left">Note</th>
+              <th className="num">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c) => {
+              const confirming = confirmDeleteId === c.id;
+              const busy = busyId === c.id;
+              return (
+                <tr key={c.id}>
+                  <td className="ta-left">{c.item_name}</td>
+                  <td className="ta-left nowrap">{fmtDateTime(c.occurred_at)}</td>
+                  <td className="num">{c.quantity === null ? "All" : c.quantity}</td>
+                  <td className="ta-left">{c.note ?? "—"}</td>
+                  <td className="num">
+                    <div className="item-actions">
+                      <button
+                        className={`j-btn sm danger${confirming ? " armed" : ""}`}
+                        onClick={() => handleDelete(c)}
+                        disabled={busy}
+                      >
+                        {busy ? "…" : confirming ? "Confirm?" : "Delete"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               );
             })}
           </tbody>

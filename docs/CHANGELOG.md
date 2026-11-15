@@ -8,6 +8,22 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `pantry`: undo a consumption event. The new tool
+  `delete_consumption(consumption_id)` deletes one consumption event. It
+  then computes the status of the item again from the events that remain, so
+  a meal that named the wrong item no longer empties that item for good.
+  `get_item_history` gives the id of each event, in `recent_consumptions`.
+  The web UI mirrors the tool: the Admin page lists every consumption event,
+  and `DELETE /api/consumptions/<id>` deletes one.
+
+- `pantry`: use part of an item. `consume_items` takes a quantity for an
+  item, as `{"name": "chia seeds", "quantity": 0.25}`. The quantity comes
+  off the stock of the last purchase, and the item stays in stock while
+  stock remains. A purchase with no quantity on file counts as one unit. A
+  call that passes only names keeps the old behavior: it uses the item up.
+  The addon adds the `quantity` column to `consumption_events` on its next
+  start.
+
 - `developer`: the token usage of each task goes to joshua-ai core, so the
   usage page counts the work of the addon beside the chat turns. The Claude
   forwarder counts the tokens of each `v1/messages` answer, streaming and
