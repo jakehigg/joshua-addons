@@ -82,7 +82,9 @@ env:
   # Service, and put JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   # CHANNELS_URL: http://<joshua-ai channels service>:8000
   # run_project: the tasks addon (its release name is the Service name) and
-  # joshua-ai core. Neither needs a bearer inside the namespace.
+  # the limits of joshua-ai core. Neither needs a bearer inside the namespace.
+  # CORE_URL also takes the token report of each task, which needs
+  # JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   TASKS_URL: http://tasks:8000
   CORE_URL: http://joshua-core:8000
   # A CA bundle for a git host with a private certificate authority. Mount

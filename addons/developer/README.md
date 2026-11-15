@@ -229,6 +229,30 @@ of its branch. A long wait can thus stop a new task with
 `concurrency_limit`. Two settings control this: a lower `ask_wait_s` frees a
 slot sooner, and a higher `max_workers` lets other tasks run during a wait.
 
+## The token usage of a task
+
+Every model call of a worker goes through the Claude forwarder on the
+manager, so the manager counts the tokens of a task. It reads the counts of
+each `v1/messages` answer while the answer goes to the worker: the input
+tokens, the output tokens, and the two cache counts. The counting does not
+change one byte of the answer, and it never fails the call. A count that the
+manager cannot read is left out.
+
+When the task ends, the manager sends one row to `POST <CORE_URL>/v1/usage`
+with the `JOSHUA_TOKEN_DEVELOPER` bearer: the kind `developer`, the task id
+as the worker name and as the row reference, the model of the last call, the
+number of calls, and the four counts. The usage page of joshua-ai then counts
+the work of the developer addon beside the chat turns. Every task that made a
+model call reports, a failed and a timed-out task included. A task that made
+no model call reports nothing.
+
+Without `CORE_URL`, nothing is reported, and the manager logs it one time for
+each task. Core keeps one row for each writer and reference, so a report that
+goes two times writes one row. A core that does not know the kind `developer`
+answers 400: the manager then logs one warning for the task and does not try
+again. A manager restart loses the counts of the tasks that run at that
+moment, and those tasks report no usage.
+
 ## Security
 
 The worker runs a model with Bash over code that a stranger can write. Text
@@ -417,9 +441,9 @@ applies before the value in the file.
 | `DEVELOPER_CONFIG` | `/etc/joshua-addon/developer.yaml` | The path of `developer.yaml`. No file means the defaults. |
 | `DEVELOPER_DATA_DIR` | `/data` | The folder of `developer.db`, and of `bundles/`: the saved commits of failed pushes. |
 | `CHANNELS_URL` | empty | The address of joshua-ai channels. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
-| `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the manager sends to channels. |
+| `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the manager sends to channels and to core. |
 | `TASKS_URL` | empty | The address of the tasks addon, such as `http://tasks:8000`. The manager adds `/api`, which needs no bearer. Without it, `run_project` is refused. |
-| `CORE_URL` | empty | The address of joshua-ai core, such as `http://core:8000` (Compose) or `http://joshua-core:8000` (Kubernetes). A run reads `GET /v1/limits` from it, which needs no bearer. Without it, the limits are unknown. |
+| `CORE_URL` | empty | The address of joshua-ai core, such as `http://core:8000` (Compose) or `http://joshua-core:8000` (Kubernetes). A run reads `GET /v1/limits` from it, which needs no bearer. A task that ends reports its tokens to `POST /v1/usage` with `JOSHUA_TOKEN_DEVELOPER` (see "The token usage of a task"). Without it, the limits are unknown and no usage is reported. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token of the forwarder. Without it, the forwarder answers 503. |
 | `WORKER_RUNTIME` | `stub` | `docker`, `kubernetes`, or `stub`. `stub` starts no worker and records a fake `success` report, to test the tools. |
 | `WORKER_IMAGE` | empty | The worker image. `docker` and `kubernetes` need it. Use the worker of the same release. |
