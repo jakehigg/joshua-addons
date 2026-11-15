@@ -54,7 +54,8 @@ Claude token: the real token stays in the manager.
 
 The forwarder also counts the tokens of each ``v1/messages`` answer as it
 passes, for the task of the worker (see ``usage``). The counting never
-changes the bytes that reach the worker.
+changes the bytes that reach the worker: the counter reads a decoded copy of
+an answer that the API compressed.
 """
 
 from __future__ import annotations
@@ -510,7 +511,13 @@ def build_worker_app(
             path, upstream.status_code, upstream.headers.get("content-type", "")
         )
         if counter is not None:
-            body = usage.counted_stream(body, counter, manager.usage, task_id)
+            # The worker reads the raw bytes, which fit the content-encoding
+            # and the content-length of the API. The counter reads a decoded
+            # copy of the same bytes.
+            counted = usage.DecodedCounter(
+                counter, upstream.headers.get("content-encoding", ""), task_id
+            )
+            body = usage.counted_stream(body, counted, manager.usage, task_id)
         return StreamingResponse(
             body,
             status_code=upstream.status_code,
