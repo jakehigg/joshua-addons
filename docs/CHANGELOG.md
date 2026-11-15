@@ -17,7 +17,10 @@ releases, with the images and the packaged chart, are at
   output, cache read, and cache write counts. It needs `CORE_URL`, which a
   run already uses for the limits. Without `CORE_URL`, nothing is reported.
   A core that does not know the kind `developer` answers 400, and the manager
-  logs one warning for the task.
+  logs one warning for the task. The counter reads a decoded copy of the
+  answer, so a compressed answer (`gzip` or `deflate`) is counted, and the
+  worker still gets the bytes of the API. An answer that the counter cannot
+  read is one warning in the manager log and no row.
 
 - `developer`: development auto-run. The new tool `run_project(repo, project,
   branch?, persona?, notify?)` works through the open tasks of a tasks

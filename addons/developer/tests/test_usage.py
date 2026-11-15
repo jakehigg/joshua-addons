@@ -5,6 +5,8 @@ an httpx MockTransport."""
 from __future__ import annotations
 
 import json
+import types
+import zlib
 
 import httpx
 import pytest
@@ -16,10 +18,12 @@ from joshua_developer.runtime import StubRuntime
 from joshua_developer.store import TaskStore
 from joshua_developer.usage import (
     BodyCounter,
+    DecodedCounter,
     StreamCounter,
     Totals,
     UsageTracker,
     counter_for,
+    decoder_for,
     post_usage,
     report_task,
     usage_row,
@@ -150,6 +154,98 @@ def test_only_the_messages_path_and_a_200_are_counted() -> None:
     assert counter_for("v1/models", 200, "application/json") is None
     assert counter_for("v1/messages", 429, "application/json") is None
     assert counter_for("v1/messages", 200, "text/plain") is None
+
+
+# --- the content encoding of an answer ---------------------------------------
+
+
+def gzipped(data: bytes) -> bytes:
+    """``data`` as the API sends it with ``content-encoding: gzip``."""
+    stream = zlib.compressobj(wbits=16 + zlib.MAX_WBITS)
+    return stream.compress(data) + stream.flush()
+
+
+def deflated(data: bytes) -> bytes:
+    """``data`` as the API sends it with ``content-encoding: deflate``."""
+    stream = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    return stream.compress(data) + stream.flush()
+
+
+def test_a_gzipped_stream_gives_the_counts_of_the_plain_one() -> None:
+    """The chunks are smaller than the compressed answer, so one event is cut."""
+    plain = feed(StreamCounter(), EVENTS)
+    counter = DecodedCounter(StreamCounter(), "gzip", "t1")
+    assert feed(counter, gzipped(EVENTS), size=13) == plain
+    assert plain is not None and plain.output == 42
+
+
+def test_a_deflated_body_gives_the_counts_of_the_plain_one() -> None:
+    counter = DecodedCounter(BodyCounter(), "deflate", "t1")
+    assert feed(counter, deflated(BODY), size=11) == feed(BodyCounter(), BODY)
+    # A deflate answer that holds the zlib header is read as well, and an
+    # empty chunk before it keeps the window to try again.
+    counter = DecodedCounter(BodyCounter(), "deflate", "t1")
+    counter.feed(b"")
+    assert feed(counter, zlib.compress(BODY), size=11) == feed(BodyCounter(), BODY)
+
+
+def test_an_answer_without_an_encoding_passes_through() -> None:
+    plain = feed(StreamCounter(), EVENTS)
+    for header in ("", "identity"):
+        assert feed(DecodedCounter(StreamCounter(), header, "t1"), EVENTS) == plain
+    # One encoding to undo beside identity: the one that applies.
+    counter = DecodedCounter(StreamCounter(), "gzip, identity", "t1")
+    assert feed(counter, gzipped(EVENTS)) == plain
+
+
+def test_an_encoding_that_is_not_decoded_counts_nothing(caplog) -> None:
+    with caplog.at_level("WARNING", logger="joshua_developer.usage"):
+        counter = DecodedCounter(StreamCounter(), "snappy", "t1")
+        assert feed(counter, EVENTS) is None
+    assert "snappy" in caplog.text
+    assert len(caplog.records) == 1
+    # Two encodings to undo are not chained, and an empty name is not one.
+    assert decoder_for("gzip, br") is None
+    assert decoder_for("snappy") is None
+
+
+def fake_library() -> types.SimpleNamespace:
+    """A stand-in for brotli or zstandard: its stream gives the bytes back."""
+
+    class Stream:
+        def decompress(self, chunk: bytes) -> bytes:
+            return chunk
+
+    return types.SimpleNamespace(
+        Decompressor=Stream,
+        ZstdDecompressor=lambda: types.SimpleNamespace(decompressobj=Stream),
+    )
+
+
+def test_brotli_and_zstd_are_counted_when_a_library_is_installed(monkeypatch) -> None:
+    monkeypatch.setattr(usage, "_module", lambda name: fake_library())
+    plain = feed(StreamCounter(), EVENTS)
+    for header in ("br", "zstd"):
+        assert feed(DecodedCounter(StreamCounter(), header, "t1"), EVENTS) == plain
+
+
+def test_brotli_and_zstd_count_nothing_without_a_library(monkeypatch, caplog) -> None:
+    """This addon installs no brotli and no zstandard library."""
+    monkeypatch.setattr(usage, "_module", lambda name: None)
+    with caplog.at_level("WARNING", logger="joshua_developer.usage"):
+        assert feed(DecodedCounter(StreamCounter(), "br", "t1"), EVENTS) is None
+    assert "br" in caplog.text and len(caplog.records) == 1
+    assert decoder_for("zstd") is None
+
+
+def test_a_corrupt_stream_counts_nothing_and_raises_nothing(caplog) -> None:
+    corrupt = b"\x1f\x8b" + b"not gzip at all" * 4
+    with caplog.at_level("WARNING", logger="joshua_developer.usage"):
+        counter = DecodedCounter(StreamCounter(), "gzip", "t1")
+        assert feed(counter, corrupt) is None
+    # One line for the answer, with the error type and no part of the body.
+    assert len(caplog.records) == 1
+    assert "not decoded" in caplog.text and "error" in caplog.text
 
 
 # --- the sums of a task ------------------------------------------------------
@@ -346,6 +442,20 @@ async def call_claude(manager: Manager, claude: httpx.AsyncClient, token: str, *
         return await client.post("/worker/claude/v1/messages", **kwargs)
 
 
+async def call_claude_raw(manager: Manager, claude: httpx.AsyncClient, token: str, **kwargs):
+    """The answer of the forwarder, with the bytes as the worker's client reads them."""
+    app = build_worker_app(manager, claude_client=claude)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://developer:8001",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as client:
+        async with client.stream("POST", "/worker/claude/v1/messages", **kwargs) as answer:
+            raw = b"".join([chunk async for chunk in answer.aiter_raw()])
+    return answer, raw
+
+
 async def dispatch(manager: Manager) -> tuple[str, str]:
     result = await manager.develop("alex", REPO, "Add a health check.")
     full = manager.store.get_task_full(result["task_id"])
@@ -377,6 +487,80 @@ async def test_the_forwarder_counts_a_non_streaming_answer(manager) -> None:
     assert answer.content == BODY
     totals = manager.usage.take(task_id)
     assert totals == Totals(calls=1, input=7, output=5, cache_read=11, cache_write=3, model=MODEL)
+
+
+async def test_the_forwarder_counts_a_gzipped_stream_and_passes_the_raw_bytes(manager) -> None:
+    """The Claude CLI asks for gzip, so the API answers with a compressed stream."""
+    task_id, token = await dispatch(manager)
+    raw = gzipped(EVENTS)
+    claude = claude_client(
+        httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream", "content-encoding": "gzip"},
+            content=_stream(raw),
+        )
+    )
+    answer, body = await call_claude_raw(manager, claude, token, json={"stream": True})
+    await claude.aclose()
+    # The worker gets the bytes of the API, gzip and all, under its headers.
+    assert body == raw
+    assert answer.headers["content-encoding"] == "gzip"
+    totals = manager.usage.take(task_id)
+    assert totals == Totals(
+        calls=1, input=25, output=42, cache_read=2048, cache_write=1024, model=MODEL
+    )
+
+
+async def test_the_forwarder_counts_a_gzipped_non_streaming_answer(manager) -> None:
+    task_id, token = await dispatch(manager)
+    raw = gzipped(BODY)
+    claude = claude_client(
+        httpx.Response(
+            200,
+            headers={"content-type": "application/json", "content-encoding": "gzip"},
+            content=_stream(raw),
+        )
+    )
+    answer, body = await call_claude_raw(manager, claude, token, json={"model": MODEL})
+    await claude.aclose()
+    assert body == raw
+    totals = manager.usage.take(task_id)
+    assert totals == Totals(calls=1, input=7, output=5, cache_read=11, cache_write=3, model=MODEL)
+
+
+async def test_the_forwarder_passes_an_encoding_it_does_not_decode(manager, caplog) -> None:
+    task_id, token = await dispatch(manager)
+    claude = claude_client(
+        httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream", "content-encoding": "snappy"},
+            content=_stream(EVENTS),
+        )
+    )
+    with caplog.at_level("WARNING", logger="joshua_developer.usage"):
+        answer, body = await call_claude_raw(manager, claude, token, json={"stream": True})
+    await claude.aclose()
+    assert answer.status_code == 200 and body == EVENTS
+    assert manager.usage.take(task_id) is None
+    assert "snappy" in caplog.text
+
+
+async def test_the_forwarder_passes_a_corrupt_gzipped_answer(manager, caplog) -> None:
+    task_id, token = await dispatch(manager)
+    raw = b"\x1f\x8b" + b"not gzip at all" * 4
+    claude = claude_client(
+        httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream", "content-encoding": "gzip"},
+            content=_stream(raw),
+        )
+    )
+    with caplog.at_level("WARNING", logger="joshua_developer.usage"):
+        answer, body = await call_claude_raw(manager, claude, token, json={"stream": True})
+    await claude.aclose()
+    assert answer.status_code == 200 and body == raw
+    assert manager.usage.take(task_id) is None
+    assert "not decoded" in caplog.text
 
 
 async def test_a_counting_error_does_not_break_the_call(manager, monkeypatch) -> None:

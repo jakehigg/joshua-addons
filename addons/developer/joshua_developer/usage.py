@@ -9,6 +9,13 @@ count); a non-streaming answer holds both in its JSON body.
 ``v1/messages/count_tokens`` and the model routes use no tokens, so they are
 not counted.
 
+The API answers the Claude CLI with a content-encoded body, because the CLI
+asks for one. ``DecodedCounter`` gives the counter a decoded copy of the
+answer, and the worker keeps the raw bytes: the answer carries the
+``content-encoding`` of the API, so only the raw bytes fit its headers.
+``gzip`` and ``deflate`` are decoded with ``zlib``. ``br`` and ``zstd`` are
+decoded when a decoder is installed, and counted no other way.
+
 ``UsageTracker`` holds the sum of each task in memory: the four counts, the
 number of calls, and the last model. A manager restart loses the counts of
 the tasks that run then.
@@ -20,8 +27,9 @@ so a row that comes two times is written one time. A connection error or a
 5xx reply is tried again, 3 attempts in all. A 4xx reply is not tried again.
 Without ``CORE_URL``, nothing is reported.
 
-A parse failure is a debug log and nothing else, and no error of the counting
-reaches the worker's call: a wrong count must never break a task.
+An answer that holds no counts is a warning log and nothing else, and no
+error of the counting reaches the worker's call: a wrong count must never
+break a task. Each answer logs one such line at most.
 
 The log names the task and the status code, never a token and never a body.
 """
@@ -29,9 +37,11 @@ The log names the task and the status code, never a token and never a body.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import re
 import threading
+import zlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -66,6 +76,15 @@ MAX_LINE = 64 * 1024
 # The largest non-streaming body that the counter reads.
 MAX_JSON = 1024 * 1024
 _DATA = b"data:"
+# The window of each content encoding that ``zlib`` undoes: the window of the
+# format, and the window to try again with when the first one does not read
+# the first chunk. A ``deflate`` answer is raw more often than it is wrapped.
+_ZLIB_WINDOWS = {
+    "gzip": (16 + zlib.MAX_WBITS, None),
+    "deflate": (-zlib.MAX_WBITS, zlib.MAX_WBITS),
+}
+# The longest content encoding name that a log line holds.
+MAX_ENCODING = 100
 
 
 @dataclass
@@ -230,6 +249,147 @@ def counter_for(path: str, status_code: int, content_type: str) -> Counter | Non
     return None
 
 
+class Decoder:
+    """Undoes the content encoding of one answer, chunk by chunk."""
+
+    def decode(self, chunk: bytes) -> bytes:
+        """The decoded bytes of the next chunk, which can be empty."""
+        raise NotImplementedError
+
+
+class PassDecoder(Decoder):
+    """The decoder of an answer that has no content encoding."""
+
+    def decode(self, chunk: bytes) -> bytes:
+        return chunk
+
+
+class ZlibDecoder(Decoder):
+    """A ``gzip`` or ``deflate`` answer, decoded with ``zlib``.
+
+    When the window of the format does not read the first chunk of bytes, and
+    the format has another window, the decoder reads that chunk again with
+    it.
+    """
+
+    def __init__(self, window: int, retry_window: int | None = None) -> None:
+        self._stream = zlib.decompressobj(window)
+        self._retry_window = retry_window
+
+    def decode(self, chunk: bytes) -> bytes:
+        if not chunk:
+            return b""
+        try:
+            out = self._stream.decompress(chunk)
+        except zlib.error:
+            if self._retry_window is None:
+                raise
+            self._stream = zlib.decompressobj(self._retry_window)
+            out = self._stream.decompress(chunk)
+        self._retry_window = None
+        return out
+
+
+class StreamDecoder(Decoder):
+    """An answer decoded by the stream object of an installed library."""
+
+    def __init__(self, stream: Any) -> None:
+        self._stream = stream
+
+    def decode(self, chunk: bytes) -> bytes:
+        return bytes(self._stream.decompress(chunk))
+
+
+def _module(name: str) -> Any | None:
+    """The module ``name``, or None when it is not installed."""
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        return None
+
+
+def _brotli_decoder() -> Decoder | None:
+    for name in ("brotli", "brotlicffi"):
+        if (module := _module(name)) is not None:
+            return StreamDecoder(module.Decompressor())
+    return None
+
+
+def _zstd_decoder() -> Decoder | None:
+    if (module := _module("zstandard")) is None:
+        return None
+    return StreamDecoder(module.ZstdDecompressor().decompressobj())
+
+
+def decoder_for(content_encoding: str) -> Decoder | None:
+    """The decoder of one answer, or None when the counter cannot read it.
+
+    An answer with no encoding, with an empty one, or with ``identity`` gets
+    a decoder that passes the chunks on. A header with more than one encoding
+    to undo, an encoding that this addon does not know, and ``br`` or
+    ``zstd`` with no library installed all give None.
+    """
+    names = [part.strip().lower() for part in content_encoding.split(",")]
+    names = [name for name in names if name and name != "identity"]
+    if not names:
+        return PassDecoder()
+    if len(names) > 1:
+        return None
+    name = names[0]
+    if name in _ZLIB_WINDOWS:
+        return ZlibDecoder(*_ZLIB_WINDOWS[name])
+    if name == "br":
+        return _brotli_decoder()
+    if name == "zstd":
+        return _zstd_decoder()
+    return None
+
+
+class DecodedCounter(Counter):
+    """``counter``, fed the decoded bytes of a content-encoded answer.
+
+    An answer that has no decoder, and an answer that a decoder cannot read,
+    hold no counts: the wrapper logs one warning and gives the counter
+    nothing more. The log names the encoding or the error, never a count and
+    never a part of the body.
+    """
+
+    def __init__(self, counter: Counter, content_encoding: str, task_id: str) -> None:
+        self._counter = counter
+        self._task_id = task_id
+        self._decoder = decoder_for(content_encoding)
+        if self._decoder is None:
+            logger.warning(
+                {
+                    "message": "usage: the answer encoding is not decoded, so it is not counted",
+                    "task_id": task_id,
+                    "content_encoding": content_encoding[:MAX_ENCODING],
+                }
+            )
+
+    def feed(self, chunk: bytes) -> None:
+        if self._decoder is None:
+            return
+        try:
+            decoded = self._decoder.decode(chunk)
+        except Exception as exc:
+            self._decoder = None
+            logger.warning(
+                {
+                    "message": "usage: the answer was not decoded, so it is not counted",
+                    "task_id": self._task_id,
+                    "error_type": type(exc).__name__,
+                }
+            )
+            return
+        self._counter.feed(decoded)
+
+    def result(self) -> Sample | None:
+        if self._decoder is None:
+            return None
+        return self._counter.result()
+
+
 class UsageTracker:
     """The token counts of each task that runs, in the memory of the manager."""
 
@@ -261,13 +421,16 @@ def counted_stream(
     """``source``, byte for byte, with the counts of the answer on the way.
 
     The counting never changes a chunk, never holds one back, and never
-    raises into the forwarder.
+    raises into the forwarder. The first chunk that the counter cannot read
+    ends the counting of the answer, so one answer logs one warning at most.
     """
 
     async def stream() -> AsyncIterator[bytes]:
+        counting = True
         try:
             async for chunk in source:
-                _feed(counter, chunk, task_id)
+                if counting:
+                    counting = _feed(counter, chunk, task_id)
                 yield chunk
         finally:
             _commit(counter, tracker, task_id)
@@ -275,24 +438,27 @@ def counted_stream(
     return stream()
 
 
-def _feed(counter: Counter, chunk: bytes, task_id: str) -> None:
+def _feed(counter: Counter, chunk: bytes, task_id: str) -> bool:
+    """Give ``chunk`` to ``counter``. False when the counter raised on it."""
     try:
         counter.feed(chunk)
     except Exception as exc:
-        logger.debug(
+        logger.warning(
             {
                 "message": "usage: a chunk was not counted",
                 "task_id": task_id,
                 "error_type": type(exc).__name__,
             }
         )
+        return False
+    return True
 
 
 def _commit(counter: Counter, tracker: UsageTracker, task_id: str) -> None:
     try:
         sample = counter.result()
     except Exception as exc:
-        logger.debug(
+        logger.warning(
             {
                 "message": "usage: the answer was not counted",
                 "task_id": task_id,
@@ -301,7 +467,7 @@ def _commit(counter: Counter, tracker: UsageTracker, task_id: str) -> None:
         )
         return
     if sample is None:
-        logger.debug({"message": "usage: the answer held no counts", "task_id": task_id})
+        logger.warning({"message": "usage: the answer held no counts", "task_id": task_id})
         return
     tracker.add(task_id, sample)
 
