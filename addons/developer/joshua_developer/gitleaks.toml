@@ -1,0 +1,21 @@
+# The configuration of the credential scan. The manager runs gitleaks with
+# this file over the added lines of the diff of a push.
+title = "Joshua developer credential scan"
+
+[extend]
+# Every rule of the gitleaks default configuration.
+useDefault = true
+
+# A placeholder is not a credential, and must not fail a task. The allowlist
+# reads the value that a rule found.
+[allowlist]
+description = "Placeholder values, not credentials"
+regexTarget = "secret"
+regexes = [
+  # A value in angle brackets, the usual placeholder form, such as
+  # <YOUR_API_KEY> or <home assistant token>.
+  '''^<[^<>\n]{0,200}>$''',
+  # One line of prose, such as "set by the Ansible role". A credential has
+  # no space in it, and each word of prose is short.
+  '''^\S{1,24}(?:[ \t]\S{1,24}){1,20}$''',
+]

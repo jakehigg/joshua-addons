@@ -9,6 +9,9 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import shutil
+import subprocess
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -153,6 +156,115 @@ def git_host(monkeypatch) -> FakeGitHost:
         lambda verify=True: httpx.AsyncClient(transport=httpx.MockTransport(host.handler)),
     )
     return host
+
+
+# --- the credential scan ---------------------------------------------------
+
+# The gitleaks binary is not in the test environment, so every test runs the
+# scan against this stand-in. It writes the JSON report of gitleaks, with the
+# rule names of the gitleaks default configuration, and it reads the
+# allowlist of the shipped gitleaks.toml, so a test of a placeholder tests
+# that file. Each pattern is one line only: a test needs no more.
+GITLEAKS_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("anthropic-api-key", re.compile(r"sk-ant-[A-Za-z0-9_-]{16,}")),
+    ("gitlab-pat", re.compile(r"glpat-[A-Za-z0-9_-]{20,}")),
+    ("github-pat", re.compile(r"ghp_[A-Za-z0-9]{36}")),
+    ("github-fine-grained-pat", re.compile(r"github_pat_[A-Za-z0-9_]{30,}")),
+    ("github-oauth", re.compile(r"gho_[A-Za-z0-9]{36}")),
+    ("slack-bot-token", re.compile(r"xoxb-[A-Za-z0-9-]{10,}")),
+    ("slack-user-token", re.compile(r"xoxp-[A-Za-z0-9-]{10,}")),
+    ("aws-access-token", re.compile(r"AKIA[0-9A-Z]{16}")),
+    (
+        "private-key",
+        re.compile(r"-----BEGIN[ A-Z]{0,20}PRIVATE KEY(?: BLOCK)?-----[A-Za-z0-9+/=]*"),
+    ),
+    (
+        "generic-api-key",
+        re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]\s*['\"]?([^'\"\n]{16,})"),
+    ),
+)
+
+
+class FakeGitleaks:
+    """The gitleaks binary of the tests.
+
+    ``calls`` holds the arguments of each run. ``report`` puts a recorded
+    report in front of the patterns; the ``File`` of an item of it is
+    relative to the directory that the scan gives to gitleaks.
+    ``report_text`` writes a report that is not a list of findings, and
+    ``returncode`` and ``error`` make a run fail.
+    """
+
+    def __init__(self) -> None:
+        from joshua_developer import scan
+
+        self.calls: list[list[str]] = []
+        self.report: list[dict[str, Any]] | None = None
+        self.report_text: str | None = None
+        self.returncode = 0
+        self.error: Exception | None = None
+        config = tomllib.loads(scan.CONFIG_PATH.read_text(encoding="utf-8"))
+        self.allowlist = [re.compile(regex) for regex in config["allowlist"]["regexes"]]
+
+    def run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        self.calls.append(args)
+        if self.error is not None:
+            raise self.error
+        target = Path(args[2])
+        report = Path(args[args.index("--report-path") + 1])
+        if self.report_text is not None:
+            report.write_text(self.report_text, encoding="utf-8")
+        else:
+            items = self.detect(target) if self.report is None else self.report
+            report.write_text(
+                json.dumps([{**item, "File": str(target / str(item["File"]))} for item in items]),
+                encoding="utf-8",
+            )
+        return subprocess.CompletedProcess(args, self.returncode, "", "")
+
+    def detect(self, target: Path) -> list[dict[str, Any]]:
+        """The findings in the files under ``target``, in the form of the report."""
+        found: list[dict[str, Any]] = []
+        for path in sorted(target.rglob("*")):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for line_no, line in enumerate(text.splitlines(), start=1):
+                for rule, pattern in GITLEAKS_RULES:
+                    match = pattern.search(line)
+                    if match is None:
+                        continue
+                    secret = match.group(1) if match.re.groups else match.group(0)
+                    if any(allowed.search(secret) for allowed in self.allowlist):
+                        continue
+                    found.append(
+                        {
+                            "RuleID": rule,
+                            "File": str(path.relative_to(target)),
+                            "StartLine": line_no,
+                            "Secret": secret,
+                            "Match": match.group(0),
+                        }
+                    )
+        return found
+
+
+@pytest.fixture(autouse=True)
+def gitleaks(monkeypatch) -> FakeGitleaks:
+    """The scan of every test runs the fake gitleaks, and never a binary."""
+    from joshua_developer import scan
+
+    fake = FakeGitleaks()
+    monkeypatch.setattr(scan, "run_gitleaks", fake.run)
+    real_which = shutil.which
+    monkeypatch.setattr(
+        scan.shutil,
+        "which",
+        lambda name, *args, **kw: (
+            f"/usr/bin/{scan.GITLEAKS}" if name == scan.GITLEAKS else real_which(name, *args, **kw)
+        ),
+    )
+    return fake
 
 
 def make_settings(data_dir: Path, **overrides: Any) -> Settings:

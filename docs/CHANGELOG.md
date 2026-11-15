@@ -100,11 +100,15 @@ releases, with the images and the packaged chart, are at
   control, which starts closed on every task, also after a reload. A long
   note no longer fills the screen. The API and the MCP tools do not change.
 
-- `developer`: the credential scan no longer fails a task for a placeholder.
-  An `assigned_secret` value with a space in it, or a value in angle
+- `developer`: the credential scan reads the diff of a push with `gitleaks`,
+  in place of its own patterns. The configuration
+  `joshua_developer/gitleaks.toml` takes every rule of the gitleaks default
+  configuration, and it allowlists placeholder values: a value in angle
   brackets, such as `token = "<long-lived token, set by the Ansible role>"`,
-  is not a finding. The prefix patterns (`glpat-`, `sk-ant-`, `AKIA`, and the
-  others) do not change.
+  and a line of prose are not findings. A finding names the gitleaks rule,
+  the file, and the line, and never the text that matched. The image holds
+  the `gitleaks` binary, pinned to v8.30.1. Without the binary, the scan is
+  `unavailable`: a diff that the scan did not read is never `clean`.
 
 ## 0.2.0 - 2026-11-08
 

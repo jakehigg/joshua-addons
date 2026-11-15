@@ -697,22 +697,24 @@ After the worker pushes, the manager:
    diff holds only the worker's commits. Without a `clone_head`, the diff
    starts at the base branch. The worker sends `clone_head`, so the scan is
    a guard against a mistake, not against a hostile worker.
-2. Scans the added lines for credentials: `sk-ant-`, `glpat-`, `ghp_`,
-   `github_pat_`, `gho_`, `xoxb-`, `xoxp-`, an AWS access key, a private key
-   block, and a quoted value of 16 or more characters set to a name such as
-   `api_key`, `secret`, `token`, or `password`. That value must mix at least
-   three of lowercase, uppercase, digits, and symbols.
-3. On a hit, fails the task. The error names the pattern, the file, and the
-   line, and never the text. The manager deletes the branch only when this
-   task made it: a `develop` whose worker found no branch on the remote. A
-   branch that was there before the task stays, and the error says so. A
+2. Scans the added lines with `gitleaks`. The configuration is
+   `joshua_developer/gitleaks.toml`: every rule of the gitleaks default
+   configuration, and an allowlist for placeholder values. A value in angle
+   brackets, such as `token = "<set by the Ansible role>"`, and a line of
+   prose are not findings. The image holds the `gitleaks` binary.
+3. On a hit, fails the task. The error names the gitleaks rule, the file,
+   and the line, and never the text. The manager deletes the branch only when
+   this task made it: a `develop` whose worker found no branch on the remote.
+   A branch that was there before the task stays, and the error says so. A
    `rework` never deletes the branch.
 4. On a clean `develop` with status `success`, finds or opens the pull
    request. A `rework` push changes the pull request that is there.
 
 `scan` in `task_status` is `clean`, `partial` (the host sent no text for a
 file, or did not list every file), `hit`, or `unavailable` (a `git` host
-has no diff API). GitHub lists at most 300 files in one compare reply. The
+has no diff API, or `gitleaks` did not run). A scan that cannot read the
+diff is never `clean`. GitHub lists at most 300 files in one compare
+reply. The
 manager reads the reply page by page, and when the list stops at that cap,
 the scan is `partial`. A task that
 ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
