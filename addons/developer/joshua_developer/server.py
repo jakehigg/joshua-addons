@@ -9,12 +9,15 @@ task and list the personas, and every other tool gives it "403 forbidden".
 A person sees only their own tasks.
 
 ``start`` also builds the worker side: the worker API for port 8001
-(``worker_api``) and the git host tunnel for port 8002 (``git_proxy``).
-``python -m joshua_developer`` serves all three in one process.
+(``worker_api``), the git host tunnel for port 8002 (``git_proxy``), and,
+with ``packages.enabled`` in ``developer.yaml``, the package proxy for port
+8003 (``package_proxy``). ``python -m joshua_developer`` serves them in one
+process.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hmac
 from collections.abc import AsyncIterator
@@ -22,6 +25,7 @@ from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp_types import CallToolResult
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -32,6 +36,8 @@ from joshua_developer.git_proxy import GitProxy, task_target
 from joshua_developer.locks import LockManager
 from joshua_developer.log import get_logger
 from joshua_developer.manager import Manager, rejected
+from joshua_developer.origin import origin_of, task_links, with_links
+from joshua_developer.package_proxy import PackageProxy
 from joshua_developer.runtime import Runtime, StubRuntime
 from joshua_developer.store import TaskStore
 from joshua_developer.worker_api import build_worker_app
@@ -48,6 +54,8 @@ _manager: Manager | None = None
 # The worker API app and the git host tunnel that start() built.
 worker_app: Starlette | None = None
 git_proxy: GitProxy | None = None
+# The package proxy, or None when packages.enabled is false.
+package_proxy: PackageProxy | None = None
 
 
 def _get_manager() -> Manager:
@@ -103,6 +111,14 @@ def _own_task(caller: Caller, task_id: str) -> dict[str, Any]:
     return task
 
 
+def _linked(result: dict[str, Any], workspace: str | None) -> dict | CallToolResult:
+    """``result`` of a start tool, with the pull request link on a workspace call."""
+    task_id = result.get("task_id")
+    if not workspace or not task_id:
+        return result
+    return with_links(result, task_links(_get_manager().store.get_task(str(task_id))))
+
+
 # --- tools ---------------------------------------------------------------
 
 
@@ -115,6 +131,7 @@ async def develop(
     branch: str | None = None,
     persona: str | None = None,
     notify: str | None = None,
+    refs: list[str] | None = None,
 ) -> dict:
     """Start a coding task on a repository. Returns task_id, persona, and status at once.
 
@@ -125,12 +142,17 @@ async def develop(
     branch, joshua/<first line in kebab case>-<id>. base_branch is the branch
     to start from and the pull request target; without it, main. persona is a name from
     list_personas. notify is the chat that gets the report; without it, the
-    person's setting. A call is rejected when the repository is not in the
-    person's list, when its git host has no platform or no token, when too
-    many tasks run, or when another task works on the same branch.
+    person's setting. refs is a list of up to 5 other repositories, in the
+    same form as repo, that the worker can read: each one is cloned read-only
+    next to the checkout, on its default branch, so the worker can port or
+    copy code from it. The worker pushes only to repo. A call is rejected when
+    the repository, or one in refs, is not in the person's list, when its git
+    host has no platform or no token, when too many tasks run, or when
+    another task works on the same branch.
     """
     person = _person(ctx)
-    return await _get_manager().develop(
+    workspace = origin_of(ctx)
+    result = await _get_manager().develop(
         person,
         repo,
         brief,
@@ -138,7 +160,10 @@ async def develop(
         branch=branch,
         persona=persona,
         notify_to=notify,
+        refs=refs,
+        workspace=workspace,
     )
+    return _linked(result, workspace)
 
 
 @mcp.tool()
@@ -150,6 +175,7 @@ async def rework(
     branch: str | None = None,
     persona: str | None = None,
     notify: str | None = None,
+    refs: list[str] | None = None,
 ) -> dict:
     """Start a task that applies review feedback to a pull request, on its source branch.
 
@@ -159,9 +185,116 @@ async def rework(
     the same as for develop. One task at a time works on one pull request.
     """
     person = _person(ctx)
-    return await _get_manager().rework(
-        person, repo, pr, feedback, persona=persona, notify_to=notify, branch=branch
+    workspace = origin_of(ctx)
+    result = await _get_manager().rework(
+        person,
+        repo,
+        pr,
+        feedback,
+        persona=persona,
+        notify_to=notify,
+        branch=branch,
+        refs=refs,
+        workspace=workspace,
     )
+    return _linked(result, workspace)
+
+
+def _run_result(result: dict[str, Any], ctx: Context) -> dict | CallToolResult:
+    """``result`` of a run tool, with the pull request link on a workspace call."""
+    if not origin_of(ctx) or not result.get("pr_url"):
+        return result
+    return with_links(result, task_links({**result, "task_id": result.get("run_id")}))
+
+
+def _own_run(ctx: Context, run_id: str | None, project: str | None) -> dict[str, Any]:
+    """The run for a ``run_id`` or a ``project`` of the caller, or a rejection dict."""
+    return _get_manager().runs.find(_person(ctx), run_id, project)
+
+
+@mcp.tool()
+async def run_project(
+    repo: str,
+    project: str,
+    ctx: Context,
+    branch: str | None = None,
+    persona: str | None = None,
+    notify: str | None = None,
+) -> dict:
+    """Work through the open tasks of a tasks project on one branch and one pull request.
+
+    project is a project id, slug, or name from the tasks addon. The run starts
+    the first open task in roadmap order, as develop on branch (default
+    feat-<project slug>). Each finished task is marked done in tasks, and the
+    next one starts as rework of the same pull request, with no model turn. The
+    person gets a verbatim line for each finished task, and a message at the end
+    of a phase (a task group), at the limits ceiling, on a question, on a
+    failure that one retry did not fix, and at the end of the project. A run
+    never merges. repo, persona, and notify are as for develop. A call is
+    rejected when the tasks addon is not set (TASKS_URL), when the project is
+    unknown or has no ready task, or when the project already has an active or
+    paused run on the repository. Use run_status, pause_run, resume_run, and
+    stop_run to follow and steer it.
+    """
+    person = _person(ctx)
+    result = await _get_manager().runs.start(
+        person,
+        repo,
+        project,
+        branch=branch,
+        persona=persona,
+        notify_to=notify,
+        workspace=origin_of(ctx),
+    )
+    return _run_result(result, ctx)
+
+
+@mcp.tool()
+async def run_status(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """The state of a run: its status, branch, pull request, and current task.
+
+    Give run_id or project. With neither, the result lists your recent runs.
+    status is active, paused, stopped, or done.
+    """
+    caller = _caller(ctx)
+    manager = _get_manager()
+    if not run_id and not project:
+        return {"runs": manager.store.list_runs(caller.person, limit=20)}
+    run = manager.runs.find(caller.person, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(manager.runs.describe(run), ctx)
+
+
+@mcp.tool()
+async def pause_run(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """Pause a run. The task that runs now goes on to its end; no next task starts."""
+    run = _own_run(ctx, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(await _get_manager().runs.pause(run), ctx)
+
+
+@mcp.tool()
+async def resume_run(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """Resume a paused run: it starts the next open task, and goes on from there.
+
+    A run pauses at the end of a phase, at the limits ceiling, after a second
+    failure, and when you call pause_run. Resume skips the ceiling check once.
+    """
+    run = _own_run(ctx, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(await _get_manager().runs.resume(run), ctx)
+
+
+@mcp.tool()
+async def stop_run(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
+    """Stop a run for good. The task that runs now goes on to its end; no next task starts."""
+    run = _own_run(ctx, run_id, project)
+    if run.get("status") == "rejected":
+        return run
+    return _run_result(await _get_manager().runs.stop(run), ctx)
 
 
 @mcp.tool()
@@ -190,7 +323,8 @@ async def task_status(task_id: str, ctx: Context) -> dict:
     summary, the error, the open question, and the scan result: clean,
     partial, hit, or unavailable.
     """
-    return _own_task(_caller(ctx), task_id)
+    task = _own_task(_caller(ctx), task_id)
+    return with_links(task, task_links(task)) if origin_of(ctx) else task
 
 
 @mcp.tool()
@@ -324,15 +458,12 @@ def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | Non
         from joshua_developer.runtime_docker import DockerRuntime
 
         runtime = DockerRuntime(manager, settings)
-        runtime.remove_orphans()
         runtime.pull_image()
         return runtime
     if settings.worker_runtime == "kubernetes":
         from joshua_developer.runtime_k8s import KubernetesRuntime
 
-        k8s_runtime = KubernetesRuntime(manager, settings)
-        k8s_runtime.remove_orphans()
-        return k8s_runtime
+        return KubernetesRuntime(manager, settings)
     if settings.worker_runtime == "stub":
         return StubRuntime(manager, delay_s=stub_delay_s)
     raise RuntimeError(f"the {settings.worker_runtime} runtime is not in this release")
@@ -341,18 +472,21 @@ def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | Non
 def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
     """Open the store, build the manager and its runtime, and recover from a restart.
 
-    It also builds the worker API app and the git host tunnel for the manager.
+    It also builds the worker API app, the git host tunnel, and, when
+    ``packages.enabled`` is true, the package proxy for the manager.
     """
-    global _manager, worker_app, git_proxy
+    global _manager, worker_app, git_proxy, package_proxy
     if _manager is not None:
         _manager.store.close()
     store = TaskStore(settings.db_path)
     manager = Manager(settings, store, LockManager())
     _manager = manager
-    manager.recover()
+    active = manager.recover()
     manager.runtime = make_runtime(manager, settings, stub_delay_s)
     worker_app = build_worker_app(manager)
     git_proxy = GitProxy(lambda token: task_target(manager, token))
+    packages = settings.config.packages
+    package_proxy = PackageProxy(packages.hosts) if packages.enabled else None
     logger.info(
         {
             "message": "developer ready",
@@ -360,7 +494,8 @@ def start(settings: Settings, stub_delay_s: float | None = 1.0) -> Manager:
             "open": settings.open,
             "runtime": settings.worker_runtime,
             "network": settings.config.network,
-            "recovered": len(manager.recovered),
+            "packages": sorted(packages.hosts) if packages.enabled else [],
+            "active_at_start": len(active),
         }
     )
     return manager
@@ -370,7 +505,8 @@ def build_app(settings: Settings | None = None, stub_delay_s: float | None = 1.0
     """Build the addon's ASGI app: the MCP routes plus the auth wrapper.
 
     The manager starts here, before the first request. The app lifespan
-    sends the reports of the tasks that the restart failed.
+    watches the workers that still run again, and sends the reports of the
+    tasks whose worker is gone.
     ``host="0.0.0.0"`` turns off the SDK's loopback-only DNS-rebinding guard:
     a caller reaches this addon by its cluster or compose hostname, never by
     ``localhost``, and the guard would otherwise reject every real request.
@@ -383,8 +519,17 @@ def build_app(settings: Settings | None = None, stub_delay_s: float | None = 1.0
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
         async with session_lifespan(app):
+            # A restart leaves the workers running: watch them again before
+            # the first request, and fail only the tasks with no worker.
+            await manager.reattach_workers()
             await manager.send_recovered_reports()
-            yield
+            sweeper = asyncio.create_task(manager.sweep_forever())
+            try:
+                yield
+            finally:
+                sweeper.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await sweeper
 
     inner.router.lifespan_context = lifespan
     return BearerAuthMiddleware(inner, settings)

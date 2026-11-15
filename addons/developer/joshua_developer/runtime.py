@@ -16,12 +16,13 @@ an answer: see ``Deadline``.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from joshua_developer.config import DEFAULT_WORKER_START_GRACE_S
 from joshua_developer.store import utcnow
@@ -63,6 +64,36 @@ class Report(BaseModel):
     estimated_cost: float | None = None
     # The session log, for task_output. Never logged by the manager.
     log: str = ""
+
+
+# The log message of a worker that could not send its report (the worker's main.py).
+UNSENT_REPORT = "unsent report"
+
+
+def unsent_report(log_text: str, task_id: str) -> Report | None:
+    """The report that a worker of ``task_id`` wrote to its log, or None.
+
+    A worker that cannot reach the manager in its grace time writes its
+    report as the last JSON line of its log. A manager that starts again
+    reads it from there, so the report is not lost.
+    """
+    for line in reversed(log_text.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(data, dict) or data.get("message") != UNSENT_REPORT:
+            continue
+        if data.get("task_id") != task_id:
+            return None
+        try:
+            return Report.model_validate(data.get("report"))
+        except ValidationError:
+            return None
+    return None
 
 
 def worker_name(task: dict[str, Any]) -> str:
@@ -201,6 +232,18 @@ class Runtime(Protocol):
         """The number of workers that were started and have not ended."""
         ...
 
+    async def reattach(self, task: dict[str, Any]) -> bool:
+        """Watch the worker of ``task`` again after a manager restart.
+
+        Returns True when the worker is there, running or ended, and a
+        supervisor watches it again. False when no worker is there.
+        """
+        ...
+
+    def remove_orphans(self) -> int:
+        """Remove every worker whose task is not active. Returns the count."""
+        ...
+
 
 class StubRuntime:
     """A runtime that starts no worker and records a fake successful report.
@@ -218,6 +261,13 @@ class StubRuntime:
 
     def count_active(self) -> int:
         return len(self._active)
+
+    async def reattach(self, task: dict[str, Any]) -> bool:
+        """A stub worker lives in the manager process, so none is left after a restart."""
+        return False
+
+    def remove_orphans(self) -> int:
+        return 0
 
     async def start(self, task: dict[str, Any]) -> str:
         task_id = task["task_id"]

@@ -9,6 +9,8 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -153,6 +155,86 @@ def git_host(monkeypatch) -> FakeGitHost:
         lambda verify=True: httpx.AsyncClient(transport=httpx.MockTransport(host.handler)),
     )
     return host
+
+
+# --- the credential scan ---------------------------------------------------
+
+# The gitleaks binary is not in the test environment, so every test runs the
+# scan against this stand-in, and never a real scanner. The stand-in answers
+# with a recorded JSON report, which holds a rule name, a file, and a line,
+# and no value. By default it reports one finding for each line that holds a
+# run of 30 characters or more without a space, which is the shape of the
+# fake credentials of the tests.
+LEAK_RE = re.compile(r"\S{30,}")
+LEAK_RULE = "github-pat"
+
+
+class FakeGitleaks:
+    """The gitleaks binary of the tests.
+
+    ``calls`` holds the arguments of each run, and ``written`` the text of
+    each file the scan wrote, by the path of the file under the directory
+    that the scan gives to gitleaks. ``report`` puts a recorded report in
+    front of the default report; the ``File`` of an item of it is relative to
+    that directory too. ``report_text`` writes a report that is not a list of
+    findings, and ``returncode`` and ``error`` make a run fail.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+        self.written: dict[str, str] = {}
+        self.report: list[dict[str, Any]] | None = None
+        self.report_text: str | None = None
+        self.returncode = 0
+        self.error: Exception | None = None
+
+    def run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        self.calls.append(args)
+        if self.error is not None:
+            raise self.error
+        target = Path(args[2])
+        self.written = {
+            str(path.relative_to(target)): path.read_text(encoding="utf-8")
+            for path in sorted(target.rglob("*"))
+            if path.is_file()
+        }
+        report = Path(args[args.index("--report-path") + 1])
+        if self.report_text is not None:
+            report.write_text(self.report_text, encoding="utf-8")
+        else:
+            items = self.default_report() if self.report is None else self.report
+            report.write_text(
+                json.dumps([{**item, "File": str(target / str(item["File"]))} for item in items]),
+                encoding="utf-8",
+            )
+        return subprocess.CompletedProcess(args, self.returncode, "", "")
+
+    def default_report(self) -> list[dict[str, Any]]:
+        """One finding for each line of a written file that looks like a credential."""
+        return [
+            {"RuleID": LEAK_RULE, "File": file, "StartLine": line_no}
+            for file, text in self.written.items()
+            for line_no, line in enumerate(text.splitlines(), start=1)
+            if LEAK_RE.search(line)
+        ]
+
+
+@pytest.fixture(autouse=True)
+def gitleaks(monkeypatch) -> FakeGitleaks:
+    """The scan of every test runs the fake gitleaks, and never a binary."""
+    from joshua_developer import scan
+
+    fake = FakeGitleaks()
+    monkeypatch.setattr(scan, "run_gitleaks", fake.run)
+    real_which = shutil.which
+    monkeypatch.setattr(
+        scan.shutil,
+        "which",
+        lambda name, *args, **kw: (
+            f"/usr/bin/{scan.GITLEAKS}" if name == scan.GITLEAKS else real_which(name, *args, **kw)
+        ),
+    )
+    return fake
 
 
 def make_settings(data_dir: Path, **overrides: Any) -> Settings:

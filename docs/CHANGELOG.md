@@ -6,11 +6,120 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+### Added
+
+- `pantry`: undo a consumption event. The new tool
+  `delete_consumption(consumption_id)` deletes one consumption event. It
+  then computes the status of the item again from the events that remain, so
+  a meal that named the wrong item no longer empties that item for good.
+  `get_item_history` gives the id of each event, in `recent_consumptions`.
+  The web UI mirrors the tool: the Admin page lists every consumption event,
+  and `DELETE /api/consumptions/<id>` deletes one.
+
+- `pantry`: use part of an item. `consume_items` takes a quantity for an
+  item, as `{"name": "chia seeds", "quantity": 0.25}`. The quantity comes
+  off the stock of the last purchase, and the item stays in stock while
+  stock remains. A purchase with no quantity on file counts as one unit. A
+  call that passes only names keeps the old behavior: it uses the item up.
+  The addon adds the `quantity` column to `consumption_events` on its next
+  start.
+
+- `developer`: the token usage of each task goes to joshua-ai core, so the
+  usage page counts the work of the addon beside the chat turns. The Claude
+  forwarder counts the tokens of each `v1/messages` answer, streaming and
+  not, and the manager sends one row to `POST <CORE_URL>/v1/usage` when the
+  task ends, with the `JOSHUA_TOKEN_DEVELOPER` bearer. The row holds the kind
+  `developer`, the task id, the model, the number of calls, and the input,
+  output, cache read, and cache write counts. It needs `CORE_URL`, which a
+  run already uses for the limits. Without `CORE_URL`, nothing is reported.
+  A core that does not know the kind `developer` answers 400, and the manager
+  logs one warning for the task. The counter reads a decoded copy of the
+  answer, so a compressed answer (`gzip` or `deflate`) is counted, and the
+  worker still gets the bytes of the API. An answer that the counter cannot
+  read is one warning in the manager log and no row.
+
+- `developer`: development auto-run. The new tool `run_project(repo, project,
+  branch?, persona?, notify?)` works through the open tasks of a tasks
+  project, in roadmap order, on one branch and one pull request. When a task
+  ends, the manager marks it done in tasks, checks the limits ceilings, and
+  starts the next task as `rework` of the pull request. A finished task
+  sends a verbatim line to the chat, which costs no model turn. Joshua gets a
+  model turn only at the end of a phase, at a ceiling, on a question, on a
+  failure that one retry did not fix, and at the end of the project. The new
+  tools `run_status`, `pause_run`, `resume_run`, and `stop_run` steer a run.
+  `run_project` replaces the project loop of the `40-projects.md` prompt. A
+  new `runs` table and new `run_id`, `tasks_task_id`, and `tasks_task_number`
+  columns on `tasks` are added when the manager starts. New settings:
+  `TASKS_URL` (the tasks addon; without it `run_project` is refused),
+  `CORE_URL` (the limits; without it they are unknown and a run goes on), and
+  the `runs` block of `developer.yaml` (`ceiling_five_hour_pct`, default 80,
+  and `ceiling_seven_day_pct`, default 90). A task that no run started
+  behaves as before.
+
+- `developer`: a task that starts in a Joshua workspace keeps the workspace.
+  The manager reads `_meta["joshua/workspace"]` on `develop` and `rework`,
+  stores it on the task, and sends it as `workspace` in each report and
+  question event. With the stamp, `develop`, `rework`, and `task_status` also
+  return a `resource_link` to the pull request. A call with no stamp behaves
+  as before.
+
+- `developer`: a package proxy in the manager, so a worker can install
+  dependencies and run the tests of the project. The new `packages` block in
+  `developer.yaml` holds the host names a worker may reach, such as
+  `registry.npmjs.org`, `pypi.org`, and `files.pythonhosted.org`. With
+  `enabled: true`, the manager listens on port 8003, allows a `CONNECT` to a
+  host in the list, and refuses every other host with 403 and one log line.
+  A worker gets `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`. The proxy
+  carries no credential, allows no git host, and gives a worker no new
+  access to a repository. `enabled: false` is the default, so an instance
+  that does not set the block keeps its behavior. To use it, add the block,
+  add port 8003 to `service.extraPorts` (the chart values of the addon do),
+  and keep `networkPolicy.workersInternetEgress: false`.
+
+- `developer`: a work directory for each task that a restart keeps, so a
+  manager restart, a crash, or a failed push loses no commit. The manager
+  mounts the work storage at `DEVELOPER_WORK_DIR` and gives each task its
+  own directory, `<task id>`, which the runtime mounts at `/work` in the
+  worker. The directory is deleted only when the task ends `success`. A
+  resumed task, or a new task of the same person on the same repository and
+  branch, continues from the commits in the kept directory. A sweeper
+  deletes a kept directory `work.keep_failed` days (default 7) after its
+  task ended. The compose file now uses the named volume `developer-work`
+  (Docker Engine 26 or later). On Kubernetes, set the new chart value
+  `worker.workClaim` to an existing ReadWriteMany claim; empty keeps the
+  emptyDir.
+
+- `developer`: a manager restart no longer kills a running task (#71). At
+  start, the manager finds the Job or the container of each active task
+  again and watches it, and fails a task only when its worker is gone. A
+  worker tries each call to the manager again for `worker.manager_grace`
+  seconds (default 600), and the Claude CLI gets the same wait. A report
+  that cannot be sent goes to the last line of the worker log, and the
+  manager reads it from there. The error `manager restarted` is gone: a task
+  with no worker fails with `the worker is gone`.
+
+- `developer`: reference repositories for a task (#75). `develop` and
+  `rework` take `refs`, a list of up to 5 other repositories. The worker
+  clones each one read-only into `/work/refs/<host>/<owner>/<name>` and
+  reads the source there, so it can move or port code from one repository
+  to another. It still pushes only to `repo`. The git host tunnel also lets
+  the task reach the host of each reference repository.
+
 ### Changed
+
+- The chart value `networkPolicy.managerPorts` is now `[8001, 8002, 8003]`,
+  so a worker pod can reach the package proxy of the `developer` manager.
+
+- `tasks`: a task list of a project shows one row for each task, with the
+  number, the title, the size, the due date, the assignee, the done state,
+  and the blocked state. The note of a task now sits behind a "note"
+  control, which starts closed on every task, also after a reload. A long
+  note no longer fills the screen. The API and the MCP tools do not change.
 
 - `tasks`: the home page has no "Show finished" toggle. The done and the
   closed projects are always together in a quieter "Finished" section at the
   bottom of the page, below the active ones.
+
 - `tasks`: a project can be archived in place, from any status. Each card on
   the home page has an Archive button, in both sections, that hides the
   project as it stands and keeps its status. An archived project is on no
@@ -20,6 +129,16 @@ releases, with the images and the packaged chart, are at
   new tools, the 23rd and the 24th: `list_archived_projects`, the only place
   that shows them, and `unarchive_project`, which brings one back with the
   status it had. The database needs no change.
+
+- `developer`: the credential scan reads the diff of a push with `gitleaks`,
+  in place of its own patterns. The configuration
+  `joshua_developer/gitleaks.toml` takes every rule of the gitleaks default
+  configuration, and it allowlists placeholder values: a value in angle
+  brackets, such as `token = "<long-lived token, set by the Ansible role>"`,
+  and a line of prose are not findings. A finding names the gitleaks rule,
+  the file, and the line, and never the text that matched. The image holds
+  the `gitleaks` binary, pinned to v8.30.1. Without the binary, the scan is
+  `unavailable`: a diff that the scan did not read is never `clean`.
 
 ## 0.2.0 - 2026-11-08
 

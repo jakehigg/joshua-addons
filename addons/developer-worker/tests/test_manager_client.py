@@ -123,24 +123,26 @@ async def test_409_is_never_retried() -> None:
     await client.aclose()
 
 
-async def test_connection_errors_get_three_more_attempts() -> None:
+async def test_a_manager_that_restarts_is_tried_again_until_it_answers() -> None:
     calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(1)
         if len(calls) < 4:
             raise httpx.ConnectError("refused", request=request)
+        if len(calls) < 7:
+            raise httpx.ReadTimeout("no answer", request=request)
         return httpx.Response(200, json={"status": "running"})
 
     client = ManagerClient(
         MANAGER_URL, TASK_ID, TASK_TOKEN, transport=httpx.MockTransport(handler), backoff_s=0
     )
     await client.running()
-    assert len(calls) == 4
+    assert len(calls) == 7
     await client.aclose()
 
 
-async def test_connection_errors_stop_after_the_retries() -> None:
+async def test_the_tries_stop_when_the_grace_time_ends() -> None:
     calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -148,11 +150,33 @@ async def test_connection_errors_stop_after_the_retries() -> None:
         raise httpx.ConnectError("refused", request=request)
 
     client = ManagerClient(
-        MANAGER_URL, TASK_ID, TASK_TOKEN, transport=httpx.MockTransport(handler), backoff_s=0
+        MANAGER_URL,
+        TASK_ID,
+        TASK_TOKEN,
+        transport=httpx.MockTransport(handler),
+        backoff_s=0.01,
+        grace_s=0.1,
     )
     with pytest.raises(httpx.ConnectError):
         await client.running()
-    assert len(calls) == 4
+    assert 2 <= len(calls) <= 20
+    await client.aclose()
+
+
+@pytest.mark.parametrize("status", [500, 503])
+async def test_an_error_status_is_not_tried_again(status: int) -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(status, json={"error": "token_missing"})
+
+    client = ManagerClient(
+        MANAGER_URL, TASK_ID, TASK_TOKEN, transport=httpx.MockTransport(handler), backoff_s=0
+    )
+    with pytest.raises(ManagerError):
+        await client.running()
+    assert len(calls) == 1
     await client.aclose()
 
 

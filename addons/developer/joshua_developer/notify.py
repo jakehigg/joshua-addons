@@ -84,15 +84,29 @@ def destination_for(
 
 
 async def send_event(
-    settings: Settings, destination: str, text: str, task_id: str | None = None
+    settings: Settings,
+    destination: str,
+    text: str,
+    task_id: str | None = None,
+    workspace: str | None = None,
+    verbatim: bool = False,
 ) -> bool:
-    """Post one event to channels. Returns True when channels accepted it."""
+    """Post one event to channels. Returns True when channels accepted it.
+
+    ``workspace`` is the id of the workspace that started the task. Channels runs
+    the event in that workspace. Without it, the event is a normal chat turn.
+    ``verbatim`` makes channels deliver the text as it is, with no model turn.
+    """
     if not settings.will_notify or not settings.channels_url:
         logger.info({"message": "event not sent: channels is not configured", "task_id": task_id})
         return False
     url = settings.channels_url.rstrip("/") + "/v1/events"
     headers = {"Authorization": f"Bearer {settings.channels_token}"}
-    body = {"destination": destination, "text": text}
+    body: dict[str, Any] = {"destination": destination, "text": text}
+    if workspace:
+        body["workspace"] = workspace
+    if verbatim:
+        body["verbatim"] = True
     where = {"task_id": task_id, "destination_ref": destination_ref(destination)}
     logger.debug({"message": "event destination", "destination": destination, **where})
     async with _make_client() as client:
@@ -192,7 +206,9 @@ async def send_report(
     if not destination:
         logger.info({"message": "report not sent: no destination", "task_id": task.get("task_id")})
         return False
-    return await send_event(settings, destination, report_text(task), task.get("task_id"))
+    return await send_event(
+        settings, destination, report_text(task), task.get("task_id"), task.get("workspace")
+    )
 
 
 async def send_question(
@@ -209,4 +225,10 @@ async def send_question(
         )
         return False
     task_id = task.get("task_id")
-    return await send_event(settings, destination, question_text(str(task_id), question), task_id)
+    return await send_event(
+        settings,
+        destination,
+        question_text(str(task_id), question),
+        task_id,
+        task.get("workspace"),
+    )

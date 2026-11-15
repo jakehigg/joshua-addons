@@ -17,8 +17,9 @@ pushes one branch, sends one report, and stops.
   credential scan.
 - Ask Joshua questions in the middle of a task, and wait for the answers,
   for up to `ask_wait_s` in total (see "The task clock").
-- Run the tests of the project, when the tests need no download (see "The
-  network setting").
+- Install the dependencies of the project and run its tests, when the
+  `packages` block names the registries the project needs (see "The package
+  proxy").
 
 ## What it cannot do
 
@@ -33,8 +34,8 @@ pushes one branch, sends one report, and stops.
 
 | Tool | What it does |
 |---|---|
-| `develop(repo, brief, base_branch?, branch?, persona?, notify?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. |
-| `rework(repo, feedback, pr?, branch?, persona?, notify?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. |
+| `develop(repo, brief, base_branch?, branch?, persona?, notify?, refs?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. `refs` is a list of up to 5 reference repositories that the worker can read (see [Reference repositories](#reference-repositories)). |
+| `rework(repo, feedback, pr?, branch?, persona?, notify?, refs?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. `refs` is the same as for `develop`. |
 | `answer(task_id, text)` | Gives a waiting worker the answer to its question. On a task that stopped `blocked` or `timed_out` after a push, starts a new worker that continues on the branch. |
 | `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, and the open question. |
 | `task_output(task_id)` | The full report and the session log. |
@@ -42,6 +43,11 @@ pushes one branch, sends one report, and stops.
 | `get_settings()` | The git name, the git email, the default persona, and the chat for reports. |
 | `set_settings(git_name?, git_email?, default_persona?, notify?)` | Changes these four settings. An empty string removes the change. |
 | `list_personas()` | The personas, and the default persona of the person. |
+| `run_project(repo, project, branch?, persona?, notify?)` | Starts a run: it works through the open tasks of a tasks project on one branch and one pull request (see [Development auto-run](#development-auto-run)). |
+| `run_status(run_id?, project?)` | The status, the branch, the pull request, and the current task of a run. With no argument, it lists the recent runs of the person. |
+| `pause_run(run_id?, project?)` | Pauses a run. The task that runs now goes on; no next task starts. |
+| `resume_run(run_id?, project?)` | Resumes a paused run, and starts its next open task. |
+| `stop_run(run_id?, project?)` | Stops a run for good. |
 
 A worker that needs a fact calls `ask`. The manager sends the question to the
 person's chat as an event, and Joshua answers with `answer`, from what it
@@ -60,7 +66,10 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
 `repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
 `platform_error`, `unknown_persona`, `concurrency_limit`, `locked`,
-`not_waiting`, `not_resumable`, and `branch_is_base`. The rules:
+`not_waiting`, `not_resumable`, and `branch_is_base`. The run tools add
+`tasks_not_configured`, `tasks_unreachable`, `project_not_found`, `no_tasks`,
+`run_exists`, `run_not_found`, `run_ambiguous`, `run_not_pausable`, and
+`run_not_resumable`. The rules:
 
 - One task at a time works on one branch of a repository. A `rework` works
   on the source branch of its pull request, so a `develop` and a `rework` on
@@ -83,9 +92,107 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - `answer` on a `failed` task resumes it when the manager has saved commits
   of the task (see [When a push fails](#when-a-push-fails)). `task_output` shows the reports of the earlier workers in
   `history`.
-- When the manager starts, each task that is `dispatched` or `running`
-  changes to `failed` with the error `manager restarted`, and its report
-  goes to the chat.
+- A manager restart does not end a task whose worker still runs. See
+  [What a restart does to a running task](#what-a-restart-does-to-a-running-task).
+
+## Development auto-run
+
+`run_project` replaces the project loop that a manager prompt (such as
+`40-projects.md`) runs by hand. A **run** works through the open tasks of one
+project of the tasks addon, in roadmap order. It owns one branch (default
+`feat-<project slug>`) and one pull request in one repository. It never merges.
+
+How a run goes:
+
+1. `run_project` starts the first task as `develop`. The brief is the task
+   title, the task notes, and the line "Commit and push your work." The first
+   line is the title of the pull request. A project that has an `active` or
+   `paused` run in the same repository gets `run_exists`.
+2. The task ends. The manager records the report. When the task is a task of
+   a run, the manager then takes one step. A step never raises into the
+   report.
+3. On `success`, the step marks the tasks task done, and adds "done in
+   `<pull request>`" to its notes. It then reads the limits and the next task:
+   - No open task is left: the run is `done`, and Joshua gets a model turn:
+     "Project `<name>` finished".
+   - Every open task waits for a blocker: the run pauses, and Joshua gets a
+     model turn.
+   - The next task is in another task group (a phase): the run pauses, and
+     Joshua gets a model turn: "Phase `<name>` done". Say `resume` to go on.
+   - A limits window is at or over its ceiling: the run pauses, and Joshua
+     gets a model turn.
+   - Else the next task starts as `rework` of the pull request (or `develop`
+     again, when no pull request exists yet). The step adds "dispatched as
+     developer task `<id>` on `<branch>`" to its notes, and sends a verbatim
+     line to the chat: `✓ #3 Title — next: #4 Title`. A verbatim line costs
+     no model turn.
+4. On a failure (`failed`, `timed_out`, or `blocked` with no question), the
+   step starts the same task one more time and sends a verbatim line. On the
+   second failure the run pauses, and the normal report event gives Joshua a
+   model turn.
+5. On a question, the normal report event goes out, and the run stays
+   `active`. The `answer` tool goes on as for any task, and the step runs
+   when the task ends.
+
+The normal report event of a task goes out only for a task with no run, and
+for a failure that the retry did not fix, and for a question. A run does not
+cost a model turn for each task. Each verbatim line and each model turn
+carries the `workspace` of the run, when the run has one.
+
+`pause_run` and `stop_run` let the task that runs now go on to its end. The
+step then marks it done, and starts no next task. `resume_run` makes a paused
+run `active` and starts its next task. It does not check the ceilings. It also
+restarts an `active` run whose task a manager restart ended.
+
+Set `TASKS_URL` for the tasks addon and `CORE_URL` for joshua-ai core (see
+"Environment"). Without `TASKS_URL`, `run_project` returns `tasks_not_configured`.
+Without `CORE_URL`, the limits are unknown, and a run goes on. A window that
+core cannot give is unknown too. The ceilings are the `runs` block of
+`developer.yaml`: `ceiling_five_hour_pct` (default 80) and
+`ceiling_seven_day_pct` (default 90).
+
+A call with a workspace stamp gets a `resource_link` to the pull request in
+the result of each run tool, once the run has a pull request.
+
+## Workspaces
+
+A call from a Joshua workspace carries the workspace id in
+`params._meta["joshua/workspace"]`. The gateway sets it. A call from any other
+chat has no such key, and then nothing here applies.
+
+- `develop` and `rework` store the id on the task, in the `workspace` column.
+  An older database gets the column when the manager starts.
+- Each report event and each question event of that task has a `workspace`
+  field with the same id in its body to `/v1/events`. Channels then runs the
+  event in the workspace. An event of a task without an id has no `workspace`
+  field.
+- `develop`, `rework`, and `task_status` add an MCP `resource_link` block to
+  their result when the call has the id and the task has a pull request. The
+  link is the URL of the pull request. A task has no report page, so no link
+  names one. A call with no id gets the same result as before, with no link.
+
+## Reference repositories
+
+A task can read other repositories beside its own: for example, to move code
+from one repository to another. Give them in `refs` on `develop` or `rework`,
+in the same form as `repo`, at most 5.
+
+- Each one passes the same checks as `repo`: it is in the list of the
+  person, and its git host has a platform and a token. The task repository
+  itself and a repeated entry are refused. `task_status` shows `refs`, and a
+  resumed task keeps them.
+- The worker clones each one, shallow, on its default branch, into
+  `/work/refs/<host>/<owner>/<name>`. The clone has no push URL, and its
+  files are read-only. The session can read the folder, and the prompt tells
+  the model to read the source there and write the code into the checkout.
+- The worker pushes only the task branch of `repo`. The manager scans and
+  opens the pull request only there.
+- The git host tunnel lets the task reach the host of each reference
+  repository too, and the brief carries the token of each such host.
+
+The read-only clone is a guard, not a boundary: the git token of a host can
+still write where the host lets it. Give a reference repository on a host
+whose token can only read when that matters.
 
 ## The task clock
 
@@ -122,6 +229,30 @@ of its branch. A long wait can thus stop a new task with
 `concurrency_limit`. Two settings control this: a lower `ask_wait_s` frees a
 slot sooner, and a higher `max_workers` lets other tasks run during a wait.
 
+## The token usage of a task
+
+Every model call of a worker goes through the Claude forwarder on the
+manager, so the manager counts the tokens of a task. It reads the counts of
+each `v1/messages` answer while the answer goes to the worker: the input
+tokens, the output tokens, and the two cache counts. The counting does not
+change one byte of the answer, and it never fails the call. A count that the
+manager cannot read is left out.
+
+When the task ends, the manager sends one row to `POST <CORE_URL>/v1/usage`
+with the `JOSHUA_TOKEN_DEVELOPER` bearer: the kind `developer`, the task id
+as the worker name and as the row reference, the model of the last call, the
+number of calls, and the four counts. The usage page of joshua-ai then counts
+the work of the developer addon beside the chat turns. Every task that made a
+model call reports, a failed and a timed-out task included. A task that made
+no model call reports nothing.
+
+Without `CORE_URL`, nothing is reported, and the manager logs it one time for
+each task. Core keeps one row for each writer and reference, so a report that
+goes two times writes one row. A core that does not know the kind `developer`
+answers 400: the manager then logs one warning for the task and does not try
+again. A manager restart loses the counts of the tasks that run at that
+moment, and those tasks report no usage.
+
 ## Security
 
 The worker runs a model with Bash over code that a stranger can write. Text
@@ -145,8 +276,11 @@ hostile, and these rules limit what it can read and where its data can go:
    other paths with 403. It answers the CLI probe `api/hello` itself.
 3. **By default, a worker reaches the manager and nothing else.** The
    manager forwards two destinations for it: the Claude API, and the git host
-   of the task's repository. On Kubernetes, a worker can also use the cluster
-   DNS resolver, so a DNS tunnel through the resolver stays possible.
+   of the task's repository (and the host of each of its reference
+   repositories). With the `packages` block on, it also forwards
+   the package hosts in that block, with no credential (see "The package
+   proxy"). On Kubernetes, a worker can also use the cluster DNS resolver, so
+   a DNS tunnel through the resolver stays possible.
 4. **The manager gates the pull request.** It scans the diff of the worker's
    commits for credentials before it opens the pull request. A hit fails the
    task, and deletes the branch only when the task made it. A person reads
@@ -173,13 +307,56 @@ can also send that content to any address.
 ## The network setting
 
 `network` in `developer.yaml` is `off` or `on`, and `off` is the default. With
-`network: off`, a worker cannot install dependencies, so it cannot run most
-test suites. With `network: on`, a worker can connect to the internet, so
-dependency installs work, and a bad repository can send its content anywhere.
+`network: off`, a worker reaches the manager only. To let it install
+dependencies, turn on the `packages` block, and keep `network: off`. With
+`network: on`, a worker can connect to the internet, so dependency installs
+work, and a bad repository can send its content anywhere.
 On Docker Compose, `network: on` also puts each worker on the default
 bridge, so it can reach the host LAN and every port that the host
 publishes. On Kubernetes, the chart blocks private addresses (see "Run it on
 Kubernetes").
+
+## The package proxy
+
+With the `packages` block on, a worker can install dependencies and run the
+tests of the project, and it still reaches no other address. The manager
+listens on port 8003 and speaks HTTP `CONNECT`. It allows a connection only
+when the host in the `CONNECT` line is in `packages.hosts`, and refuses every
+other host with 403 and one log line that names it. The worker gets
+`HTTPS_PROXY` and `HTTP_PROXY` (`http://<MANAGER_HOST>:8003`) and `NO_PROXY`
+(the manager host, the loopback, and the cluster domain), so `npm ci`,
+`uv sync`, and the other package tools use the proxy, and the manager API,
+the Claude forwarder, and the git tunnel do not.
+
+```yaml
+packages:
+  enabled: true
+  hosts:
+    - registry.npmjs.org
+    - pypi.org
+    - files.pythonhosted.org
+```
+
+- `enabled: false` is the default. The manager then starts no proxy, nothing
+  listens on 8003, and a worker gets no proxy variable.
+- Each host is a name, such as `registry.npmjs.org`. A pattern, a port, an
+  address, or a URL is refused at start. The check is on the name, because a
+  registry sits behind a CDN whose addresses change, and a rule on addresses
+  would break.
+- The proxy carries no credential: a public registry needs none. The tunnel
+  carries TLS from end to end, so the proxy reads nothing in it.
+- The proxy gives a worker no new access to a repository. A git host belongs
+  in `platforms`, not here: a worker reaches a git host only through the
+  tunnel on port 8002, which injects the token of the task and refuses a
+  push to another host. A `CONNECT` to port 22 gets 403.
+- A worker still sends the content of the repository nowhere but Anthropic,
+  its own git host, and the hosts in this list.
+- The proxy variables are a convenience, not the boundary. A worker that
+  ignores them reaches no registry, because the runtime holds it in: on
+  Docker Compose the worker container is on `developer_workers`, an internal
+  Docker network that reaches the manager only; on Kubernetes the
+  NetworkPolicy of the chart lets the worker pod reach the manager ports and
+  the cluster DNS only.
 
 ## Settings
 
@@ -190,7 +367,17 @@ network: off                       # off or on. See "The network setting".
 default_persona: opus              # the persona when neither the call nor the person names one
 max_workers: 2                     # tasks that run at the same time
 ask_wait_s: 7200                   # the total wait for answers in one task. See "The task clock".
-worker: { memory: 2g, cpus: 2.0, disk: 4Gi }  # the limits of one worker
+worker: { memory: 2g, cpus: 2.0, disk: 4Gi, manager_grace: 600 }  # the limits of one worker
+work: { keep_failed: 7 }           # days a kept work directory stays. See "The work directories".
+runs:                              # the limits ceilings of a run, in percent used. See "Development auto-run".
+  ceiling_five_hour_pct: 80
+  ceiling_seven_day_pct: 90
+packages:                          # the package proxy. See "The package proxy".
+  enabled: false                   # the default: no proxy, and no proxy variable in a worker
+  hosts:                           # host names, never a pattern or an address
+    - registry.npmjs.org
+    - pypi.org
+    - files.pythonhosted.org
 personas:                          # a model, its effort, and its limits
   sonnet: { model: claude-sonnet-5,  effort: medium, max_turns: 60,  timeout_s: 1200 }
   opus:   { model: claude-opus-5,    effort: high,   max_turns: 80,  timeout_s: 2400 }
@@ -230,6 +417,10 @@ must support it (overlay2 on xfs with `pquota`). The limit applies to the
 writable layer of the container only, so with this setting `/work` and
 `/tmp` stay in that layer, and the root file system is not read-only.
 
+`worker.manager_grace` is the number of seconds a worker keeps trying to
+reach a manager that does not answer, default 600. See "What a restart does
+to a running task".
+
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks is told to set `blocked`. `notify` is a
 channels destination: a logical name or a reference such as
@@ -246,11 +437,13 @@ applies before the value in the file.
 | Variable | Default | What it does |
 |---|---|---|
 | `DEVELOPER_TOKENS` | empty | One bearer for each person, `alex=<token>,mia=<token>`. Each person must be in `people`. |
-| `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, and `list_personas` only. |
+| `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, `list_personas`, and `run_status` only. |
 | `DEVELOPER_CONFIG` | `/etc/joshua-addon/developer.yaml` | The path of `developer.yaml`. No file means the defaults. |
 | `DEVELOPER_DATA_DIR` | `/data` | The folder of `developer.db`, and of `bundles/`: the saved commits of failed pushes. |
 | `CHANNELS_URL` | empty | The address of joshua-ai channels. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
-| `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the manager sends to channels. |
+| `JOSHUA_TOKEN_DEVELOPER` | empty | The fleet token that the manager sends to channels and to core. |
+| `TASKS_URL` | empty | The address of the tasks addon, such as `http://tasks:8000`. The manager adds `/api`, which needs no bearer. Without it, `run_project` is refused. |
+| `CORE_URL` | empty | The address of joshua-ai core, such as `http://core:8000` (Compose) or `http://joshua-core:8000` (Kubernetes). A run reads `GET /v1/limits` from it, which needs no bearer. A task that ends reports its tokens to `POST /v1/usage` with `JOSHUA_TOKEN_DEVELOPER` (see "The token usage of a task"). Without it, the limits are unknown and no usage is reported. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The Claude token of the forwarder. Without it, the forwarder answers 503. |
 | `WORKER_RUNTIME` | `stub` | `docker`, `kubernetes`, or `stub`. `stub` starts no worker and records a fake `success` report, to test the tools. |
 | `WORKER_IMAGE` | empty | The worker image. `docker` and `kubernetes` need it. Use the worker of the same release. |
@@ -261,6 +454,9 @@ applies before the value in the file.
 | `POD_NAMESPACE` | the namespace of the pod | The namespace of the worker Jobs. |
 | `WORKER_IMAGE_PULL_SECRET` | empty | The image pull Secret of a worker pod, for a private registry. |
 | `GIT_CA_BUNDLE` | empty | The path of a CA bundle for a git host with a private certificate authority. The manager trusts it for the host API, and sends its text to each worker, which trusts it for git. |
+| `DEVELOPER_WORK_DIR` | empty | Where the manager has the work storage mounted, such as `/work`. Set, each task gets its own directory on it, which a restart keeps. Empty, each worker has a scratch `/work`. See "The work directories". |
+| `WORKER_WORK_CLAIM` | empty | Kubernetes: the ReadWriteMany PersistentVolumeClaim of the work storage, which the manager also mounts at `DEVELOPER_WORK_DIR`. Required with `DEVELOPER_WORK_DIR` on `kubernetes`. The chart sets it from `worker.workClaim`. |
+| `WORKER_WORK_VOLUME` | empty | Docker: the named volume of the work storage, which the manager also mounts at `DEVELOPER_WORK_DIR`. Required with `DEVELOPER_WORK_DIR` on `docker`. Docker Engine 26 or later. |
 | `WORKER_START_GRACE_S` | `600` | The seconds a worker has from its start to its first brief call: the image pull and the container start. A worker that takes longer is stopped, and its task fails. |
 | each `token_env` in `developer.yaml` | empty | The git tokens. |
 | `LOG_LEVEL` | `INFO` | The log level. The access line of a `GET /healthz` shows at `DEBUG` only. |
@@ -355,7 +551,8 @@ its digest, so a moved tag cannot change the code that has the socket.
 The compose file makes two internal networks:
 
 - `developer_workers`: the workers and the manager. A worker reaches the
-  manager on port 8001 (the worker API) and port 8002 (the git host tunnel).
+  manager on port 8001 (the worker API), port 8002 (the git host tunnel),
+  and port 8003 (the package proxy, with the `packages` block on).
 - `developer_control`: the manager and the proxy.
 
 The manager is also on the joshua-ai network, where the gateway reaches it
@@ -365,8 +562,9 @@ default bridge (see "The network setting").
 
 A worker gets the `worker` memory and CPU limits, at most 512 processes, no
 Linux capabilities, `no-new-privileges`, and a read-only root file system.
-It writes to `/work` and `/tmp`, two anonymous volumes that the manager
-removes with the container. Docker has no disk limit for them: see
+It writes to `/tmp`, an anonymous volume that the manager removes with the
+container, and to `/work`, its own directory of the `developer-work` volume
+(see "The work directories"). Docker has no disk limit for them: see
 `worker.disk`. Each worker has the label `joshua-developer-instance` with
 the value of `MANAGER_HOST`. The manager removes old workers, and counts
 workers, with that label only, so two installs on one Docker daemon need
@@ -414,20 +612,23 @@ helm install developer charts/joshua-addon -f addons/developer/values.yaml
 - Set `CHANNELS_URL` to the address of the joshua-ai channels Service.
 - For a private registry, set `WORKER_IMAGE_PULL_SECRET` to the name of an
   image pull Secret in the namespace.
+- To keep the work of a task through a restart, make a ReadWriteMany
+  PersistentVolumeClaim in the namespace, and set `worker.workClaim` to its
+  name. The chart does not make the claim. See "The work directories".
 
 The two chart blocks are on:
 
 - `rbac` makes a ServiceAccount, a Role, and a RoleBinding. The Role lets the
   manager create, read, and delete Jobs, and read pods and pod logs, in its
   own namespace only.
-- `networkPolicy` lets a worker connect to the manager on ports 8001 and
-  8002, and to DNS on the cluster resolver, and to no other address. Set
+- `networkPolicy` lets a worker connect to the manager on ports 8001, 8002,
+  and 8003, and to DNS on the cluster resolver, and to no other address. Set
   `networkPolicy.dns` in the chart values when your cluster DNS pods are not
   `k8s-app: kube-dns` in `kube-system`. The resolver sends queries for other
   names on, so a DNS tunnel through it stays possible. The policy lets the
-  manager accept ports 8001 and 8002 from the workers only. The CNI of the cluster must
-  enforce NetworkPolicy. If it does not, a worker can connect to all
-  addresses.
+  manager accept ports 8001, 8002, and 8003 from the workers only. The CNI of
+  the cluster must enforce NetworkPolicy. If it does not, a worker can connect
+  to all addresses.
 
 For `network: on`, set `networkPolicy.workersInternetEgress: true`, and set
 `networkPolicy.clusterCidrs` to the pod and Service CIDRs of the cluster. A
@@ -439,8 +640,10 @@ The manager starts one Job for each task, named
 `dev-worker-<first 8 characters of the task id>`, with `-r<n>` added for
 the worker of a resumed task. The worker pod runs as uid
 1000 with no Linux capabilities, the `RuntimeDefault` seccomp profile, and a
-read-only root file system. It writes to two emptyDirs, `/work` and `/tmp`,
-each with the `sizeLimit` `worker.disk`. It gets no ServiceAccount token. The
+read-only root file system. It writes to `/tmp`, an emptyDir with the
+`sizeLimit` `worker.disk`, and to `/work`: an emptyDir of the same size, or,
+with `worker.workClaim`, its own directory of the work claim (see "The work
+directories"). It gets no ServiceAccount token. The
 `worker` limits, with `ephemeral-storage` set to `worker.disk`, are its
 requests and its limits.
 
@@ -494,22 +697,28 @@ After the worker pushes, the manager:
    diff holds only the worker's commits. Without a `clone_head`, the diff
    starts at the base branch. The worker sends `clone_head`, so the scan is
    a guard against a mistake, not against a hostile worker.
-2. Scans the added lines for credentials: `sk-ant-`, `glpat-`, `ghp_`,
-   `github_pat_`, `gho_`, `xoxb-`, `xoxp-`, an AWS access key, a private key
-   block, and a quoted value of 16 or more characters set to a name such as
-   `api_key`, `secret`, `token`, or `password`. That value must mix at least
-   three of lowercase, uppercase, digits, and symbols.
-3. On a hit, fails the task. The error names the pattern, the file, and the
-   line, and never the text. The manager deletes the branch only when this
-   task made it: a `develop` whose worker found no branch on the remote. A
-   branch that was there before the task stays, and the error says so. A
+2. Scans the added lines with `gitleaks`. The configuration is
+   `joshua_developer/gitleaks.toml`: every rule of the gitleaks default
+   configuration, and an allowlist for placeholder values. A value in angle
+   brackets, such as `token = "<set by the Ansible role>"`, and a line of
+   prose are not findings. The allowlist also holds one path,
+   `addons/developer/tests/`: the tests of the scan itself hold values with
+   the shape of a credential, and no credential. The scan keeps the path of
+   each file of the diff, so a path rule and a path allowlist read the same
+   path as in the repository. The image holds the `gitleaks` binary.
+3. On a hit, fails the task. The error names the gitleaks rule, the file,
+   and the line, and never the text. The manager deletes the branch only when
+   this task made it: a `develop` whose worker found no branch on the remote.
+   A branch that was there before the task stays, and the error says so. A
    `rework` never deletes the branch.
 4. On a clean `develop` with status `success`, finds or opens the pull
    request. A `rework` push changes the pull request that is there.
 
 `scan` in `task_status` is `clean`, `partial` (the host sent no text for a
 file, or did not list every file), `hit`, or `unavailable` (a `git` host
-has no diff API). GitHub lists at most 300 files in one compare reply. The
+has no diff API, or `gitleaks` did not run). A scan that cannot read the
+diff is never `clean`. GitHub lists at most 300 files in one compare
+reply. The
 manager reads the reply page by page, and when the list stops at that cap,
 the scan is `partial`. A task that
 ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
@@ -542,6 +751,94 @@ not lose the commits:
 
 When the bundle cannot be made or sent, the error says that the commits are
 lost, and `answer` returns `not_resumable`.
+
+## What a restart does to a running task
+
+A deploy of the addon, a changed Secret with a Reloader, a node drain, and a
+crash all restart the manager. The worker is a separate Job or container, and
+it keeps running.
+
+1. **The worker waits.** Every call of the worker to the manager (the brief,
+   the log, a question, the report, the git tunnel of a push) is tried again
+   on a connection error, with a longer wait each time, for
+   `worker.manager_grace` seconds (default 600). The Claude CLI reaches the
+   model through the forwarder of the manager, so the worker also sets
+   `CLAUDE_CODE_MAX_RETRIES` high enough for the CLI to wait the same time.
+   The session and the commits stay in the worker.
+2. **The manager finds the worker again.** At start, the manager looks for
+   the worker of each task that is `dispatched` or `running`: the Job
+   (Kubernetes) or the container (Docker) with the name of the current worker
+   and the task label. When it is there, the task keeps its status, its lock,
+   and its task token, and a new supervisor watches the worker. The deadline
+   of the task does not change. Then the manager removes the workers that no
+   active task owns.
+3. **A task fails only when its worker is gone.** The error is `the worker is
+   gone: the manager restarted and found no worker for the task`, and the
+   report goes to the chat. The work directory of the task stays (see "The
+   work directories"), so `answer` can resume the task from its commits.
+4. **No report is lost.** A worker whose report cannot reach the manager in
+   `worker.manager_grace` seconds writes the report to its log as the last
+   line (`unsent report`), and exits. When the manager then finds a worker
+   that ended, it takes the report from the log. A worker that ended with no
+   such line gets a `failed` report from the state of its Job or container.
+   The Job of a worker stays for one hour after it ends
+   (`ttlSecondsAfterFinished`), so the manager must be back in that time to
+   read the log.
+
+A restart that takes longer than `worker.manager_grace` seconds stops the
+worker. The commits stay in its work directory.
+
+**The strategy of the chart.** The chart uses `Recreate` for the manager,
+because the claim of `developer.db` is ReadWriteOnce: the new pod can only
+mount it after the old pod stops. The workers wait out the gap, so a deploy
+does not need to drain the tasks first. A drain would hold a deploy for as
+long as the longest task runs. Keep `worker.manager_grace` longer than the
+time a new manager pod takes to start, the image pull included.
+
+A Reloader on the Secret now restarts the manager without a lost task. It
+still breaks the open Claude request of each worker once, and the CLI sends
+it again.
+
+## The work directories
+
+Each worker clones the repository into `/work` and commits there. Where
+`/work` lives decides what a restart, a failed push, or a crash loses.
+
+| Runtime | Storage of `/work` | Kept after the worker ends |
+|---|---|---|
+| `docker` (the compose file) | `<task id>` on the named volume `developer-work` (`WORKER_WORK_VOLUME`) | yes |
+| `kubernetes` with `worker.workClaim` | `<task id>` on that claim (`WORKER_WORK_CLAIM`, `subPath`) | yes |
+| `kubernetes` without `worker.workClaim` | an emptyDir | no |
+| `docker` without `WORKER_WORK_VOLUME` | an anonymous volume | no |
+
+With kept storage, the manager has the storage mounted at
+`DEVELOPER_WORK_DIR`, and:
+
+1. Before a worker starts, the manager makes the directory of the task,
+   `<DEVELOPER_WORK_DIR>/<task id>`. The runtime mounts that directory only
+   at `/work` in the worker, so a worker cannot read the work of another
+   task.
+2. **Nothing is deleted while a task is not successful.** The manager deletes
+   the directory of a task only when the task ends `success`. A task that
+   ends `failed`, `blocked`, or `timed_out`, or that a manager restart
+   failed, keeps its directory and its commits.
+3. A resumed task keeps its directory. A new task of the same person, for
+   the same repository and branch as a kept task, takes the directory of the
+   newest such task. The worker then finds the checkout in `/work`, fetches,
+   and continues on the branch from the commits that are there, instead of
+   cloning. When the remote branch moved, the worker rebases the kept
+   commits on it; when that rebase fails, the commits stay as they are.
+4. `answer` also resumes a `failed` task whose directory holds a checkout,
+   for example a task that a manager restart failed.
+5. A sweeper, at start and every hour, deletes a kept directory when its
+   task ended more than `work.keep_failed` days ago (default 7), and a
+   directory with no task in the store that is older than that. It logs each
+   deletion. It never deletes the directory of an active task.
+
+The git token is not on the kept storage: with `DEVELOPER_WORK_DIR` set, a
+worker gets `HOME=/tmp/home`, which goes with the worker. The manager runs
+as uid 1000 and must be able to write the root of the storage. When it
+cannot, a task fails with `the work directory was not made`.
 
 ## The first run
 

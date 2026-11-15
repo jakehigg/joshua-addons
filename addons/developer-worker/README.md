@@ -19,12 +19,31 @@ directory has no compose file and no `values.yaml`.
    that is there. So does a resumed task: a brief with `resumed: true`
    comes from an `answer` to a task whose earlier worker pushed the branch.
    Its prompt starts the task with the note of that worker and the answer.
+   When `/work/repo` already holds a checkout of the same repository, from
+   an earlier worker of the task, the worker does not clone. It fetches,
+   checks out the branch, and keeps the commits of the earlier worker that
+   the remote does not have. A local branch behind the remote moves to the
+   remote. A local branch that moved apart from the remote is rebased on it,
+   and stays as it was when the rebase fails. `clone_head` is then the commit
+   where the work leaves the remote, so the push sends the kept commits and
+   the scan of the manager reads them. A checkout of another repository is
+   deleted, and the worker clones fresh. Git runs no hook from a kept
+   checkout.
    A brief with `bundle: true` comes from a task whose earlier worker could
    not push. The worker gets the bundle of that worker's commits from the
-   manager (`GET /worker/bundle`) and restores them on the branch. With
+   manager (`GET /worker/bundle`) and restores them on the branch, unless a
+   kept checkout already has commits that the remote does not have. With
    `push_only: true`, the earlier session was complete: the worker pushes
    the restored commits and reports with the summary, the files, and the
    tests in `saved`. It runs no session and skips steps 3 to 5.
+   A brief with `refs` names reference repositories. The worker writes a
+   credential line for the host of each one (`ref_credentials`), clones
+   each one shallow, on its default branch, into
+   `/work/refs/<host>/<owner>/<name>`, sets its push URL to one that goes
+   nowhere, and removes the write bits of its files. A kept work directory
+   gets fresh clones. The session reads the folders through `add_dirs`, and
+   the prompt lists them. A reference repository that does not clone fails
+   the task before the session.
 3. It reads `CLAUDE.md` of the checkout as text, if there is one, and adds
    it to the prompt. It loads no other file from the checkout: no settings,
    no hooks, and no MCP config.
@@ -73,10 +92,25 @@ when `created_branch` is true on a `develop`. The report has no field for
 the branch name or the pull request. The manager takes them from its own
 data, and it refuses a report with an unknown field.
 
+## When the manager restarts
+
+Every call to the manager is tried again on a connection error, with a
+longer wait each time (at most 15 seconds), until `MANAGER_GRACE_S` seconds
+pass. A reply with a status, such as a 503 with a reason, is not tried
+again. A push that fails because the git tunnel of the manager does not
+answer is also tried again for that time. A push that the git host refuses
+is not. The worker gives the Claude CLI `CLAUDE_CODE_MAX_RETRIES`, so that
+the CLI also waits `MANAGER_GRACE_S` seconds for the forwarder. When the
+report still cannot be sent, the worker writes it to its log as the last
+line, a JSON line with `message: "unsent report"`, the task id, and the
+report, and exits 1. The manager reads the report from there when it starts
+again.
+
 ## Environment
 
-The manager sets these four variables. The worker takes no other setting,
-except the test aid `JOSHUA_WORKER_FAKE_SESSION` below.
+The manager sets these five variables. The worker takes no other setting,
+except the three proxy variables below and the test aid
+`JOSHUA_WORKER_FAKE_SESSION`.
 
 | Variable | What it is |
 |---|---|
@@ -84,13 +118,25 @@ except the test aid `JOSHUA_WORKER_FAKE_SESSION` below.
 | `MANAGER_URL` | The worker API of the manager, `http://<manager>:8001`. |
 | `GIT_PROXY_URL` | The git tunnel of the manager, `http://task:<TASK_TOKEN>@<manager>:8002`. |
 | `TASK_TOKEN` | The task token. It works only on the routes of this task. |
+| `MANAGER_GRACE_S` | The seconds the worker keeps trying to reach a manager that does not answer, such as one that restarts (`worker.manager_grace`, default 600). |
+
+With the `packages` block on in the manager's `developer.yaml`, the manager
+also sets `HTTPS_PROXY` and `HTTP_PROXY` (`http://<manager>:8003`, the
+package proxy) and `NO_PROXY` (the manager host, the loopback, and the
+cluster domain). `npm ci`, `uv sync`, and the other package tools then reach
+the registries in that block, and no other host. The proxy carries no
+credential and allows no git host. Without the block, the worker gets no
+proxy variable, and a command that downloads fails.
 
 The image sets `HOME=/work/home` and `CLAUDE_CONFIG_DIR=/work/home/.claude`.
 The checkout is `/work/repo`. The worker keeps its files in `/work` and `/tmp`.
 The root file system is read-only. On Kubernetes, these two folders are
 emptyDirs with a size limit. On Docker, they are anonymous volumes, except
 with `worker.disk_docker_storage_opt: true`, which keeps them in a writable
-root file system with a size limit.
+root file system with a size limit. When the manager keeps the work
+directories (`DEVELOPER_WORK_DIR`), `/work` is the directory of the task on
+the kept storage, and the manager sets `HOME=/tmp/home`, so the git token is
+never on that storage.
 
 The worker puts `GIT_PROXY_URL` in git's own config (`http.proxy`), and not
 in `HTTPS_PROXY`. Only git uses the tunnel.

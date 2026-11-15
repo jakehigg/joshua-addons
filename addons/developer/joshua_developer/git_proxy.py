@@ -8,8 +8,9 @@ host of its task through this tunnel. The worker sets git's own config, not
 
 git then sends ``CONNECT <host>:443`` with
 ``Proxy-Authorization: Basic base64("task:<TASK_TOKEN>")``. The proxy allows
-one destination for each token: the host of the task's repository, on port
-443, or on the port in the repository address when it has one. Port 22 is
+the destinations of each token's task: the host of the task's repository,
+and the host of each of its reference repositories (``refs``), on port 443,
+or on the port in the repository address when it has one. Port 22 is
 never allowed. The tunnel carries TLS from end to end, so the proxy never
 sees the git token.
 
@@ -45,23 +46,32 @@ HEAD_TIMEOUT_S = 10.0
 _CHUNK = 65536
 MAX_ATTEMPTS = 3
 
-# A token to the one host and port the token may reach, or None.
-Resolver = Callable[[str], tuple[str, int] | None]
+# A token to the hosts and ports the token may reach, or None.
+Resolver = Callable[[str], frozenset[tuple[str, int]] | None]
 
 
-def task_target(manager: Manager, token: str) -> tuple[str, int] | None:
-    """The git host and port that the task of ``token`` may reach, or None."""
+def _target(repo: str) -> tuple[str, int]:
+    host, _, port = repo_host(repo).partition(":")
+    return host, int(port) if port else 443
+
+
+def task_target(manager: Manager, token: str) -> frozenset[tuple[str, int]] | None:
+    """The git hosts and ports that the task of ``token`` may reach, or None.
+
+    The host of the task repository, and the host of each reference
+    repository of the task (``refs``).
+    """
     task_id = manager.store.find_task_by_worker_token(token)
     if task_id is None:
         return None
     task = manager.store.get_task(task_id)
     if task is None or task["status"] not in ACTIVE_STATUSES:
         return None
-    host, _, port = repo_host(task["repo"]).partition(":")
-    return host, int(port) if port else 443
+    return frozenset(_target(repo) for repo in [task["repo"], *(task.get("refs") or [])])
 
 
-def _reply(status: int, reason: str, extra: str = "") -> bytes:
+def reply(status: int, reason: str, extra: str = "") -> bytes:
+    """One HTTP reply with no body, for this proxy and for the package proxy."""
     return f"HTTP/1.1 {status} {reason}\r\n{extra}Content-Length: 0\r\n\r\n".encode("latin-1")
 
 
@@ -112,7 +122,7 @@ class GitProxy:
         for _ in range(MAX_ATTEMPTS):
             head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
             if len(head) > MAX_HEAD:
-                await self._send(writer, _reply(400, "Bad Request"))
+                await send(writer, reply(400, "Bad Request"))
                 return
             lines = head.decode("latin-1").split("\r\n")
             parts = lines[0].split(" ")
@@ -128,21 +138,21 @@ class GitProxy:
                 # curl sends the credential only after this challenge, on this
                 # same connection. Flush, keep the connection, read the next head.
                 logger.info({"message": "tunnel: credential challenge sent"})
-                await self._send(writer, _reply(407, "Proxy Authentication Required", _PROXY_AUTH))
+                await send(writer, reply(407, "Proxy Authentication Required", _PROXY_AUTH))
                 continue
 
             if len(parts) != 3 or parts[0] != "CONNECT":
-                await self._send(writer, _reply(403, "Forbidden"))
+                await send(writer, reply(403, "Forbidden"))
                 return
             host, _, port_text = parts[1].rpartition(":")
             if not port_text.isdigit():
-                await self._send(writer, _reply(403, "Forbidden"))
+                await send(writer, reply(403, "Forbidden"))
                 return
             port = int(port_text)
             host = host.strip("[]").lower()
-            if port == 22 or (host, port) != allowed:
+            if port == 22 or (host, port) not in allowed:
                 logger.warning({"message": "tunnel refused: destination not allowed", "port": port})
-                await self._send(writer, _reply(403, "Forbidden"))
+                await send(writer, reply(403, "Forbidden"))
                 return
 
             try:
@@ -151,13 +161,13 @@ class GitProxy:
                 )
             except (OSError, TimeoutError):
                 logger.warning({"message": "tunnel: the git host did not answer", "host": host})
-                await self._send(writer, _reply(502, "Bad Gateway"))
+                await send(writer, reply(502, "Bad Gateway"))
                 return
 
-            await self._send(writer, b"HTTP/1.1 200 Connection established\r\n\r\n")
+            await send(writer, b"HTTP/1.1 200 Connection established\r\n\r\n")
             logger.info({"message": "tunnel open", "host": host, "port": port})
             try:
-                await asyncio.gather(_pipe(reader, up_writer), _pipe(up_reader, writer))
+                await asyncio.gather(pipe(reader, up_writer), pipe(up_reader, writer))
             finally:
                 up_writer.close()
                 with contextlib.suppress(Exception):
@@ -165,13 +175,15 @@ class GitProxy:
             return
         logger.warning({"message": "tunnel refused: missing or wrong credential"})
 
-    @staticmethod
-    async def _send(writer: asyncio.StreamWriter, data: bytes) -> None:
-        writer.write(data)
-        await writer.drain()
+
+async def send(writer: asyncio.StreamWriter, data: bytes) -> None:
+    """Write ``data`` and flush it."""
+    writer.write(data)
+    await writer.drain()
 
 
-async def _pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
+async def pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
+    """Copy bytes from ``source`` to ``sink`` until the source ends."""
     try:
         while True:
             data = await source.read(_CHUNK)

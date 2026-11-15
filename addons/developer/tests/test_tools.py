@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from conftest import ALEX, MIA, error, make_settings, mcp_session, mcp_sessions, payload
 from joshua_developer import server
+from joshua_developer.manager import WORKER_GONE_ERROR
 from joshua_developer.server import build_app
 
 REPO = "github.com/example-home/app"
@@ -22,8 +23,13 @@ async def test_the_tool_list_is_final(app) -> None:
         "get_settings",
         "list_personas",
         "list_tasks",
+        "pause_run",
+        "resume_run",
         "rework",
+        "run_project",
+        "run_status",
         "set_settings",
+        "stop_run",
         "task_output",
         "task_status",
     ]
@@ -317,7 +323,7 @@ async def test_list_tasks_limit(app) -> None:
     assert len(clamp["tasks"]) == 1
 
 
-async def test_a_restart_fails_the_running_tasks(settings) -> None:
+async def test_a_restart_fails_a_task_whose_worker_is_gone(settings) -> None:
     first_app = build_app(settings, stub_delay_s=None)
     async with mcp_session(first_app) as session:
         task_id = payload(await session.call_tool("develop", develop_args(branch="feature")))[
@@ -325,10 +331,11 @@ async def test_a_restart_fails_the_running_tasks(settings) -> None:
         ]
 
     second_app = build_app(settings, stub_delay_s=None)
-    assert server._get_manager().recovered == [task_id]
+    # The stub runtime keeps no worker over a restart, so the task fails.
+    assert await server._get_manager().reattach_workers() == [task_id]
     async with mcp_session(second_app) as session:
         status = payload(await session.call_tool("task_status", {"task_id": task_id}))
         again = payload(await session.call_tool("develop", develop_args(branch="feature")))
     assert status["status"] == "failed"
-    assert status["error"] == "manager restarted"
+    assert status["error"] == WORKER_GONE_ERROR
     assert again["status"] == "dispatched"

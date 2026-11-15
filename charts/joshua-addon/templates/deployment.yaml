@@ -60,11 +60,19 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.port }}
-          {{- if or .Values.env .Values.extraEnv .Values.existingSecret .Values.envFrom }}
+          {{- $workClaim := .Values.worker.workClaim }}
+          {{- if or .Values.env .Values.extraEnv .Values.existingSecret .Values.envFrom $workClaim }}
           env:
             {{- range $name, $value := .Values.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
+            {{- end }}
+            {{- if $workClaim }}
+            # The work storage of the workers: see worker.workClaim.
+            - name: DEVELOPER_WORK_DIR
+              value: {{ .Values.worker.workMountPath | quote }}
+            - name: WORKER_WORK_CLAIM
+              value: {{ $workClaim | quote }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -96,11 +104,15 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.persistence.enabled .Values.configFile.enabled }}
+          {{- if or .Values.persistence.enabled .Values.configFile.enabled $workClaim }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if $workClaim }}
+            - name: work
+              mountPath: {{ .Values.worker.workMountPath }}
             {{- end }}
             {{- if .Values.configFile.enabled }}
             - name: config
@@ -112,12 +124,17 @@ spec:
         {{- with .Values.extraContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- if or .Values.persistence.enabled .Values.configFile.enabled }}
+      {{- if or .Values.persistence.enabled .Values.configFile.enabled $workClaim }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.existingClaim | default (include "joshua-addon.fullname" .) }}
+        {{- end }}
+        {{- if $workClaim }}
+        - name: work
+          persistentVolumeClaim:
+            claimName: {{ $workClaim }}
         {{- end }}
         {{- if .Values.configFile.enabled }}
         - name: config

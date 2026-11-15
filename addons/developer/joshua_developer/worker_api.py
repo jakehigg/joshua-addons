@@ -51,6 +51,11 @@ the API, and passes the other headers on. The worker sets:
 
 The Claude CLI then sends its task token as a Claude token. It is a fake
 Claude token: the real token stays in the manager.
+
+The forwarder also counts the tokens of each ``v1/messages`` answer as it
+passes, for the task of the worker (see ``usage``). The counting never
+changes the bytes that reach the worker: the counter reads a decoded copy of
+an answer that the API compressed.
 """
 
 from __future__ import annotations
@@ -71,7 +76,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from joshua_developer import platforms
+from joshua_developer import platforms, usage
 from joshua_developer.log import get_logger
 from joshua_developer.manager import BUNDLE_SIGNATURES, MAX_BUNDLE, MAX_QUESTION, Manager
 from joshua_developer.platforms import PlatformConfigError
@@ -156,11 +161,25 @@ def read_ca_bundle(path: str) -> str | None:
 def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
     """The brief of a task (the full row) for its worker.
 
-    It holds the git token of the task's host. The brief goes only to the
+    It holds the git token of the task's host, and the token of the host of
+    each reference repository. The brief goes only to the
     worker that holds the task token, over the internal network. Raises
     PlatformConfigError when the token is gone.
     """
     resolved = platforms.resolve(manager.config, task["person"], task["repo"])
+    refs: list[dict[str, str]] = []
+    # One credential for each host of a reference repository that is not the
+    # host of the task repository.
+    credentials: dict[str, dict[str, str]] = {}
+    for ref in task.get("refs") or []:
+        ref_resolved = platforms.resolve(manager.config, task["person"], ref)
+        refs.append({"repo": ref, "repo_url": repo_url(ref)})
+        if ref_resolved.host != resolved.host and ref_resolved.host not in credentials:
+            credentials[ref_resolved.host] = {
+                "host": ref_resolved.host,
+                "username": ref_resolved.credential_username,
+                "token": ref_resolved.token,
+            }
     persona_name = task["persona"]
     persona = manager.config.personas.get(persona_name)
     if persona is None:
@@ -183,6 +202,10 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "git_username": resolved.credential_username,
         "platform_kind": resolved.kind,
         "brief": task["brief"],
+        # The reference repositories: cloned read-only, never pushed.
+        "refs": refs,
+        # The git credentials of the hosts of refs, beside git_token.
+        "ref_credentials": list(credentials.values()),
         "feedback": task["instructions"],
         "answer": task["answer"],
         # The total time the worker waits for answers, over all its questions.
@@ -483,8 +506,20 @@ def build_worker_app(
             for key, value in upstream.headers.items()
             if key.lower() not in _DROP_RESPONSE
         }
+        body = upstream.aiter_raw()
+        counter = usage.counter_for(
+            path, upstream.status_code, upstream.headers.get("content-type", "")
+        )
+        if counter is not None:
+            # The worker reads the raw bytes, which fit the content-encoding
+            # and the content-length of the API. The counter reads a decoded
+            # copy of the same bytes.
+            counted = usage.DecodedCounter(
+                counter, upstream.headers.get("content-encoding", ""), task_id
+            )
+            body = usage.counted_stream(body, counted, manager.usage, task_id)
         return StreamingResponse(
-            upstream.aiter_raw(),
+            body,
             status_code=upstream.status_code,
             headers=response_headers,
             background=BackgroundTask(upstream.aclose),

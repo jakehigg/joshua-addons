@@ -5,7 +5,7 @@ import asyncio
 import uvicorn
 
 from joshua_developer import server
-from joshua_developer.config import GIT_PROXY_PORT, WORKER_API_PORT
+from joshua_developer.config import GIT_PROXY_PORT, PACKAGE_PROXY_PORT, WORKER_API_PORT
 from joshua_developer.log import configure_from_env
 
 HOST = "0.0.0.0"
@@ -13,10 +13,16 @@ MCP_PORT = 8000
 
 
 async def serve() -> None:
-    """Serve MCP on 8000, the worker API on 8001, and the git host tunnel on 8002."""
+    """Serve MCP on 8000, the worker API on 8001, and the git host tunnel on 8002.
+
+    The package proxy serves 8003 as well, when ``packages.enabled`` is true
+    in developer.yaml. With the default, false, nothing listens on 8003.
+    """
     app = server.build_app()
     assert server.worker_app is not None and server.git_proxy is not None
     await server.git_proxy.start(HOST, GIT_PROXY_PORT)
+    if server.package_proxy is not None:
+        await server.package_proxy.start(HOST, PACKAGE_PROXY_PORT)
     mcp_server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=MCP_PORT, log_config=None))
     worker_server = uvicorn.Server(
         uvicorn.Config(server.worker_app, host=HOST, port=WORKER_API_PORT, log_config=None)
@@ -27,6 +33,8 @@ async def serve() -> None:
         await asyncio.gather(mcp_server.serve(), worker_server.serve())
     finally:
         await server.git_proxy.close()
+        if server.package_proxy is not None:
+            await server.package_proxy.close()
 
 
 def main() -> None:

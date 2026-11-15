@@ -31,6 +31,10 @@ DEFAULT_ASK_WAIT_S = 7200
 # image pull and the container start.
 DEFAULT_WORKER_START_GRACE_S = 600
 DEFAULT_MANAGER_HOST = "developer"
+# The seconds a worker waits for a manager that restarts.
+DEFAULT_MANAGER_GRACE_S = 600
+# The days a task that did not end success keeps its work directory.
+DEFAULT_KEEP_FAILED_DAYS = 7
 DEFAULT_WORKER_NETWORK = "developer_workers"
 DEFAULT_PUBLIC_NETWORK = "bridge"
 # The values of WORKER_FAKE_SESSION, a test aid of the Docker runtime.
@@ -38,6 +42,11 @@ FAKE_SESSION_MODES = ("1", "ask")
 # The worker API (brief, report, ask, the Claude forwarder) and the git host tunnel.
 WORKER_API_PORT = 8001
 GIT_PROXY_PORT = 8002
+# The package proxy: the registries a worker may reach for its dependencies.
+PACKAGE_PROXY_PORT = 8003
+# The names a worker reaches without the package proxy, beside the manager
+# host: the loopback and the cluster domain.
+NO_PROXY_NAMES = ("localhost", "127.0.0.1", ".svc", ".cluster.local")
 
 # Text that starts like one of these is a token, not a name.
 TOKEN_PREFIXES = ("sk-ant-", "glpat-", "ghp_", "github_pat_", "xoxb-")
@@ -46,6 +55,9 @@ _AWS_KEY_RE = re.compile(r"AKIA[0-9A-Z]{16}")
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}\Z")
+# A Kubernetes object name (DNS-1123 subdomain), and a Docker volume name.
+_CLAIM_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?\Z")
+_VOLUME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}\Z")
 _HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?\Z")
 
 
@@ -136,6 +148,43 @@ class WorkerLimits(_Model):
     cpus: float = Field(default=2.0, gt=0, le=64)
     disk: str = Field(default="4Gi", pattern=r"^[1-9][0-9]*(Ki|Mi|Gi|Ti)?$")
     disk_docker_storage_opt: bool = False
+    # The seconds a worker keeps trying to reach a manager that does not
+    # answer, such as one that restarts. The worker gets it as MANAGER_GRACE_S.
+    manager_grace: int = Field(default=DEFAULT_MANAGER_GRACE_S, gt=0, strict=True)
+
+
+class PackagesConfig(_Model):
+    """The package proxy: the hosts a worker may reach for its dependencies.
+
+    ``enabled`` is false by default, and the manager then starts no proxy and
+    gives a worker no proxy variable. Each host is a name, such as
+    ``registry.npmjs.org``, because the proxy reads the name in the
+    ``CONNECT`` line. A pattern or an address is not valid.
+    """
+
+    enabled: bool = False
+    hosts: list[str] = Field(default_factory=list)
+
+
+class WorkConfig(_Model):
+    """The work directories of the workers (``DEVELOPER_WORK_DIR``).
+
+    ``keep_failed`` is the number of days a task that did not end ``success``
+    keeps its directory after it ends. The sweeper then deletes it.
+    """
+
+    keep_failed: int = Field(default=DEFAULT_KEEP_FAILED_DAYS, gt=0, strict=True)
+
+
+class RunsConfig(_Model):
+    """The ceilings of a run (``runs`` in ``developer.yaml``), in percent used.
+
+    A run pauses before it starts a task when a limits window is at or over
+    its ceiling. A window that core cannot give is unknown, and a run goes on.
+    """
+
+    ceiling_five_hour_pct: int = Field(default=80, ge=1, le=100, strict=True)
+    ceiling_seven_day_pct: int = Field(default=90, ge=1, le=100, strict=True)
 
 
 class DeveloperConfig(_Model):
@@ -149,6 +198,9 @@ class DeveloperConfig(_Model):
     # The other built-in personas stay.
     personas: dict[str, Persona] = Field(default_factory=builtin_personas)
     worker: WorkerLimits = Field(default_factory=WorkerLimits)
+    packages: PackagesConfig = Field(default_factory=PackagesConfig)
+    work: WorkConfig = Field(default_factory=WorkConfig)
+    runs: RunsConfig = Field(default_factory=RunsConfig)
     platforms: dict[str, Platform] = Field(default_factory=dict)
     repos: list[str] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
@@ -241,6 +293,8 @@ def _check_references(config: DeveloperConfig) -> None:
         )
     for host in config.platforms:
         _check_host(f"platforms.{host}", host)
+    for index, host in enumerate(config.packages.hosts):
+        _check_package_host(f"packages.hosts[{index}]", host)
     for person_id, person in config.people.items():
         if not _NAME_RE.match(person_id):
             raise ConfigError(f"developer.yaml: people.{person_id} is not a valid person id")
@@ -261,6 +315,16 @@ def _check_references(config: DeveloperConfig) -> None:
 def _check_host(key: str, host: str) -> None:
     if host != host.lower() or "/" in host or not host.strip():
         raise ConfigError(f"developer.yaml: {key}: a host is a lowercase name, such as github.com")
+
+
+def _check_package_host(key: str, host: str) -> None:
+    """A package host is one lowercase name: no pattern, no port, no address."""
+    last_label = host.rpartition(".")[2]
+    if host != host.lower() or not _HOSTNAME_RE.match(host) or last_label.isdigit():
+        raise ConfigError(
+            f"developer.yaml: {key}: a package host is a lowercase name, "
+            "such as registry.npmjs.org, and not a pattern, a port, or an address"
+        )
 
 
 def load_config(path: Path) -> DeveloperConfig:
@@ -294,6 +358,10 @@ class Settings:
     tokens: Mapping[str, Caller] = field(default_factory=dict, repr=False)
     channels_url: str | None = None
     channels_token: str = field(default="", repr=False)
+    # The tasks addon (its /api) and joshua-ai core (its limits), for a run.
+    # None means a run cannot start, and the limits are unknown.
+    tasks_url: str | None = None
+    core_url: str | None = None
     worker_image: str = ""
     worker_runtime: str = "stub"
     # The Claude token the forwarder puts on each worker request.
@@ -315,6 +383,13 @@ class Settings:
     # A test aid, not for production: the Docker runtime gives this value to
     # each worker as JOSHUA_WORKER_FAKE_SESSION. Empty means a real session.
     worker_fake_session: str = ""
+    # Where the manager has the work storage mounted. None means each worker
+    # gets a scratch /work that goes with the worker.
+    work_dir: Path | None = None
+    # The claim (kubernetes) or the named volume (docker) of the work storage,
+    # which the runtime mounts into each worker.
+    worker_work_claim: str = ""
+    worker_work_volume: str = ""
 
     @property
     def open(self) -> bool:
@@ -383,6 +458,12 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if bool(channels_url) != bool(channels_token):
         raise ConfigError("CHANNELS_URL and JOSHUA_TOKEN_DEVELOPER must be set together")
 
+    tasks_url = env.get("TASKS_URL", "").strip() or None
+    core_url = env.get("CORE_URL", "").strip() or None
+    for name, value in (("TASKS_URL", tasks_url), ("CORE_URL", core_url)):
+        if value and not value.startswith(("http://", "https://")):
+            raise ConfigError(f"{name} must start with http:// or https://")
+
     runtime = env.get("WORKER_RUNTIME", "").strip() or "stub"
     if runtime not in RUNTIMES:
         raise ConfigError(f"WORKER_RUNTIME must be one of {', '.join(RUNTIMES)}")
@@ -415,12 +496,38 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
     if fake_session and runtime != "docker":
         raise ConfigError("WORKER_FAKE_SESSION works only when WORKER_RUNTIME is docker")
 
+    raw_work_dir = env.get("DEVELOPER_WORK_DIR", "").strip()
+    work_dir = Path(raw_work_dir) if raw_work_dir else None
+    if work_dir is not None and not work_dir.is_absolute():
+        raise ConfigError("DEVELOPER_WORK_DIR must be an absolute path")
+    work_claim = env.get("WORKER_WORK_CLAIM", "").strip()
+    work_volume = env.get("WORKER_WORK_VOLUME", "").strip()
+    if work_claim and not _CLAIM_RE.match(work_claim):
+        raise ConfigError("WORKER_WORK_CLAIM must be the name of a PersistentVolumeClaim")
+    if work_volume and not _VOLUME_RE.match(work_volume):
+        raise ConfigError("WORKER_WORK_VOLUME must be the name of a Docker volume")
+    if work_claim and runtime != "kubernetes":
+        raise ConfigError("WORKER_WORK_CLAIM works only when WORKER_RUNTIME is kubernetes")
+    if work_volume and runtime != "docker":
+        raise ConfigError("WORKER_WORK_VOLUME works only when WORKER_RUNTIME is docker")
+    if (work_claim or work_volume) and work_dir is None:
+        raise ConfigError(
+            "DEVELOPER_WORK_DIR is required with WORKER_WORK_CLAIM or WORKER_WORK_VOLUME: "
+            "the manager must have the work storage mounted"
+        )
+    if work_dir is not None and runtime == "kubernetes" and not work_claim:
+        raise ConfigError("WORKER_WORK_CLAIM is required when DEVELOPER_WORK_DIR is set")
+    if work_dir is not None and runtime == "docker" and not work_volume:
+        raise ConfigError("WORKER_WORK_VOLUME is required when DEVELOPER_WORK_DIR is set")
+
     return Settings(
         config=config,
         data_dir=Path(env.get("DEVELOPER_DATA_DIR", "").strip() or DEFAULT_DATA_DIR),
         tokens=tokens,
         channels_url=channels_url,
         channels_token=channels_token,
+        tasks_url=tasks_url,
+        core_url=core_url,
         worker_image=worker_image,
         worker_runtime=runtime,
         claude_token=env.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip(),
@@ -433,4 +540,7 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> Settings:
         worker_image_pull_secret=env.get("WORKER_IMAGE_PULL_SECRET", "").strip(),
         worker_start_grace_s=start_grace,
         worker_fake_session=fake_session,
+        work_dir=work_dir,
+        worker_work_claim=work_claim,
+        worker_work_volume=work_volume,
     )

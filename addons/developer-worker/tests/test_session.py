@@ -500,3 +500,13 @@ async def test_a_scripted_commit_that_fails_is_a_failed_session(tmp_path: Path) 
     assert got.is_error
     assert "git add failed" in (got.error or "")
     assert "session failed" in log.text()
+
+
+def test_the_cli_tries_long_enough_to_outlast_the_manager_grace(tmp_path: Path) -> None:
+    env = session.cli_env(MANAGER_URL, TASK_TOKEN, tmp_path / "h", tmp_path / "c", 600)
+    tries = int(env["CLAUDE_CODE_MAX_RETRIES"])
+    waits = [min(0.5 * 2**n, 32.0) for n in range(tries)]
+    assert sum(waits) >= 600
+    assert sum(waits[:-1]) < 600
+    # A short grace never goes below the CLI default of 10 tries.
+    assert session.cli_retries(1) == 10

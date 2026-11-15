@@ -35,9 +35,11 @@ async def echo_server():
 
 
 @contextlib.asynccontextmanager
-async def proxy_for(allowed: tuple[str, int] | None):
-    def resolver(token: str) -> tuple[str, int] | None:
-        return allowed if token == TOKEN else None
+async def proxy_for(allowed: tuple[str, int] | frozenset[tuple[str, int]] | None):
+    targets = frozenset([allowed]) if isinstance(allowed, tuple) else allowed
+
+    def resolver(token: str) -> frozenset[tuple[str, int]] | None:
+        return targets if token == TOKEN else None
 
     proxy = GitProxy(resolver)
     server = await proxy.start("127.0.0.1", 0)
@@ -175,8 +177,8 @@ async def test_task_target_is_the_repo_host_on_443(tmp_path) -> None:
             task_id: (store.get_task_full(task_id) or {})["worker_token"]
             for task_id in (first, second)
         }
-        assert task_target(manager, tokens[first]) == ("github.com", 443)
-        assert task_target(manager, tokens[second]) == ("git.example.org", 8443)
+        assert task_target(manager, tokens[first]) == {("github.com", 443)}
+        assert task_target(manager, tokens[second]) == {("git.example.org", 8443)}
         assert task_target(manager, "wrong") is None
         store.update_task(first, status="success")
         assert task_target(manager, tokens[first]) is None
@@ -214,3 +216,46 @@ async def test_three_bad_credentials_close_the_connection() -> None:
             assert reply.startswith(b"HTTP/1.1 407")
         assert await asyncio.wait_for(reader.read(), 2) == b""
         writer.close()
+
+
+async def test_task_target_adds_the_host_of_each_reference_repository(tmp_path) -> None:
+    settings = make_settings(
+        tmp_path,
+        config={
+            "repos": ["github.com/example-home/*", "git.example.org:8443/*/*"],
+            "platforms": {
+                "github.com": {"kind": "github", "token_env": "GITHUB_TOKEN"},
+                "git.example.org:8443": {"kind": "git", "token_env": "GITHUB_TOKEN"},
+            },
+        },
+    )
+    store = TaskStore(settings.db_path)
+    manager = Manager(settings, store, LockManager())
+    manager.runtime = StubRuntime(manager, delay_s=None)
+    try:
+        result = await manager.develop(
+            "alex",
+            "github.com/example-home/app",
+            "Port the chat.",
+            refs=["git.example.org:8443/g/chat", "github.com/example-home/lib"],
+        )
+        token = (store.get_task_full(result["task_id"]) or {})["worker_token"]
+        assert task_target(manager, token) == {("github.com", 443), ("git.example.org", 8443)}
+    finally:
+        store.close()
+
+
+async def test_the_tunnel_allows_a_reference_host_and_refuses_any_other() -> None:
+    async with echo_server() as echo_port:
+        targets = frozenset({("git.example.org", 443), ("127.0.0.1", echo_port)})
+        async with proxy_for(targets) as port:
+            reply, _, writer = await send_head(
+                port, f"CONNECT 127.0.0.1:{echo_port} HTTP/1.1\r\n{auth()}\r\n"
+            )
+            writer.close()
+            assert reply.startswith(b"HTTP/1.1 200")
+            reply, _, writer = await send_head(
+                port, f"CONNECT evil.example.net:443 HTTP/1.1\r\n{auth()}\r\n"
+            )
+            writer.close()
+            assert reply.startswith(b"HTTP/1.1 403")

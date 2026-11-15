@@ -1,0 +1,58 @@
+# The developer addon with worker.workClaim set: the addon mounts the work
+# claim at /work and gets DEVELOPER_WORK_DIR and WORKER_WORK_CLAIM.
+image:
+  repository: ghcr.io/jakehigg/joshua-addons-developer
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi
+configFile:
+  enabled: true
+  name: developer.yaml
+  mountPath: /etc/joshua-addon/developer.yaml
+  content: |
+    network: off
+    default_persona: opus
+    max_workers: 2
+    packages:
+      enabled: true
+      hosts:
+        - registry.npmjs.org
+    repos: []
+    people: {}
+env:
+  DEVELOPER_DATA_DIR: /data
+  DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
+  WORKER_RUNTIME: kubernetes
+  WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:0.2.0
+  MANAGER_HOST: addon-ci
+extraEnv:
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
+service:
+  extraPorts:
+    - name: worker-api
+      port: 8001
+      targetPort: 8001
+    - name: git-proxy
+      port: 8002
+      targetPort: 8002
+    - name: package-proxy
+      port: 8003
+      targetPort: 8003
+rbac:
+  enabled: true
+networkPolicy:
+  enabled: true
+  workersInternetEgress: false
+  # The worker API, the git host tunnel, and the package proxy.
+  managerPorts:
+    - 8001
+    - 8002
+    - 8003
+  gatewayNamespaces:
+    - joshua
+worker:
+  workClaim: developer-work

@@ -464,7 +464,12 @@ async def test_an_unreachable_manager_exits_1(tmp_path: Path, home: Path) -> Non
         raise httpx.ConnectError("refused", request=request)
 
     client = ManagerClient(
-        MANAGER_URL, TASK_ID, TASK_TOKEN, transport=httpx.MockTransport(refuse), backoff_s=0
+        MANAGER_URL,
+        TASK_ID,
+        TASK_TOKEN,
+        transport=httpx.MockTransport(refuse),
+        backoff_s=0.01,
+        grace_s=0.05,
     )
     code, _ = await run(tmp_path, home, FakeManager(), [], client=client)
     assert code == 1
@@ -477,6 +482,28 @@ async def test_a_report_the_manager_refuses_exits_1(
     manager.report_status = 500
     code, _ = await run(tmp_path, home, manager, [result({"summary": "x"})])
     assert code == 1
+
+
+async def test_a_report_that_is_not_sent_is_the_last_log_line(
+    tmp_path: Path, home: Path, bare_repo: Path, manager: FakeManager, caplog
+) -> None:
+    manager.brief = make_brief(bare_repo)
+    manager.report_status = 500
+    code, _ = await run(tmp_path, home, manager, [result({"summary": "the summary"})])
+    assert code == 1
+    last = caplog.records[-1].msg
+    assert isinstance(last, dict) and last["message"] == main.UNSENT_REPORT
+    assert last["task_id"] == TASK_ID
+    assert last["report"]["summary"] == "the summary"
+    assert GIT_TOKEN not in str(last)
+
+
+def test_manager_grace_comes_from_the_environment() -> None:
+    base = {"TASK_ID": "t", "MANAGER_URL": "http://manager.test", "TASK_TOKEN": "k"}
+    assert main.read_env(base).manager_grace_s == 600  # type: ignore[union-attr]
+    for raw, expected in (("90", 90.0), ("0", 600.0), ("x", 600.0), ("", 600.0)):
+        env = main.read_env({**base, "MANAGER_GRACE_S": raw})
+        assert env is not None and env.manager_grace_s == expected
 
 
 async def test_a_task_that_ends_during_the_run_exits_0(

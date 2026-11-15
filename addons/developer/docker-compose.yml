@@ -13,15 +13,22 @@
 #
 # Data: developer.db lives in the `developer-data` volume.
 #
+# Work: each worker clones and commits in its own directory of the
+# `developer-work` volume, mounted at /work. The manager deletes the
+# directory of a task only when the task ends success, so a restart or a
+# failed push loses no commit. Docker Engine 26 or later.
+#
 # Networks:
 #   joshua             the external network joshua-ai's compose file creates.
 #                      The gateway reaches the addon at http://developer:8000/mcp.
 #                      The manager also reaches the Claude API and the git hosts
 #                      through it.
 #   developer_workers  internal. The workers and the manager only. A worker
-#                      reaches the manager at developer:8001 (the worker API)
-#                      and developer:8002 (the git host tunnel), and nothing
-#                      else, unless `network: on` in developer.yaml. With
+#                      reaches the manager at developer:8001 (the worker API),
+#                      developer:8002 (the git host tunnel), and
+#                      developer:8003 (the package proxy, with the packages
+#                      block in developer.yaml on), and nothing else, unless
+#                      `network: on` in developer.yaml. With
 #                      `network: on`, a worker also joins PUBLIC_NETWORK, the
 #                      default bridge, so it can reach the internet, the host
 #                      LAN, and every port the host publishes.
@@ -43,6 +50,11 @@ services:
       DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
       DEVELOPER_DATA_DIR: /data
       CHANNELS_URL: ${CHANNELS_URL:-}
+      # The tasks addon and joshua-ai core, for run_project and for the token
+      # report of each task. The defaults are the service names on the joshua
+      # network.
+      TASKS_URL: ${TASKS_URL:-http://tasks:8000}
+      CORE_URL: ${CORE_URL:-http://core:8000}
       JOSHUA_TOKEN_DEVELOPER: ${JOSHUA_TOKEN_DEVELOPER:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       WORKER_RUNTIME: ${WORKER_RUNTIME:-docker}
@@ -51,9 +63,12 @@ services:
       WORKER_NETWORK: developer_workers
       PUBLIC_NETWORK: ${PUBLIC_NETWORK:-bridge}
       DOCKER_HOST: tcp://docker-socket-proxy:2375
+      DEVELOPER_WORK_DIR: /work
+      WORKER_WORK_VOLUME: developer-work
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - developer-data:/data
+      - developer-work:/work
       - ./developer.yaml:/etc/joshua-addon/developer.yaml:ro
     healthcheck:
       test:
@@ -107,6 +122,10 @@ services:
 
 volumes:
   developer-data:
+  # The name is fixed, so WORKER_WORK_VOLUME finds the volume without the
+  # compose project prefix.
+  developer-work:
+    name: developer-work
 
 networks:
   joshua:

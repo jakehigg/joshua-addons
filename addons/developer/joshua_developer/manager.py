@@ -5,7 +5,10 @@ The MCP tools call this class. A call that breaks a rule gets a dict with
 ``invalid_arguments``, ``repo_not_allowed``, ``repo_not_configured``,
 ``token_missing``, ``pr_not_found``, ``pr_not_open``, ``platform_error``,
 ``unknown_persona``, ``concurrency_limit``, ``locked``, ``not_waiting``,
-``not_resumable``, and ``branch_is_base``.
+``not_resumable``, and ``branch_is_base``. The run tools (see ``runs``) add
+``tasks_not_configured``, ``tasks_unreachable``, ``project_not_found``,
+``no_tasks``, ``run_exists``, ``run_not_found``, ``run_ambiguous``,
+``run_not_pausable``, and ``run_not_resumable``.
 
 A task never works on its base branch, ``main``, or ``master``
 (``branch_is_base``). This is a guard, not a boundary: the git token can
@@ -28,9 +31,16 @@ bundle is resumable also when it ``failed``: the new worker restores the
 commits. The bundle is deleted when a worker of the task pushes, and after
 ``BUNDLE_KEEP_DAYS``.
 
+With ``DEVELOPER_WORK_DIR``, each task has its own work directory on storage
+that a restart keeps (see ``workspaces``). The directory is deleted only when
+the task ends ``success``.
+
 The task clock pauses while a question waits. ``asked_at`` holds the start
 of the open wait, and ``paused_s`` the seconds of the waits that ended. The
 supervisor of the runtime adds both to the deadline of the worker.
+
+A task that ends reports the tokens of its model calls to core, one row for
+each task, when ``CORE_URL`` is set (see ``usage``).
 """
 
 from __future__ import annotations
@@ -46,7 +56,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from joshua_developer import notify, platforms
+from joshua_developer import notify, platforms, usage
 from joshua_developer.config import DeveloperConfig, Settings
 from joshua_developer.locks import LockedError, LockManager
 from joshua_developer.log import get_logger
@@ -60,8 +70,9 @@ from joshua_developer.repos import (
     parse_pr,
     repo_allowed,
 )
+from joshua_developer.runs import Runs
 from joshua_developer.runtime import Report, Runtime, TaskClock
-from joshua_developer.scan import Finding, scan_diff
+from joshua_developer.scan import Finding, ScanUnavailable, scan_diff
 from joshua_developer.store import (
     ACTIVE_STATUSES,
     TERMINAL_STATUSES,
@@ -70,10 +81,12 @@ from joshua_developer.store import (
     parse_time,
     utcnow,
 )
+from joshua_developer.workspaces import Workspaces
 
 logger = get_logger("joshua_developer.manager")
 
-RESTART_ERROR = "manager restarted"
+# The error of an active task whose worker is not there after a manager restart.
+WORKER_GONE_ERROR = "the worker is gone: the manager restarted and found no worker for the task"
 MAX_TEXT = 100_000
 MAX_QUESTION = 10_000
 DEFAULT_BASE_BRANCH = "main"
@@ -96,12 +109,16 @@ _COMMIT_CHARS = frozenset("0123456789abcdef")
 CLOSED_PR_STATES = frozenset({"closed", "merged", "locked"})
 # The states from which an answer resumes a task.
 RESUMABLE_STATUSES = ("blocked", "timed_out")
+# The most reference repositories of one task (refs).
+MAX_REFS = 5
 # The bundles of commits that a worker could not push.
 BUNDLE_DIR = "bundles"
 MAX_BUNDLE = 100 * 1024 * 1024
 BUNDLE_KEEP_DAYS = 14
 # The first line of a git bundle file, version 2 or 3.
 BUNDLE_SIGNATURES = (b"# v2 git bundle\n", b"# v3 git bundle\n")
+# The time between two runs of the sweeper of the work directories.
+SWEEP_INTERVAL_S = 3600
 
 
 def rejected(reason: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -200,6 +217,11 @@ class Manager:
         # Held around the capacity check, the lock, and the row write of a
         # dispatch or a resume, so two calls cannot both take the last slot.
         self._admission = threading.Lock()
+        # The tokens of the model calls of each task that runs. The Claude
+        # forwarder counts them, and record_report reports them to core.
+        self.usage = usage.UsageTracker()
+        self.runs = Runs(self)
+        self.workspaces = Workspaces(settings.work_dir, store, settings.config.work.keep_failed)
 
     @property
     def config(self) -> DeveloperConfig:
@@ -208,20 +230,98 @@ class Manager:
     # --- start -------------------------------------------------------------
 
     def recover(self) -> list[str]:
-        """Clear every lock and fail every task that was active. Returns their ids.
+        """Take the locks of the tasks that are still active. Returns their ids.
 
-        ``send_recovered_reports`` sends the reports of these tasks later.
+        A manager restart does not end a task: its worker can still run.
+        ``reattach_workers`` then finds the worker of each active task, and
+        fails only a task whose worker is gone.
         """
         self.locks.clear()
-        failed = self.store.fail_active_tasks(RESTART_ERROR)
-        for task in failed:
-            logger.warning(
-                {"message": "task failed by a manager restart", "task_id": task["task_id"]}
-            )
-        self.recovered = [task["task_id"] for task in failed]
+        active = self.store.list_active_tasks()
+        for task in active:
+            full = self.store.get_task_full(task["task_id"]) or task
+            try:
+                self.locks.acquire(
+                    full["repo"],
+                    full["scope"],
+                    full["task_id"],
+                    full["task_type"],
+                    full.get("branch_name"),
+                )
+            except LockedError:
+                logger.warning(
+                    {"message": "two active tasks hold one lock", "task_id": full["task_id"]}
+                )
         self.store.clear_ended_worker_tokens()
         self.prune_bundles()
-        return list(self.recovered)
+        self.sweep_workspaces()
+        return [task["task_id"] for task in active]
+
+    async def reattach_workers(self) -> list[str]:
+        """Watch the worker of each active task again. Returns the ids of the failed tasks.
+
+        A task whose worker is there, running or ended, keeps its status, and
+        a supervisor watches its worker again: a worker that ended while the
+        manager was away gives its outcome. A task with no worker fails with
+        ``WORKER_GONE_ERROR``, keeps its work directory, and its report goes
+        out with ``send_recovered_reports``. Then the runtime removes the
+        workers that no active task owns.
+        """
+        runtime = self._runtime()
+        failed: list[str] = []
+        for task in self.store.list_active_tasks():
+            task_id = task["task_id"]
+            full = self.store.get_task_full(task_id)
+            assert full is not None
+            try:
+                found = await runtime.reattach(full)
+            except Exception as exc:
+                logger.error(
+                    {
+                        "message": "the runtime could not look for the worker",
+                        "task_id": task_id,
+                        "error_type": type(exc).__name__,
+                    }
+                )
+                found = False
+            if found:
+                continue
+            self.store.update_task(
+                task_id,
+                status="failed",
+                error=WORKER_GONE_ERROR,
+                completed_at=now_iso(),
+                asked_at=None,
+            )
+            self.locks.release(full["repo"], full["scope"], task_id)
+            logger.warning({"message": "task failed: its worker is gone", "task_id": task_id})
+            failed.append(task_id)
+        self.recovered.extend(failed)
+        try:
+            await asyncio.to_thread(runtime.remove_orphans)
+        except Exception as exc:
+            logger.warning(
+                {"message": "the old workers were not removed", "error_type": type(exc).__name__}
+            )
+        return failed
+
+    # --- work directories --------------------------------------------------
+
+    def sweep_workspaces(self) -> int:
+        """Run the sweeper of the work directories once. Returns the count it deleted."""
+        try:
+            return self.workspaces.sweep()
+        except OSError as exc:
+            logger.warning(
+                {"message": "the workspace sweep failed", "error_type": type(exc).__name__}
+            )
+            return 0
+
+    async def sweep_forever(self, interval_s: float = SWEEP_INTERVAL_S) -> None:
+        """Run the sweeper every ``interval_s`` seconds, until cancelled."""
+        while True:
+            await asyncio.sleep(interval_s)
+            await asyncio.to_thread(self.sweep_workspaces)
 
     # --- bundles -----------------------------------------------------------
 
@@ -315,7 +415,12 @@ class Manager:
         branch: str | None = None,
         persona: str | None = None,
         notify_to: str | None = None,
+        refs: list[str] | None = None,
+        workspace: str | None = None,
+        **run_link: Any,
     ) -> dict[str, Any]:
+        """Start a task. ``run_link`` holds ``run_id``, ``tasks_task_id``, and
+        ``tasks_task_number`` of a task that a run starts."""
         if not brief or not brief.strip():
             return rejected("invalid_arguments", "brief is required")
         if len(brief) > MAX_TEXT:
@@ -332,10 +437,16 @@ class Manager:
         admitted = self._admit(person, repo)
         if isinstance(admitted, dict):
             return admitted
+        checked = self._admit_refs(person, admitted[0], refs)
+        if isinstance(checked, dict):
+            return checked
         return await self._dispatch(
             task_id=task_id,
             person=person,
             task_type="develop",
+            refs=checked or None,
+            workspace=workspace,
+            **run_link,
             repo=admitted[0],
             scope=f"branch:{branch_name}",
             persona=persona,
@@ -354,6 +465,9 @@ class Manager:
         persona: str | None = None,
         notify_to: str | None = None,
         branch: str | None = None,
+        refs: list[str] | None = None,
+        workspace: str | None = None,
+        **run_link: Any,
     ) -> dict[str, Any]:
         """Start a task on the source branch of a pull request.
 
@@ -377,6 +491,9 @@ class Manager:
         if isinstance(admitted, dict):
             return admitted
         normalized, resolved = admitted
+        checked = self._admit_refs(person, normalized, refs)
+        if isinstance(checked, dict):
+            return checked
         task_id = str(uuid.uuid4())
         if resolved.kind == "git":
             if branch_name is None:
@@ -397,6 +514,9 @@ class Manager:
                 notify_to=notify_to,
                 instructions=feedback,
                 branch_name=branch_name,
+                refs=checked or None,
+                workspace=workspace,
+                **run_link,
             )
         if number is None:
             return rejected("invalid_arguments", "pr is required")
@@ -421,7 +541,38 @@ class Manager:
             pr_url=url or found.html_url or None,
             branch_name=found.source_branch,
             base_branch=found.base_branch,
+            refs=checked or None,
+            workspace=workspace,
+            **run_link,
         )
+
+    def _admit_refs(
+        self, person: str, repo: str, raw_refs: list[str] | None
+    ) -> list[str] | dict[str, Any]:
+        """Check the reference repositories of a task. Returns them normalized, or a rejection.
+
+        A reference repository is cloned read-only next to the checkout, so the
+        worker can read it. Each one passes the same checks as the task
+        repository. The task repository itself and a repeated entry are refused.
+        """
+        if not raw_refs:
+            return []
+        if len(raw_refs) > MAX_REFS:
+            return rejected("invalid_arguments", f"refs holds at most {MAX_REFS} repositories")
+        refs: list[str] = []
+        for raw in raw_refs:
+            admitted = self._admit(person, raw)
+            if isinstance(admitted, dict):
+                return {**admitted, "message": f"refs: {admitted['message']}"}
+            ref = admitted[0]
+            if ref == repo:
+                return rejected(
+                    "invalid_arguments", f"refs: {ref} is the task repository; it is cloned already"
+                )
+            if ref in refs:
+                return rejected("invalid_arguments", f"refs: {ref} is named twice")
+            refs.append(ref)
+        return refs
 
     def _admit(self, person: str, raw_repo: str) -> tuple[str, Resolved] | dict[str, Any]:
         """Check the repository before any network call.
@@ -524,6 +675,12 @@ class Manager:
                 worker_token=secrets.token_urlsafe(32),
                 **fields,
             )
+            if fields.get("run_id"):
+                self.store.update_run(
+                    fields["run_id"],
+                    current_task_number=fields.get("tasks_task_number"),
+                    current_task_id=task_id,
+                )
         logger.info(
             {
                 "message": "task dispatched",
@@ -603,6 +760,25 @@ class Manager:
         """
         full = self.store.get_task_full(task_id)
         assert full is not None
+        try:
+            await asyncio.to_thread(self.workspaces.prepare, full)
+        except OSError as exc:
+            logger.error(
+                {
+                    "message": "the work directory was not made",
+                    "task_id": task_id,
+                    "error_type": type(exc).__name__,
+                }
+            )
+            self.store.update_task(
+                task_id,
+                status="failed",
+                error=f"the work directory was not made: {type(exc).__name__}; "
+                "check that the manager can write DEVELOPER_WORK_DIR",
+                completed_at=now_iso(),
+            )
+            self.locks.release(full["repo"], full["scope"], task_id)
+            return {"task_id": task_id, "status": "failed", "error": "the worker did not start"}
         try:
             await self._runtime().start(full)
         except Exception as exc:
@@ -701,16 +877,41 @@ class Manager:
             self.store.update_task(task_id, **fields)
         finally:
             self._finishing.discard(task_id)
+        if fields["status"] == "success":
+            # Only a task that ended success loses its work directory.
+            await asyncio.to_thread(self.workspaces.drop, task_id)
         self.locks.release(task["repo"], task["scope"], task_id)
         event = self._answer_events.pop(task_id, None)
         if event is not None:
             event.set()
         self._log_full.discard(task_id)
         logger.info({"message": "task ended", "task_id": task_id, "status": fields["status"]})
+        await self._report_usage(task_id)
         full = self.store.get_task_full(task_id)
         assert full is not None
+        # A task of a run reports through the run: the step sends its own
+        # event, and the report event goes only when a person must see it.
+        if full.get("run_id") and not await self.runs.step(full):
+            return self.store.get_task(task_id)
         await notify.send_report(self.settings, full, self._default_notify(full))
         return self.store.get_task(task_id)
+
+    async def _report_usage(self, task_id: str) -> None:
+        """Report the tokens of a task that ended to core, and drop its counts.
+
+        A failure of the report never fails the task: the usage page then
+        misses the row of this task only.
+        """
+        try:
+            await usage.report_task(self.settings, self.usage, task_id)
+        except Exception as exc:
+            logger.warning(
+                {
+                    "message": "usage not reported",
+                    "task_id": task_id,
+                    "error_type": type(exc).__name__,
+                }
+            )
 
     async def _after_push(self, task: dict[str, Any], report: Report) -> dict[str, Any]:
         """Gate a pushed branch. Returns the task fields to change.
@@ -718,8 +919,9 @@ class Manager:
         1. Read the diff from ``clone_head`` (the branch before the session)
            to the pushed branch, so the scan reads only the worker's commits,
            and scan it. Without a ``clone_head``, the diff starts at the base
-           branch. A hit fails the task (``_reject_push``). A ``git`` host has
-           no diff API, so the scan is ``unavailable``.
+           branch. A hit fails the task (``_reject_push``). The scan is
+           ``unavailable`` when a ``git`` host has no diff API, and when
+           gitleaks did not run.
         2. On a successful ``develop``, find the open pull request of the
            branch, or open one. On a ``rework``, check that the pull request
            is still there.
@@ -755,10 +957,17 @@ class Manager:
             if diff is None or diff.unavailable:
                 out["scan"] = "unavailable"
             else:
-                findings = scan_diff(diff)
-                if findings:
-                    return await self._reject_push(platform, task, report, findings)
-                out["scan"] = "partial" if diff.unscanned or diff.truncated else "clean"
+                try:
+                    findings = scan_diff(diff)
+                except ScanUnavailable as exc:
+                    logger.warning(
+                        {"message": "scan unavailable", "task_id": task_id, "error": str(exc)}
+                    )
+                    out["scan"] = "unavailable"
+                else:
+                    if findings:
+                        return await self._reject_push(platform, task, report, findings)
+                    out["scan"] = "partial" if diff.unscanned or diff.truncated else "clean"
             if report.status != "success" or platform.kind == "git":
                 return out
             if task["task_type"] == "develop":
@@ -876,8 +1085,8 @@ class Manager:
         task that ended ``blocked`` or
         ``timed_out`` after its worker pushed the branch is resumed: a new
         worker starts on that branch, with the answer in its brief. A task
-        that ended with a saved bundle (``failed`` included) is resumed from
-        the bundle.
+        that ended with a saved bundle, or with a checkout in its kept work
+        directory (``failed`` included), is resumed from it.
         """
         if not text or not text.strip():
             return rejected("invalid_arguments", "text is required")
@@ -886,7 +1095,7 @@ class Manager:
         full = self.store.get_task_full(task["task_id"])
         assert full is not None
         if full["status"] in RESUMABLE_STATUSES or (
-            full["status"] == "failed" and self.has_bundle(full["task_id"])
+            full["status"] == "failed" and self.has_saved_work(full["task_id"])
         ):
             return await self._resume(person, full, text)
         if full["status"] != "running" or not full["open_question"]:
@@ -930,7 +1139,7 @@ class Manager:
         history: list[dict[str, Any]] = list(full.get("history") or [])
         previous = full.get("report") or {}
         pushed = previous.get("pushed") or any(entry.get("pushed") for entry in history)
-        if not pushed and not self.has_bundle(task_id):
+        if not pushed and not self.has_saved_work(task_id):
             return rejected(
                 "not_resumable",
                 f"the worker of task {task_id} pushed nothing and saved no commits, so "
@@ -975,6 +1184,10 @@ class Manager:
             "resumed": True,
             "message": "A new worker continues the task on its branch, with the answer.",
         }
+
+    def has_saved_work(self, task_id: str) -> bool:
+        """True when a bundle, or a kept checkout in the work directory, holds the task's work."""
+        return self.has_bundle(task_id) or self.workspaces.has_checkout(task_id)
 
     def push_only(self, task: dict[str, Any]) -> bool:
         """True when a resumed worker only pushes the saved commits, with no session.

@@ -34,10 +34,32 @@ configFile:
     ask_wait_s: 7200
     # The limits of one worker. disk is the sizeLimit of each emptyDir and
     # the ephemeral-storage limit of the worker pod.
+    # manager_grace is the seconds a worker waits for a manager that
+    # restarts, such as on a deploy.
     worker:
       memory: 2g
       cpus: 2.0
       disk: 4Gi
+      manager_grace: 600
+    # The days a task that did not end success keeps its work directory,
+    # with worker.workClaim set. The sweeper then deletes it.
+    work:
+      keep_failed: 7
+    # The limits ceilings of a run (run_project), in percent used. A run
+    # pauses before a task when a window is at or over its ceiling.
+    runs:
+      ceiling_five_hour_pct: 80
+      ceiling_seven_day_pct: 90
+    # The package proxy of the manager, on port 8003. With enabled: true, a
+    # worker gets HTTPS_PROXY, HTTP_PROXY, and NO_PROXY, and reaches these
+    # hosts only, so it can install dependencies and run the tests. The
+    # proxy carries no credential and allows no git host.
+    packages:
+      enabled: false
+      hosts:
+        - registry.npmjs.org
+        - pypi.org
+        - files.pythonhosted.org
     platforms:
       github.com:
         kind: github
@@ -59,12 +81,26 @@ env:
   # Where a task report goes. Set the address of the joshua-ai channels
   # Service, and put JOSHUA_TOKEN_DEVELOPER in the existingSecret.
   # CHANNELS_URL: http://<joshua-ai channels service>:8000
+  # run_project: the tasks addon (its release name is the Service name) and
+  # the limits of joshua-ai core. Neither needs a bearer inside the namespace.
+  # CORE_URL also takes the token report of each task, which needs
+  # JOSHUA_TOKEN_DEVELOPER in the existingSecret.
+  TASKS_URL: http://tasks:8000
+  CORE_URL: http://joshua-core:8000
   # A CA bundle for a git host with a private certificate authority. Mount
   # the file, and give its path. The manager also gives it to each worker.
   # GIT_CA_BUNDLE: /etc/ssl/certs/git-host-ca.pem
   # The seconds a worker has from its start to its first brief call (the
   # image pull). A worker that takes longer fails its task.
   # WORKER_START_GRACE_S: "600"
+
+# The work storage of the workers. Empty keeps a scratch emptyDir at /work in
+# each worker, so a restart or a failed push loses the commits of a task. Set
+# it to an existing ReadWriteMany claim, and each task gets its own directory
+# on it, which is deleted only when the task ends success. The chart does not
+# make the claim.
+worker:
+  workClaim: ""
 
 # The namespace of the worker Jobs: the namespace of the manager pod.
 extraEnv:
@@ -73,7 +109,9 @@ extraEnv:
       fieldRef:
         fieldPath: metadata.namespace
 
-# The worker API (8001) and the git host tunnel (8002), for the workers.
+# The worker API (8001), the git host tunnel (8002), and the package proxy
+# (8003), for the workers. The package proxy listens only when the packages
+# block in developer.yaml is on.
 service:
   extraPorts:
     - name: worker-api
@@ -82,14 +120,17 @@ service:
     - name: git-proxy
       port: 8002
       targetPort: 8002
+    - name: package-proxy
+      port: 8003
+      targetPort: 8003
 
 # A Role that lets the manager start and delete worker Jobs, and read their
 # pods and logs, in this namespace only.
 rbac:
   enabled: true
 
-# A worker can connect to the manager on 8001 and 8002, and to the cluster
-# DNS pods (networkPolicy.dns in the chart values). For
+# A worker can connect to the manager on 8001, 8002, and 8003, and to the
+# cluster DNS pods (networkPolicy.dns in the chart values). For
 # `network: on` in developer.yaml, set workersInternetEgress to true, and set
 # clusterCidrs to the pod and Service CIDRs of your cluster. The CNI must
 # enforce NetworkPolicy.
