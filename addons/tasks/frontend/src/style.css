@@ -222,7 +222,20 @@ main.finished .group-add { display: none; }
 
 .group { display: flex; flex-direction: column; gap: 8px; }
 
-.group-header { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 2px; }
+/* The header's own lead column (59px) plus its 10px gap puts .group-name at
+   the same left edge as a task's number/title (see .task-row below): 71px
+   from the card's left border either way. That is the one gutter the list
+   keeps down its whole length, so the header reads above its row, not
+   flush with it. */
+.group-header {
+  display: grid;
+  grid-template-columns: 59px 1fr auto auto auto;
+  column-gap: 10px;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 2px;
+  margin-bottom: 4px; /* a real break from the first row, on top of .group's own gap */
+}
 .group-handle { cursor: grab; color: var(--j-faint); user-select: none; touch-action: none; padding: 2px; }
 .group-handle:active { cursor: grabbing; }
 .group-name {
@@ -230,7 +243,7 @@ main.finished .group-add { display: none; }
   font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
   color: var(--j-muted); cursor: text; overflow-wrap: anywhere;
 }
-.group-name-input { flex: 1; min-width: 0; height: 32px; font-weight: 600; }
+.group-name-input { width: 100%; min-width: 0; height: 32px; font-weight: 600; }
 
 /* done/total, a quiet pill that turns accent when the phase is complete */
 .group-count {
@@ -240,7 +253,7 @@ main.finished .group-add { display: none; }
 }
 .group-count.complete { color: var(--j-accent); background: var(--j-accent-soft); }
 
-.group-target { margin-left: auto; color: var(--j-muted); font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.group-target { color: var(--j-muted); font-size: 12.5px; cursor: pointer; white-space: nowrap; }
 /* "no-date", not "empty": .empty is the page-level empty-state block */
 .group-target.no-date { opacity: 0; color: var(--j-faint); }
 .group-header:hover .group-target.no-date { opacity: 1; }
@@ -273,14 +286,20 @@ main.finished .group-add { display: none; }
 /* ----------------------------------------------------------- task rows */
 
 .task {
-  padding: 10px 12px 10px 8px;
-  border-top: 1px solid var(--j-line-soft);
+  padding: 14px 12px 14px 8px;
+  border-top: 1px solid var(--j-line);
   transition: background .15s, opacity .2s;
 }
 .task:first-child { border-top: 0; }
 .task:hover { background: rgba(255, 255, 255, .015); }
 
-.task-row { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+/* The lead columns (22px handle, 20px checkbox, both with a 10px gap) put
+   .task-body at 62px from the row's own left padding: the same 62px the
+   expanded links/notes/details rows already indent by (below), and, with
+   the card's border and the row's own padding, the same 71px left edge the
+   group header's name sits at above (see .group-header). One gutter, kept
+   down the whole list. */
+.task-row { display: grid; grid-template-columns: 22px 20px 1fr auto; column-gap: 10px; align-items: center; min-height: 28px; }
 
 .drag-handle { cursor: grab; color: var(--j-faint); user-select: none; touch-action: none; padding: 2px 2px; font-size: 15px; }
 .drag-handle:active { cursor: grabbing; }
