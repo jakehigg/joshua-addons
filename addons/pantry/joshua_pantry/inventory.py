@@ -1,4 +1,4 @@
-"""Purchase-frequency inventory estimation.
+"""Purchase-history inventory estimation.
 
 Ported from the joshua-pantry backend
 (``pantry/backend/app/services/inventory.py``). This addon has no poller:
@@ -20,7 +20,7 @@ from .products import product_dict
 from .resolution import get_aliases_by_item, match_kind
 
 # Bump this when the live algorithm changes so inventory rows are stamped.
-ALGO_VERSION = "v2"
+ALGO_VERSION = "v3"
 
 # The stock one purchase puts on hand when it records no quantity.
 DEFAULT_PURCHASE_QUANTITY = 1.0
@@ -32,9 +32,12 @@ def _display(name: str) -> str:
 
 
 # Algorithm variant definitions — used by both the live path and simulate.
+# ``from_quantity`` reads how much was bought, not only how often; it keeps the
+# window of v2, so it reads the same recent history.
 ALGO_VARIANTS: dict[str, dict] = {
     "v1": {"window": None, "min_intervals": 1},  # all history, min 2 purchases
     "v2": {"window": 12, "min_intervals": 3},  # last 12 intervals, min 4 purchases
+    "v3": {"window": 12, "min_intervals": 3, "from_quantity": True},  # units per day
 }
 
 
@@ -61,6 +64,82 @@ def _compute_cycle(
     return avg, depletion
 
 
+def _quantity_rate(
+    purchases: list[PurchaseRecord],
+    window: int | None,
+    min_intervals: int,
+) -> float | None:
+    """The units the household uses each day, or None when the history is too thin.
+
+    The window is the last ``window`` purchase intervals, which is the last
+    ``window + 1`` purchases. Of those, only a purchase that carries a
+    quantity counts. The stock of the last such purchase is still on hand, so
+    the quantity the household used over the window is the total of the
+    earlier ones, and the span is the days from the first to the last.
+
+    Returns None when fewer than ``min_intervals + 1`` purchases carry a
+    quantity, when the span is not more than zero days, or when the rate is
+    zero. The caller then falls back to the frequency estimate.
+    """
+    windowed = purchases[-(window + 1) :] if window else purchases
+    with_quantity = [p for p in windowed if p.quantity is not None]
+    if len(with_quantity) < min_intervals + 1:
+        return None
+
+    span_days = (
+        with_quantity[-1].purchased_at - with_quantity[0].purchased_at
+    ).total_seconds() / 86400
+    if span_days <= 0:
+        return None
+
+    used = sum(p.quantity or 0.0 for p in with_quantity[:-1])
+    return (used / span_days) or None
+
+
+def _compute_quantity_cycle(
+    purchases: list[PurchaseRecord],
+    stock: float | None,
+    window: int | None,
+    min_intervals: int,
+) -> tuple[float, datetime] | None:
+    """(avg_cycle_days, estimated_depletion) from the rate of units per day.
+
+    ``stock`` is the quantity on hand of the last purchase (see ``_drain``);
+    None means the full quantity of that purchase.
+    Depletion is the last purchase plus the days the stock on hand lasts at
+    the rate. ``avg_cycle_days`` keeps its meaning for display: the days one
+    full purchase lasts at the same rate. Returns None when the rate is
+    unusable, which makes the caller fall back.
+    """
+    rate = _quantity_rate(purchases, window, min_intervals)
+    if rate is None:
+        return None
+
+    last = purchases[-1]
+    bought = last.quantity if last.quantity is not None else DEFAULT_PURCHASE_QUANTITY
+    on_hand = stock if stock is not None else bought
+    return bought / rate, last.purchased_at + timedelta(days=on_hand / rate)
+
+
+def _variant_cycle(
+    purchases: list[PurchaseRecord],
+    stock: float | None,
+    params: dict,
+) -> tuple[float | None, datetime | None]:
+    """(avg_cycle_days, estimated_depletion) for one variant of ALGO_VARIANTS.
+
+    A variant that reads quantity falls back to v2 for an item whose history
+    gives no usable rate. The fallback is per item: one item without
+    quantities does not lose its estimate.
+    """
+    if params.get("from_quantity"):
+        cycle = _compute_quantity_cycle(purchases, stock, params["window"], params["min_intervals"])
+        if cycle is not None:
+            return cycle
+        return _compute_cycle(purchases, **ALGO_VARIANTS["v2"])
+    return _compute_cycle(purchases, params["window"], params["min_intervals"])
+
+
 def consumed_after_purchase(consumed_at: datetime, purchased_at: datetime | None) -> bool:
     """Return True when a consumption empties the stock of the last purchase.
 
@@ -77,34 +156,43 @@ def consumed_after_purchase(consumed_at: datetime, purchased_at: datetime | None
     return consumed_at > purchased_at
 
 
-def depleted_at(
+def _drain(
     consumptions: list[ConsumptionEvent],
     purchased_at: datetime | None,
     purchase_quantity: float | None,
-) -> datetime | None:
-    """The time the stock became empty, or None while stock remains.
+) -> tuple[float, datetime | None]:
+    """The stock left of the last purchase, and the time it became empty.
 
     ``consumptions`` is every consumption event of one item, oldest first.
     Only an event after the last purchase takes from the stock (see
     ``consumed_after_purchase``). An event with no quantity empties the
     stock. An event with a quantity takes that much of the stock of the last
     purchase, which is ``DEFAULT_PURCHASE_QUANTITY`` when the purchase
-    records no quantity.
+    records no quantity. The time is None while stock remains.
     """
     stock = purchase_quantity if purchase_quantity is not None else DEFAULT_PURCHASE_QUANTITY
     for event in consumptions:
         if not consumed_after_purchase(event.occurred_at, purchased_at):
             continue
         if event.quantity is None:
-            return event.occurred_at
+            return 0.0, event.occurred_at
         stock -= event.quantity
         if stock <= 0:
-            return event.occurred_at
-    return None
+            return 0.0, event.occurred_at
+    return stock, None
 
 
-async def get_depleted_at(session: AsyncSession, item_id: int) -> datetime | None:
-    """The time one item's stock became empty, or None while stock remains."""
+def depleted_at(
+    consumptions: list[ConsumptionEvent],
+    purchased_at: datetime | None,
+    purchase_quantity: float | None,
+) -> datetime | None:
+    """The time the stock became empty, or None while stock remains (see ``_drain``)."""
+    return _drain(consumptions, purchased_at, purchase_quantity)[1]
+
+
+async def _drain_item(session: AsyncSession, item_id: int) -> tuple[float, datetime | None]:
+    """``_drain`` for one item, from its last purchase and its consumption events."""
     result = await session.execute(
         select(PurchaseRecord)
         .where(PurchaseRecord.item_id == item_id)
@@ -118,19 +206,23 @@ async def get_depleted_at(session: AsyncSession, item_id: int) -> datetime | Non
         .where(ConsumptionEvent.item_id == item_id)
         .order_by(ConsumptionEvent.occurred_at)
     )
-    return depleted_at(
+    return _drain(
         list(result.scalars().all()),
         last_purchase.purchased_at if last_purchase else None,
         last_purchase.quantity if last_purchase else None,
     )
 
 
-async def get_depletion_map(session: AsyncSession) -> dict[int, datetime]:
-    """For each item whose stock is empty, the time it became empty.
+async def get_depleted_at(session: AsyncSession, item_id: int) -> datetime | None:
+    """The time one item's stock became empty, or None while stock remains."""
+    return (await _drain_item(session, item_id))[1]
 
-    An item with stock left, or with no consumption event, has no entry. Two
-    queries answer for every item at once, so the inventory list does not run
-    one query for each row.
+
+async def _drain_by_item(session: AsyncSession) -> dict[int, tuple[float, datetime | None]]:
+    """``_drain`` for every item that has a purchase or a consumption event.
+
+    Two queries answer for every item at once, so the inventory list and the
+    simulation do not run one query for each row.
     """
     events_by_item: dict[int, list[ConsumptionEvent]] = {}
     result = await session.execute(
@@ -149,13 +241,23 @@ async def get_depletion_map(session: AsyncSession) -> dict[int, datetime]:
     for item_id, purchased_at, quantity in result:
         last_purchase[item_id] = (purchased_at, quantity)
 
-    out: dict[int, datetime] = {}
-    for item_id, events in events_by_item.items():
+    out: dict[int, tuple[float, datetime | None]] = {}
+    for item_id in events_by_item.keys() | last_purchase.keys():
         purchased_at, quantity = last_purchase.get(item_id, (None, None))
-        empty_at = depleted_at(events, purchased_at, quantity)
-        if empty_at is not None:
-            out[item_id] = empty_at
+        out[item_id] = _drain(events_by_item.get(item_id, []), purchased_at, quantity)
     return out
+
+
+async def get_depletion_map(session: AsyncSession) -> dict[int, datetime]:
+    """For each item whose stock is empty, the time it became empty.
+
+    An item with stock left, or with no consumption event, has no entry.
+    """
+    return {
+        item_id: empty_at
+        for item_id, (_, empty_at) in (await _drain_by_item(session)).items()
+        if empty_at is not None
+    }
 
 
 def get_item_status(inv: Inventory | None, last_consumed_at: datetime | None = None) -> str:
@@ -186,12 +288,14 @@ async def recalculate_inventory(session: AsyncSession, item_id: int) -> None:
 
     now = datetime.now(UTC)
     last_purchased_at = purchases[-1].purchased_at
-    params = ALGO_VARIANTS[ALGO_VERSION]
-    avg_cycle_days, estimated_depletion = _compute_cycle(purchases, **params)
+    stock, empty_at = await _drain_item(session, item_id)
+    avg_cycle_days, estimated_depletion = _variant_cycle(
+        list(purchases), stock, ALGO_VARIANTS[ALGO_VERSION]
+    )
 
     # If the consumption after the last purchase emptied the stock, pull
-    # depletion forward. A partial consumption leaves the estimate alone.
-    empty_at = await get_depleted_at(session, item_id)
+    # depletion forward. A partial consumption only takes from the stock on
+    # hand, which the estimate above already reads.
     if empty_at is not None:
         estimated_depletion = empty_at
 
@@ -366,9 +470,9 @@ async def get_purchase_analytics(session: AsyncSession) -> list[dict]:
     Per-item purchase statistics for the analytics view: how often and how
     regularly each tracked item has been bought.
 
-    Intervals are the gaps (in days) between consecutive purchases. The live
-    depletion algorithm uses the median of a recent window of these intervals
-    (surfaced as ``cycle_days``); shortest/median/longest are computed over the
+    Intervals are the gaps (in days) between consecutive purchases.
+    ``cycle_days`` is the cycle the live depletion algorithm uses: the days
+    one full purchase lasts. Shortest/median/longest are computed over the
     full history so trends are visible as data accumulates.
     """
     result = await session.execute(
@@ -428,12 +532,15 @@ async def get_purchase_analytics(session: AsyncSession) -> list[dict]:
 async def simulate_inventory(session: AsyncSession) -> list[dict]:
     """
     Run every ALGO_VARIANTS against the real purchase_records and return
-    a side-by-side comparison without touching the live inventory table.
+    a side-by-side comparison without touching the live inventory table. A
+    variant that reads quantity takes the stock on hand into account, the
+    same way the live path does.
     """
     result = await session.execute(
         select(Item).where(Item.is_tracked.is_(True)).order_by(Item.name)
     )
     items = result.scalars().all()
+    drained = await _drain_by_item(session)
 
     now = datetime.now(UTC)
     out = []
@@ -444,11 +551,12 @@ async def simulate_inventory(session: AsyncSession) -> list[dict]:
             .where(PurchaseRecord.item_id == item.id)
             .order_by(PurchaseRecord.purchased_at)
         )
-        purchases = pr_result.scalars().all()
+        purchases = list(pr_result.scalars().all())
+        stock = drained[item.id][0] if item.id in drained else None
 
         variants: dict[str, dict] = {}
         for name, params in ALGO_VARIANTS.items():
-            avg, depletion = _compute_cycle(purchases, **params)
+            avg, depletion = _variant_cycle(purchases, stock, params)
             last_purchase = purchases[-1].purchased_at if purchases else None
 
             if last_purchase is None:

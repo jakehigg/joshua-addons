@@ -162,6 +162,18 @@ releases, with the images and the packaged chart, are at
   the `gitleaks` binary, pinned to v8.30.1. Without the binary, the scan is
   `unavailable`: a diff that the scan did not read is never `clean`.
 
+- `pantry`: the depletion estimate reads how much was bought, not only how
+  often. For an item whose purchases carry a quantity, the addon finds the
+  rate in units per day from the last 12 purchase intervals, and the stock
+  on hand from the last purchase less each consumption after it. The
+  estimate is then the last purchase plus the days that stock lasts at that
+  rate. So two gallons of milk last twice as long as one gallon. The cycle
+  length on the Analytics page is the days one full purchase lasts. An item
+  with fewer than four purchases that carry a quantity keeps the estimate
+  from the gaps between its purchases, so an item without quantities is not
+  affected. The quantity has no unit, so a history that mixes units for one
+  item gives a wrong rate for that item. The database needs no change.
+
 ## 0.2.0 - 2026-11-08
 
 Three new addons: `tasks` (projects, phases, goals, and blocking links, with a
