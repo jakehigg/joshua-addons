@@ -1148,13 +1148,18 @@ function taskRow(task: Task): HTMLLIElement {
   details.append(detailsActions);
 
   // The title and its badges share one flexible column, so the badges wrap
-  // under the title on a narrow screen instead of squeezing it.
+  // under the title on a narrow screen instead of squeezing it. The number
+  // has its own column before them, so the text of each row starts at the
+  // same position, also when the number is wide.
   const tags = document.createElement("span");
   tags.className = "task-tags";
   tags.append(nextBadge, blockedBadge, meta, notesToggle);
+  const bodyText = document.createElement("div");
+  bodyText.className = "task-text";
+  bodyText.append(title, tags);
   const body = document.createElement("div");
   body.className = "task-body";
-  body.append(number, title, tags);
+  body.append(number, bodyText);
   const actions = document.createElement("span");
   actions.className = "task-actions";
   actions.append(noteBtn, detailsBtn, del);
