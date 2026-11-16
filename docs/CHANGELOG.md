@@ -131,19 +131,26 @@ releases, with the images and the packaged chart, are at
   control, which starts closed on every task, also after a reload. A long
   note no longer fills the screen. The API and the MCP tools do not change.
 
-- `tasks`: the home page has no "Show finished" toggle. The done and the
-  closed projects are always together in a quieter "Finished" section at the
-  bottom of the page, below the active ones.
+- `tasks`: the home page lists the open projects only, one compact card
+  each: the name, a status chip, the progress, then the counts and the
+  target date on one quiet line. A card is a link and holds no other
+  control, so four cards fit on a phone screen. The text link "Finished and
+  archived" at the end of the list opens a page of the done, the closed,
+  and the archived projects, with the status and the date of each, where a
+  row opens the project and Unarchive brings an archived one back. Every
+  project picker offers the open projects only.
 
-- `tasks`: a project can be archived in place, from any status. Each card on
-  the home page has an Archive button, in both sections, that hides the
-  project as it stands and keeps its status. An archived project is on no
-  page, in no `list_projects` result (with `include_finished` true as well),
-  in no `search_tasks` result, and in no `next_steps` result; its tasks go
-  with it. A tool that names it by its slug or its id still reads it. Two
-  new tools, the 23rd and the 24th: `list_archived_projects`, the only place
-  that shows them, and `unarchive_project`, which brings one back with the
-  status it had. The database needs no change.
+- `tasks`: a project can be archived in place, from any status. The text
+  action at the end of the project page hides the project as it stands and
+  keeps its status; two taps do it. An archived project is on no page but
+  the finished and archived one, in no `list_projects` result (with
+  `include_finished` true as well), in no `search_tasks` result, and in no
+  `next_steps` result; its tasks go with it. A tool that names it by its
+  slug or its id still reads it. Two new tools, the 23rd and the 24th:
+  `list_archived_projects`, which Joshua uses to find one, and
+  `unarchive_project`, which brings one back with the status it had. The
+  new route `GET /api/projects/archived` gives the web UI the same list.
+  The database needs no change.
 
 - `developer`: the credential scan reads the diff of a push with `gitleaks`,
   in place of its own patterns. The configuration

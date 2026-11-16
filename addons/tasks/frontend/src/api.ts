@@ -46,6 +46,8 @@ export interface Project {
   target_date: string | null;
   status: ProjectStatus;
   completed_at: string | null;
+  // When the project was archived, or null while it is not archived.
+  archived_at: string | null;
   task_count: number;
   done_count: number;
   open_count: number;
@@ -60,7 +62,7 @@ export interface ProjectPatch {
   target_date?: string | null;
   status?: ProjectStatus;
   // true hides the project everywhere and keeps its status; false brings it
-  // back. Only Joshua unarchives (unarchive_project).
+  // back. The project page does both, and so does Joshua.
   archived?: boolean;
 }
 
@@ -117,6 +119,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   listProjects: () => request<Project[]>("GET", "/api/projects"),
+  // The archived projects; no other route lists one.
+  listArchivedProjects: () => request<Project[]>("GET", "/api/projects/archived"),
   createProject: (name: string, goal?: string | null, targetDate?: string | null) =>
     request<Project>("POST", "/api/projects", {
       name,

@@ -12,16 +12,21 @@ import {
   type TaskSize,
 } from "./api";
 import {
+  archiveHref,
+  archiveRowView,
   dashboardMessage,
   dashboardProjects,
-  finishedProjects,
+  finishedAndArchived,
   homeHref,
+  isArchived,
   parseRoute,
   projectCardView,
   projectHref,
+  projectOptions,
   searchView,
   taskLinksView,
   taskNotesView,
+  type ArchiveRowView,
   type CardView,
   type Route,
   type SearchTaskView,
@@ -42,6 +47,7 @@ const projectHealth = document.getElementById("project-health") as HTMLSpanEleme
 const projectTarget = document.getElementById("project-target") as HTMLInputElement;
 const projectStatus = document.getElementById("project-status") as HTMLSelectElement;
 const completeBtn = document.getElementById("complete-project") as HTMLButtonElement;
+const archiveBtn = document.getElementById("archive-project") as HTMLButtonElement;
 const backlogHeader = document.querySelector(".backlog-header") as HTMLElement;
 const newProjectCancel = document.getElementById("new-project-cancel") as HTMLButtonElement;
 const main = document.getElementById("main") as HTMLElement;
@@ -59,8 +65,10 @@ const dashboard = document.getElementById("dashboard") as HTMLElement;
 const dashboardProjectList = document.getElementById("dashboard-projects") as HTMLElement;
 const projectCards = document.getElementById("project-cards") as HTMLElement;
 const dashboardNote = document.getElementById("dashboard-message") as HTMLParagraphElement;
-const finishedSection = document.getElementById("finished-projects") as HTMLElement;
-const finishedCards = document.getElementById("finished-project-cards") as HTMLElement;
+const archiveLink = document.getElementById("archive-link") as HTMLAnchorElement;
+const archiveView = document.getElementById("archive-view") as HTMLElement;
+const archiveList = document.getElementById("archive-list") as HTMLUListElement;
+const archiveNote = document.getElementById("archive-message") as HTMLParagraphElement;
 const searchForm = document.getElementById("search-form") as HTMLFormElement;
 const searchInput = document.getElementById("search-input") as HTMLInputElement;
 const searchDone = document.getElementById("search-done") as HTMLInputElement;
@@ -88,9 +96,7 @@ function scheduleSummaryRefresh() {
   clearTimeout(summaryTimer);
   summaryTimer = window.setTimeout(async () => {
     try {
-      projects = await api.listProjects();
-      renderProjects();
-      renderProjectHeader();
+      await loadProjects();
     } catch {
       /* the next event or visibility change retries */
     }
@@ -284,12 +290,16 @@ function projectLabel(p: Project): string {
   const parts = [p.name];
   if (p.goal && p.task_count > 0) parts.push(`${p.percent}%`);
   if (p.status !== "active") parts.push(p.status);
+  if (isArchived(p)) parts.push("archived");
   return parts.join(" · ");
 }
 
-// The app bar's project picker, on a project page.
+// The app bar's project picker, on a project page: the open projects, plus
+// the one the page shows when that one is finished or archived.
 function renderProjects() {
-  const ordered = [...projects].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+  const ordered = projectOptions(projects, currentProjectId).sort(
+    (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
+  );
   projectSelect.replaceChildren(
     ...ordered.map((p) => {
       const option = document.createElement("option");
@@ -346,77 +356,88 @@ function projectCard(view: CardView): HTMLElement {
     meta.append(target);
   }
 
-  card.append(head);
-  if (view.goal) {
-    // A span, not a paragraph: the whole card is one link.
-    const goal = document.createElement("span");
-    goal.className = "card-goal";
-    goal.textContent = view.goal;
-    card.append(goal);
-  }
-  card.append(progress, meta);
-  if (view.nextTitle) {
-    const next = document.createElement("div");
-    next.className = "card-next";
-    const label = document.createElement("span");
-    label.className = "next-badge";
-    label.textContent = "up next";
-    const title = document.createElement("span");
-    title.className = "card-next-title";
-    title.textContent = view.nextTitle;
-    next.append(label, title);
-    card.append(next);
-  }
+  card.append(head, progress, meta);
   return card;
 }
 
 // The search area is open while the box has text, or while a person is in it.
 let searchOpen = false;
 
-// One card, with the archive action beside it. The card is one link, so the
-// button cannot sit inside it.
-function projectRow(project: Project): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "card-row";
-  const archive = document.createElement("button");
-  archive.type = "button";
-  archive.className = "ghost card-archive";
-  archive.textContent = "Archive";
-  archive.title = "Hide this project, as it is. Ask Joshua to unarchive it.";
-  twoTapConfirm(archive, "Archive", () => archiveProject(project.id));
-  row.append(projectCard(projectCardView(project)), archive);
-  return row;
-}
-
-// Archiving hides a project from this page, from the search, and from
-// Joshua, and keeps its status: the work was not done. Joshua brings one
-// back with unarchive_project.
-async function archiveProject(id: string) {
-  try {
-    await api.updateProject(id, { archived: true });
-  } catch {
-    return; // the card stays; the next event or refresh shows the truth
-  }
-  projects = projects.filter((p) => p.id !== id);
-  renderProjects();
-  renderDashboard();
-  // Archiving the last project leaves the home page empty: show the hero.
-  dashboard.hidden = projects.length === 0;
-  emptyProjects.hidden = projects.length > 0;
-}
-
 function renderDashboard() {
   const shown = dashboardProjects(projects);
-  projectCards.replaceChildren(...shown.map(projectRow));
-  const finished = finishedProjects(projects);
-  finishedCards.replaceChildren(...finished.map(projectRow));
-  finishedSection.hidden = finished.length === 0;
+  projectCards.replaceChildren(...shown.map((p) => projectCard(projectCardView(p))));
+  // The link is the only way to the finished and the archived projects.
+  archiveLink.hidden = finishedAndArchived(projects).length === 0;
   const note = dashboardMessage(projects, shown);
   dashboardNote.textContent = note ?? "";
   dashboardNote.hidden = note === null;
   searchResults.hidden = !searchOpen;
   // While a search runs, the full project list steps aside.
   dashboardProjectList.hidden = searchOpen && route.query.trim() !== "";
+}
+
+// --- the finished and the archived projects ----------------------------------
+// Their own page, which the link at the end of the home list opens. A row
+// opens the project, and an archived one can come back from here.
+
+function archiveRow(view: ArchiveRowView): HTMLElement {
+  const li = document.createElement("li");
+  li.className = "found-task archive-row";
+  const link = document.createElement("a");
+  link.href = view.href;
+  const name = document.createElement("span");
+  name.className = "found-title";
+  name.textContent = view.name;
+  const status = document.createElement("span");
+  status.className = `health ${view.statusLabel}`;
+  status.textContent = view.statusLabel;
+  link.append(name, status);
+  if (view.archived) {
+    const flag = document.createElement("span");
+    flag.className = "health";
+    flag.textContent = "archived";
+    link.append(flag);
+  }
+  if (view.dateLabel) {
+    const when = document.createElement("span");
+    when.className = "found-where";
+    when.textContent = view.dateLabel;
+    link.append(when);
+  }
+  li.append(link);
+  if (view.archived) {
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "ghost row-action";
+    back.textContent = "Unarchive";
+    back.title = "Bring this project back into the list";
+    twoTapConfirm(back, "Unarchive", () => setArchived(view.id, false));
+    li.append(back);
+  }
+  return li;
+}
+
+function renderArchive() {
+  const rows = finishedAndArchived(projects);
+  archiveList.replaceChildren(...rows.map((p) => archiveRow(archiveRowView(p))));
+  archiveList.hidden = rows.length === 0;
+  archiveNote.hidden = rows.length > 0;
+}
+
+// Archiving hides a project from the home page, from the search, and from
+// Joshua, and keeps its status: the work was not done. Unarchiving brings it
+// back as it was.
+async function setArchived(id: string, archived: boolean) {
+  try {
+    const updated = await api.updateProject(id, { archived });
+    projects = projects.map((p) => (p.id === updated.id ? updated : p));
+  } catch {
+    return; // the row stays; the next event or refresh shows the truth
+  }
+  renderProjects();
+  renderDashboard();
+  renderArchive();
+  if (currentProjectId === id) renderProjectHeader();
 }
 
 // --- the search: matching projects, then matching tasks ----------------------
@@ -577,11 +598,17 @@ async function applyRoute() {
   }
   currentProjectId = project?.id ?? null;
   const onProject = project !== undefined;
+  const onArchive = !onProject && route.archive;
   main.hidden = !onProject;
   projectSelect.hidden = !onProject;
   searchLink.hidden = !onProject;
-  dashboard.hidden = onProject || projects.length === 0;
-  emptyProjects.hidden = onProject || projects.length > 0;
+  archiveView.hidden = !onArchive;
+  dashboard.hidden = onProject || onArchive || projects.length === 0;
+  emptyProjects.hidden = onProject || onArchive || projects.length > 0;
+  if (onArchive) {
+    renderArchive();
+    return;
+  }
   if (!onProject) {
     // "/?q=" (the app bar's Search link, from a project page) opens the box.
     const wantsSearch = new URLSearchParams(location.search).has("q");
@@ -620,7 +647,40 @@ function renderProjectHeader() {
     p.open_count > 0
       ? `${p.open_count} task(s) still open. Finish them, or set the status to closed.`
       : "Mark the project done";
+  renderArchiveAction(p);
 }
+
+// --- archive and unarchive, at the end of the project page --------------------
+// A quiet text action, not a button. It asks once: the first tap arms it, the
+// second calls the API. The arm clears itself after three seconds.
+
+let archiveTimer: number | undefined;
+
+function renderArchiveAction(p: Project) {
+  clearTimeout(archiveTimer);
+  archiveBtn.classList.remove("confirming");
+  archiveBtn.textContent = isArchived(p) ? "Unarchive this project" : "Archive this project";
+  archiveBtn.title = isArchived(p)
+    ? "Bring this project back into the list"
+    : "Hide this project, as it is, and keep its data";
+}
+
+archiveBtn.addEventListener("click", async () => {
+  const p = currentProject();
+  if (!p) return;
+  if (!archiveBtn.classList.contains("confirming")) {
+    archiveBtn.classList.add("confirming");
+    archiveBtn.textContent = isArchived(p) ? "Unarchive it?" : "Archive it?";
+    archiveTimer = window.setTimeout(() => renderArchiveAction(p), 3000);
+    return;
+  }
+  clearTimeout(archiveTimer);
+  const archived = isArchived(p);
+  await setArchived(p.id, !archived);
+  // An archived project is in no list, so the home page takes over; a
+  // project that came back stays open.
+  if (!archived) navigate("/");
+});
 
 async function patchProject(patch: Parameters<typeof api.updateProject>[1]) {
   if (!currentProjectId) return;
@@ -1307,11 +1367,18 @@ function openProject(id: string) {
 }
 
 // ``GET /api/projects`` returns every project that is not archived, the done
-// and the closed ones too; the dashboard puts those in their own section.
+// and the closed ones too, and ``/api/projects/archived`` returns the rest.
+// One list holds them all: the home page keeps the open ones, and the
+// finished and archived page keeps the others.
 async function loadProjects() {
-  projects = await api.listProjects();
+  const [open, archived] = await Promise.all([
+    api.listProjects(),
+    api.listArchivedProjects(),
+  ]);
+  projects = [...open, ...archived];
   renderProjects();
   renderDashboard();
+  renderArchive();
   if (currentProjectId) renderProjectHeader();
 }
 

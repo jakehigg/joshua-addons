@@ -23,9 +23,10 @@ tracks progress toward it.
 - A project can be **archived**, from any status. The project is hidden as
   it stands and keeps the status it had, so work nobody will finish is put
   away without a pretence that it is done. An archived project is in no
-  listing, no search, and no next step, and it is not on the web page; its
-  tasks go with it. A tool that names the project by its slug or its id
-  still reads it. `list_archived_projects` shows the archived projects and
+  listing, no search, and no next step; its tasks go with it. The web UI
+  keeps the archived projects on one page of their own, apart from the open
+  ones. A tool that names the project by its slug or its id still reads it.
+  `list_archived_projects` shows the archived projects and
   `unarchive_project` brings one back, with the same status.
 - A project and a group can have a **target date**. Nothing enforces it; a
   passed date with open tasks makes the project `overdue`.
@@ -138,19 +139,20 @@ docker compose up -d
 
 Open the addon's port (or the chart's ingress host) in a browser.
 
-The home page is one card for each project: the name, the goal, the percent
-done with a bar, the done and the open count, the health, the target date,
-and the next task. A project that needs a person comes first: overdue, then
-stalled, then ready to complete, then on track, then a plain list, then a
-project with no tasks, then paused. The nearer target date comes first in a
-tie. A card opens the project at `/p/<slug>`. The done and the closed
-projects are together in a quieter "Finished" section at the bottom of the
-page.
+The home page lists the open projects: one card for each project that is
+neither finished nor archived. A card is a link, and nothing else: the
+name, a status chip, the percent done with a bar, then the counts and the
+target date on one quiet line of small text. A project that needs a person
+comes first: overdue, then stalled, then ready to complete, then on track,
+then a plain list, then a project with no tasks, then paused. The nearer
+target date comes first in a tie. A card opens the project at `/p/<slug>`.
 
-Each card has an **Archive** button, in both sections. Tap it twice to
-archive the project as it stands: the project leaves the page, the search,
-and Joshua's lists, and it keeps its status. To bring one back, ask Joshua:
-`list_archived_projects` shows them and `unarchive_project` restores one.
+One text link, **Finished and archived**, at the end of the list opens
+`/archive`. That page lists the done, the closed, and the archived
+projects, the most recent first, each with its status and its date. A row
+opens the project. **Unarchive** on an archived row brings the project
+back; tap it twice. The project picker in the bar offers the open projects,
+and the project the page shows.
 
 The search box on the home page finds a project by its name or its goal, and
 a task by its title or its notes. It keeps the two kinds apart: the
@@ -166,6 +168,11 @@ that waits for nothing carries an "up next" mark. Drag a task by its handle
 to reorder it, or drag it into a group. Click a title to edit it in place;
 the "⋯" button on a task opens its size, due date, and assignee. Done tasks
 sink to the bottom of their list.
+
+Archiving is at the end of the project page, as the text action **Archive
+this project**. Tap it twice: the project leaves the home page, the search,
+and Joshua's lists, and it keeps its status. An archived project shows
+**Unarchive this project** in the same place.
 
 A task row shows the number, the title, the size, the due date, the
 assignee, the done state, and the blocked state. A task with a note also
@@ -191,9 +198,9 @@ trusted network, or put an ingress with its own access control in front.
 Live updates use one server-sent event stream in the process. Run one
 replica only.
 
-The home page has its own unit tests: the order of the cards, the two
-sections, and the search. They run on node's own test runner and need no
-package.
+The home page has its own unit tests: the order of the cards, the open and
+the finished lists, and the search. They run on node's own test runner and
+need no package.
 Run `npm test` in `addons/tasks/frontend`.
 
 ## Settings

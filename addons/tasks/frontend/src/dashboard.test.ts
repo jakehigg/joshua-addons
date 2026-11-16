@@ -1,6 +1,6 @@
 // Unit tests for the home page: the route, the order of the projects, the
-// two sections (active, then finished), and what each card and each found
-// row shows.
+// open list, the finished and archived page, and what each card and each
+// found row shows.
 // They run on node's own test runner, with node's type stripping, so the
 // web UI needs no test package: `npm test` in this directory.
 
@@ -9,13 +9,16 @@ import test from "node:test";
 
 import type { Group, Project, SearchResult, Task, TaskRef } from "./api.ts";
 import {
+  archiveHref,
+  archiveRowView,
   dashboardMessage,
   dashboardProjects,
-  finishedProjects,
+  finishedAndArchived,
   homeHref,
   orderProjects,
   parseRoute,
   projectCardView,
+  projectOptions,
   searchView,
   taskHref,
   taskLinksView,
@@ -30,6 +33,7 @@ function project(fields: Partial<Project> & { name: string }): Project {
     target_date: null,
     status: "active",
     completed_at: null,
+    archived_at: null,
     task_count: 0,
     done_count: 0,
     open_count: 0,
@@ -86,6 +90,7 @@ function group(name: string): Group {
 test("the bare path is the dashboard, with no search and the toggle off", () => {
   assert.deepEqual(parseRoute("/"), {
     project: null,
+    archive: false,
     query: "",
     includeDone: false,
   });
@@ -97,9 +102,20 @@ test("the route carries the project slug, the search text, and its toggle", () =
   const searching = parseRoute("/?q=paint%20tin&done=1");
   assert.deepEqual(searching, {
     project: null,
+    archive: false,
     query: "paint tin",
     includeDone: true,
   });
+});
+
+test("the finished and archived page is its own route, not a project", () => {
+  assert.equal(archiveHref(), "/archive");
+  const route = parseRoute(archiveHref());
+  assert.equal(route.archive, true);
+  assert.equal(route.project, null);
+  assert.equal(parseRoute("/archive/").archive, true);
+  assert.equal(parseRoute("/").archive, false);
+  assert.equal(parseRoute("/p/hallway").archive, false);
 });
 
 test("homeHref keeps only the parts that are set, and no finished parameter", () => {
@@ -108,6 +124,7 @@ test("homeHref keeps only the parts that are set, and no finished parameter", ()
   const route = parseRoute(homeHref({ query: "tin", includeDone: false }));
   assert.deepEqual(route, {
     project: null,
+    archive: false,
     query: "tin",
     includeDone: false,
   });
@@ -158,32 +175,87 @@ test("same rank and same target date: the order the API returned", () => {
   assert.deepEqual(names(orderProjects([...given].reverse())), ["newer", "older"]);
 });
 
-// --- the two sections: the active projects, then the finished ones -------------
+// --- the home list, and the finished and archived page ------------------------
 
-test("the done and the closed projects are in the finished section, not the main list", () => {
-  const projects = [
-    project({ name: "active", health: "on_track", task_count: 1, open_count: 1 }),
-    project({ name: "done", status: "done", health: "done", task_count: 1, done_count: 1 }),
-    project({ name: "closed", status: "closed", health: "closed" }),
-  ];
-  assert.deepEqual(names(dashboardProjects(projects)), ["active"]);
-  assert.deepEqual(names(finishedProjects(projects)), ["done", "closed"]);
+const ARCHIVED = project({
+  name: "shelf",
+  archived_at: "2026-02-03T09:00:00Z",
+  task_count: 2,
+  open_count: 2,
+});
+const DONE = project({
+  name: "done",
+  status: "done",
+  health: "done",
+  completed_at: "2026-02-10T09:00:00Z",
+  task_count: 1,
+  done_count: 1,
+});
+const CLOSED = project({
+  name: "closed",
+  status: "closed",
+  health: "closed",
+  completed_at: "2026-01-05T09:00:00Z",
+});
+const OPEN = project({ name: "active", health: "on_track", task_count: 1, open_count: 1 });
+
+test("the home page lists the open projects only", () => {
+  assert.deepEqual(names(dashboardProjects([OPEN, DONE, CLOSED, ARCHIVED])), ["active"]);
+  // a paused project is still open: it is not finished, and not archived
+  const paused = project({ name: "paused", status: "paused", health: "paused" });
+  assert.deepEqual(names(dashboardProjects([OPEN, paused])), ["active", "paused"]);
 });
 
-test("a dashboard with no active project says why", () => {
-  const finished = [project({ name: "done", status: "done", health: "done" })];
-  assert.equal(dashboardMessage(finished, []), "Every project is done or closed.");
-  assert.equal(
-    dashboardMessage(finished, [project({ name: "active", health: "on_track" })]),
-    null,
-  );
+test("the finished and archived page lists both, the most recent first", () => {
+  assert.deepEqual(names(finishedAndArchived([OPEN, CLOSED, ARCHIVED, DONE])), [
+    "done",
+    "shelf",
+    "closed",
+  ]);
+  assert.deepEqual(finishedAndArchived([OPEN]), []);
+});
+
+test("a project selector offers neither a finished project nor an archived one", () => {
+  assert.deepEqual(names(projectOptions([OPEN, DONE, CLOSED, ARCHIVED], null)), ["active"]);
+  // the project a person has open keeps its place, whatever its status
+  assert.deepEqual(names(projectOptions([OPEN, DONE, ARCHIVED], ARCHIVED.id)), [
+    "active",
+    "shelf",
+  ]);
+  assert.deepEqual(names(projectOptions([OPEN, DONE], DONE.id)), ["active", "done"]);
+  // the open project a person has open is in the list once
+  assert.deepEqual(names(projectOptions([OPEN, DONE], OPEN.id)), ["active"]);
+});
+
+test("a row of the finished and archived page names the status and the date", () => {
+  const archived = archiveRowView(ARCHIVED);
+  assert.deepEqual(archived, {
+    id: ARCHIVED.id,
+    href: "/p/shelf",
+    name: "shelf",
+    statusLabel: "active",
+    dateLabel: "2026-02-03",
+    archived: true,
+  });
+  const done = archiveRowView(DONE);
+  assert.equal(done.statusLabel, "done");
+  assert.equal(done.dateLabel, "2026-02-10");
+  assert.equal(done.archived, false);
+  // a project the API has no date for says nothing in place of one
+  assert.equal(archiveRowView(project({ name: "old", status: "closed" })).dateLabel, null);
+});
+
+test("a dashboard with no open project says why", () => {
+  const none = [DONE, ARCHIVED];
+  assert.equal(dashboardMessage(none, []), "Every project is finished or archived.");
+  assert.equal(dashboardMessage(none, [OPEN]), null);
   // No projects at all: the "create your first project" hero says it instead.
   assert.equal(dashboardMessage([], []), null);
 });
 
 // --- one card -------------------------------------------------------------------
 
-test("a card shows the goal, the percent, the counts, the health, the date, and the next task", () => {
+test("a card shows the name, the percent, the counts, the health, and the date", () => {
   const next = task({ id: "t1", title: "Buy the paint" });
   const view = projectCardView(
     project({
@@ -199,23 +271,43 @@ test("a card shows the goal, the percent, the counts, the health, the date, and 
     }),
   );
   assert.equal(view.href, "/p/hallway");
-  assert.equal(view.goal, "A painted hallway");
+  assert.equal(view.name, "Hallway");
   assert.equal(view.percent, 40);
   assert.equal(view.percentLabel, "40%");
   assert.equal(view.countLabel, "2/5 done · 3 open");
   assert.deepEqual(view.badge, { text: "on track", kind: "on_track" });
   assert.equal(view.targetLabel, "target 2026-02-01");
-  assert.equal(view.nextTitle, "Buy the paint");
   assert.equal(view.finished, false);
+});
+
+test("a card is a link with no archive control and no long text on it", () => {
+  const view = projectCardView(
+    project({
+      name: "Hallway",
+      goal: "A long goal that would fill the card and push the next one off the screen",
+      next_task: task({ id: "t1", title: "Buy the paint" }),
+      task_count: 1,
+      open_count: 1,
+    }),
+  );
+  assert.deepEqual(Object.keys(view).sort(), [
+    "badge",
+    "countLabel",
+    "finished",
+    "href",
+    "id",
+    "name",
+    "percent",
+    "percentLabel",
+    "targetLabel",
+  ]);
 });
 
 test("a project with no tasks says so in place of an empty badge", () => {
   const view = projectCardView(project({ name: "Fresh" }));
   assert.deepEqual(view.badge, { text: "no tasks yet", kind: "none" });
   assert.equal(view.countLabel, "0/0 done · 0 open");
-  assert.equal(view.goal, null);
   assert.equal(view.targetLabel, null);
-  assert.equal(view.nextTitle, null);
 });
 
 test("a plain list has no badge, and keeps its done/total count", () => {
