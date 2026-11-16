@@ -73,12 +73,20 @@
           </header>
           <div id="project-cards" class="cards"></div>
           <p id="dashboard-message" class="empty" hidden></p>
-          <!-- The done and the closed projects, together, at the bottom. -->
-          <section id="finished-projects" hidden>
-            <h2 class="section-label">Finished</h2>
-            <div id="finished-project-cards" class="cards"></div>
-          </section>
+          <!-- The one way to the finished and the archived projects. -->
+          <a id="archive-link" class="quiet-link" href="/archive" hidden>
+            Finished and archived
+          </a>
         </section>
+      </section>
+      <!-- The finished and the archived projects: their own page. -->
+      <section id="archive-view" hidden>
+        <header class="dashboard-header">
+          <a class="quiet-link back" href="/">← Projects</a>
+        </header>
+        <h2 class="section-label">Finished and archived</h2>
+        <ul id="archive-list" class="found-list"></ul>
+        <p id="archive-message" class="empty" hidden>No project is finished or archived.</p>
       </section>
       <main id="main" hidden>
         <!-- The project header: goal, progress, target date, status. -->
@@ -137,6 +145,10 @@
         <p id="empty-tasks" class="empty" hidden>
           Nothing here yet — add a task above.
         </p>
+        <!-- Archiving lives here, at the end of the page: a text action. -->
+        <footer id="project-footer">
+          <button id="archive-project" type="button" class="text-action"></button>
+        </footer>
       </main>
       <div id="empty-projects" class="empty-hero" hidden>
         <p>No projects yet.</p>

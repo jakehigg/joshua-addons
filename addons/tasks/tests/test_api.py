@@ -157,6 +157,21 @@ async def test_project_patch_rename_and_archive(client) -> None:
     assert len((await client.get("/api/next-steps")).json()) == 1
 
 
+async def test_archived_projects_route_lists_only_the_archived_ones(client) -> None:
+    hall = (await client.post("/api/projects", json={"name": "Hallway"})).json()
+    (await client.post("/api/projects", json={"name": "Garden"})).json()
+    assert (await client.get("/api/projects/archived")).json() == []
+    await client.patch(f"/api/projects/{hall['id']}", json={"archived": True})
+    archived = (await client.get("/api/projects/archived")).json()
+    assert [p["slug"] for p in archived] == ["hallway"]
+    assert archived[0]["archived_at"] is not None
+    # the open list and the archived list do not overlap
+    assert [p["slug"] for p in (await client.get("/api/projects")).json()] == ["garden"]
+    # unarchiving takes the project out of the archived list again
+    await client.patch(f"/api/projects/{hall['id']}", json={"archived": False})
+    assert (await client.get("/api/projects/archived")).json() == []
+
+
 async def test_group_flow(client) -> None:
     pid = (await client.post("/api/projects", json={"name": "P"})).json()["id"]
     r = await client.post(f"/api/projects/{pid}/groups", json={"name": "Prep"})

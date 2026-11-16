@@ -8,38 +8,49 @@
 import type { Project, SearchResult, SearchTask, Task, TaskRef } from "./api";
 
 // --- the route ----------------------------------------------------------------
-// "/" is the dashboard and "/p/<slug>" is one project. The search text and
-// its toggle live in the query string, so a search is a link a person can
-// keep, and the back button moves between searches.
+// "/" is the dashboard, "/p/<slug>" is one project, and "/archive" is the
+// finished and the archived projects. The search text and its toggle live in
+// the query string, so a search is a link a person can keep, and the back
+// button moves between searches.
 
 export interface Route {
   // The project slug of a project page, or null on the dashboard.
   project: string | null;
+  // True on the page of the finished and the archived projects.
+  archive: boolean;
   query: string;
   // Search done tasks and finished projects as well.
   includeDone: boolean;
 }
 
 const ROUTE_BASE = "http://route.invalid";
+const ARCHIVE_PATH = "/archive";
 
 export function parseRoute(url: string): Route {
   const parsed = new URL(url, ROUTE_BASE);
-  const slug = /^\/p\/([^/]+)\/?$/.exec(parsed.pathname)?.[1];
+  const path = parsed.pathname.replace(/\/$/, "");
+  const slug = /^\/p\/([^/]+)$/.exec(path)?.[1];
   const params = parsed.searchParams;
   return {
     project: slug ? decodeURIComponent(slug) : null,
+    archive: path === ARCHIVE_PATH,
     query: params.get("q") ?? "",
     includeDone: params.get("done") === "1",
   };
 }
 
 /** The home page, with the search text and the toggle of ``route``. */
-export function homeHref(route: Omit<Route, "project">): string {
+export function homeHref(route: { query: string; includeDone: boolean }): string {
   const params = new URLSearchParams();
   if (route.query) params.set("q", route.query);
   if (route.includeDone) params.set("done", "1");
   const query = params.toString();
   return query ? `/?${query}` : "/";
+}
+
+/** The page of the finished and the archived projects. */
+export function archiveHref(): string {
+  return ARCHIVE_PATH;
 }
 
 export function projectHref(project: { slug: string }): string {
@@ -85,6 +96,15 @@ export function isFinished(project: Project): boolean {
   return project.status === "done" || project.status === "closed";
 }
 
+export function isArchived(project: Project): boolean {
+  return project.archived_at !== null;
+}
+
+/** An open project: not archived, and in neither finished status. */
+export function isOpen(project: Project): boolean {
+  return !isArchived(project) && !isFinished(project);
+}
+
 // Two projects of the same rank: the nearer target date first, a project
 // with no target date after one with it, and otherwise the order the API
 // returned (oldest first), which a stable sort keeps.
@@ -101,29 +121,49 @@ export function orderProjects(projects: Project[]): Project[] {
   );
 }
 
-/**
- * The projects the dashboard lists, in order. ``GET /api/projects`` leaves
- * out the archived ones and returns every other one, so only the done and
- * the closed ones come out here: they have their own section at the bottom.
- */
+/** The projects the home page lists, in order: the open ones, and only those. */
 export function dashboardProjects(projects: Project[]): Project[] {
-  return orderProjects(projects.filter((p) => !isFinished(p)));
+  return orderProjects(projects.filter(isOpen));
+}
+
+/** The date part of a timestamp, or null when the API sent none. */
+function day(when: string | null): string | null {
+  return when ? when.slice(0, 10) : null;
+}
+
+/** The day a project left the open list: its archive date, or its finish date. */
+function closedOn(project: Project): string {
+  return (isArchived(project) ? day(project.archived_at) : day(project.completed_at)) ?? "";
 }
 
 /**
- * The finished projects, in order, for the quiet section at the bottom.
- * Done and closed are one group there, and an archived project is in
- * neither section: the API never sends it.
+ * The finished and the archived projects, the most recent first, for the
+ * page the link at the end of the home list opens. A project with no date
+ * comes last, and the order the API returned breaks a tie.
  */
-export function finishedProjects(projects: Project[]): Project[] {
-  return orderProjects(projects.filter(isFinished));
+export function finishedAndArchived(projects: Project[]): Project[] {
+  return projects
+    .filter((p) => !isOpen(p))
+    .sort((a, b) => closedOn(b).localeCompare(closedOn(a)));
 }
 
-/** What to say when no project is active, or null when there is a card to show. */
+/**
+ * The projects a selector offers: the open ones only. The project a person
+ * has open keeps its place, whatever its status, so the picker still names
+ * the page they are on.
+ */
+export function projectOptions(projects: Project[], currentId: string | null): Project[] {
+  const options = projects.filter(isOpen);
+  const current = projects.find((p) => p.id === currentId);
+  if (current && !isOpen(current)) options.push(current);
+  return options;
+}
+
+/** What to say when no project is open, or null when there is a card to show. */
 export function dashboardMessage(projects: Project[], shown: Project[]): string | null {
   if (shown.length > 0) return null;
   if (projects.length === 0) return null; // the "no projects yet" hero says it
-  return "Every project is done or closed.";
+  return "Every project is finished or archived.";
 }
 
 // --- one project card ----------------------------------------------------------
@@ -134,18 +174,20 @@ export interface Badge {
   kind: string;
 }
 
+// A card is one compact row: the name with its status chip, the progress,
+// then the counts and the target date as one quiet line. The goal and the
+// next task belong to the project page, so four cards fit on a phone.
+
 export interface CardView {
   id: string;
   href: string;
   name: string;
-  goal: string | null;
   percent: number;
   percentLabel: string;
   countLabel: string;
   // null for a plain list, which has no health to show.
   badge: Badge | null;
   targetLabel: string | null;
-  nextTitle: string | null;
   finished: boolean;
 }
 
@@ -154,14 +196,39 @@ export function projectCardView(project: Project): CardView {
     id: project.id,
     href: projectHref(project),
     name: project.name,
-    goal: project.goal,
     percent: project.percent,
     percentLabel: `${project.percent}%`,
     countLabel: `${project.done_count}/${project.task_count} done · ${project.open_count} open`,
     badge: badgeOf(project),
     targetLabel: project.target_date ? `target ${project.target_date}` : null,
-    nextTitle: project.next_task?.title ?? null,
     finished: isFinished(project),
+  };
+}
+
+// --- one row of the finished and archived page --------------------------------
+
+export interface ArchiveRowView {
+  id: string;
+  href: string;
+  name: string;
+  // The status the project keeps: "done", "closed", or the one it had when
+  // it was archived.
+  statusLabel: string;
+  // The day it was archived, or the day it was finished; null when the API
+  // sent neither.
+  dateLabel: string | null;
+  // True while the project is archived: the row offers to bring it back.
+  archived: boolean;
+}
+
+export function archiveRowView(project: Project): ArchiveRowView {
+  return {
+    id: project.id,
+    href: projectHref(project),
+    name: project.name,
+    statusLabel: project.status,
+    dateLabel: isArchived(project) ? day(project.archived_at) : day(project.completed_at),
+    archived: isArchived(project),
   };
 }
 

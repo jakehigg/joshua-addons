@@ -395,6 +395,17 @@ async def list_projects(request: Request) -> Response:
     return _json_list(ProjectOut, projects)
 
 
+async def list_archived_projects(request: Request) -> Response:
+    """The archived projects, oldest first. Nothing else lists one.
+
+    The web UI lists them with the finished projects, apart from the open
+    ones, and brings one back with ``PATCH {"archived": false}``.
+    """
+    async with _session() as session:
+        projects = await service.list_archived_projects(session)
+    return _json_list(ProjectOut, projects)
+
+
 async def create_project(request: Request) -> Response:
     body = await _body(request, ProjectCreate)
     async with _session() as session:
@@ -623,6 +634,7 @@ def _routes() -> list[Route]:
         route("/events", events, "GET"),
         route("/projects", list_projects, "GET"),
         route("/projects", create_project, "POST"),
+        route("/projects/archived", list_archived_projects, "GET"),
         route("/next-steps", next_steps, "GET"),
         route("/search", search, "GET"),
         route("/projects/{project_id}", update_project, "PATCH"),
