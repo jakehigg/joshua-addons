@@ -231,6 +231,28 @@ def test_the_disk_limit_comes_from_worker_disk(tmp_path) -> None:
     assert [v["emptyDir"]["sizeLimit"] for v in pod["volumes"]] == ["10Gi", "10Gi"]
 
 
+def test_worker_env_reaches_the_pod(tmp_path) -> None:
+    worker = {"env": {"PIP_INDEX_URL": "http://pypi", "NODE_EXTRA_CA_CERTS": "/etc/ca.pem"}}
+    settings = settings_for(
+        tmp_path, config={"worker": worker}, work_dir=tmp_path, worker_work_claim="work"
+    )
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    env = {item["name"]: item["value"] for item in pod["containers"][0]["env"]}
+    assert env["PIP_INDEX_URL"] == "http://pypi"
+    assert env["NODE_EXTRA_CA_CERTS"] == "/etc/ca.pem"
+    assert env["TASK_ID"] == TASK["task_id"]
+    assert env["HOME"] == "/tmp/home"
+    assert [item["name"] for item in pod["containers"][0]["env"]].count("HOME") == 1
+
+
+def test_the_image_pull_policy_defaults_and_takes_the_setting(tmp_path) -> None:
+    pod = job_manifest(settings_for(tmp_path), TASK, "joshua", 60)["spec"]["template"]["spec"]
+    assert pod["containers"][0]["imagePullPolicy"] == "IfNotPresent"
+    settings = settings_for(tmp_path, worker_image_pull_policy="Always")
+    pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]
+    assert pod["containers"][0]["imagePullPolicy"] == "Always"
+
+
 def test_the_pull_secret_goes_on_the_pod_when_it_is_set(tmp_path) -> None:
     settings = settings_for(tmp_path, worker_image_pull_secret="ghcr-pull")
     pod = job_manifest(settings, TASK, "joshua", 60)["spec"]["template"]["spec"]

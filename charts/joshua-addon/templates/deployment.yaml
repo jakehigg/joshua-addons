@@ -61,9 +61,25 @@ spec:
             - name: http
               containerPort: {{ .Values.port }}
           {{- $workClaim := .Values.worker.workClaim }}
-          {{- if or .Values.env .Values.extraEnv .Values.existingSecret .Values.envFrom $workClaim }}
+          {{- /* The named worker values, as the variables the addon reads. A
+               named value wins over the same name in `env`, so the chart
+               renders the name once. */}}
+          {{- $worker := dict }}
+          {{- with .Values.worker.image }}{{ $_ := set $worker "WORKER_IMAGE" . }}{{ end }}
+          {{- with .Values.worker.imagePullSecret }}{{ $_ := set $worker "WORKER_IMAGE_PULL_SECRET" . }}{{ end }}
+          {{- with .Values.worker.imagePullPolicy }}{{ $_ := set $worker "WORKER_IMAGE_PULL_POLICY" . }}{{ end }}
+          {{- if or .Values.env .Values.extraEnv .Values.existingSecret .Values.envFrom $workClaim $worker }}
           env:
             {{- range $name, $value := .Values.env }}
+            {{- if not (hasKey $worker $name) }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if $worker }}
+            # The worker image of an addon that starts workers: see `worker`.
+            {{- end }}
+            {{- range $name, $value := $worker }}
             - name: {{ $name }}
               value: {{ $value | quote }}
             {{- end }}

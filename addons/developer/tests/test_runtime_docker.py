@@ -196,6 +196,19 @@ async def test_start_creates_the_container_with_the_limits(tmp_path) -> None:
         job.cancel()
 
 
+async def test_start_gives_the_container_the_extra_worker_environment(tmp_path) -> None:
+    client = FakeClient()
+    settings = settings_for(tmp_path, worker={"env": {"PIP_INDEX_URL": "http://pypi"}})
+    runtime = DockerRuntime(Recorder(), settings, client=client, poll_s=0.01)
+    client.containers.next_statuses = ["running"] * 1000
+    await runtime.start(TASK)
+    [(_, kwargs)] = client.containers.created
+    assert kwargs["environment"]["PIP_INDEX_URL"] == "http://pypi"
+    assert kwargs["environment"]["TASK_TOKEN"] == "tok-value"
+    for job in list(runtime._supervisors):
+        job.cancel()
+
+
 async def test_network_on_joins_the_public_network_and_a_missing_image_is_pulled(
     tmp_path,
 ) -> None:
@@ -437,6 +450,19 @@ def test_worker_environment_has_the_package_proxy_when_the_block_is_on(tmp_path)
 def test_worker_environment_has_no_proxy_variable_when_the_block_is_off(tmp_path) -> None:
     env = worker_environment(make_settings(tmp_path), TASK)
     assert not [name for name in env if name.endswith("_PROXY")]
+
+
+def test_worker_env_reaches_the_worker(tmp_path) -> None:
+    worker = {"env": {"PIP_INDEX_URL": "http://pypi", "NODE_EXTRA_CA_CERTS": "/etc/ca.pem"}}
+    config = {"worker": worker, "packages": {"enabled": True, "hosts": ["pypi.org"]}}
+    settings = make_settings(tmp_path, config=config, work_dir=tmp_path / "work")
+    env = worker_environment(settings, TASK)
+    assert env["PIP_INDEX_URL"] == "http://pypi"
+    assert env["NODE_EXTRA_CA_CERTS"] == "/etc/ca.pem"
+    assert env["TASK_TOKEN"] == "tok-value"
+    assert env["MANAGER_URL"] == "http://developer:8001"
+    assert env["HOME"] == "/tmp/home"
+    assert env["NO_PROXY"] == "developer,localhost,127.0.0.1,.svc,.cluster.local"
 
 
 @pytest.mark.parametrize("mode", ["1", "ask"])
