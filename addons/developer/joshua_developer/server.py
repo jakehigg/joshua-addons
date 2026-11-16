@@ -315,15 +315,43 @@ async def answer(task_id: str, text: str, ctx: Context) -> dict:
 
 
 @mcp.tool()
+async def resume(
+    task_id: str, ctx: Context, note: str | None = None, persona: str | None = None
+) -> dict:
+    """Start one new worker for a task that ran out of turns or out of time.
+
+    The new worker takes the work of the worker before it: the same
+    repository, the same branch, the same work directory, and the same
+    persona. It reads the checkout, commits what is not committed, and goes
+    on with the brief. It never starts the task over. note is extra
+    direction for this worker, such as what to leave out; without it, the
+    worker gets the brief and the report of the worker before it only.
+    persona is a name from list_personas, for a worker with another model;
+    without it, the persona of the task. task_status shows resumable true
+    when a task takes this call. A call is rejected when the task did not
+    fail or time out, when it ended for another cause than the turn limit,
+    the session timeout, or a worker that is gone, when its work directory
+    no longer holds a checkout, and when the task reached work.max_resumes:
+    read the log with task_output first in that case. A task of another
+    person is not found.
+    """
+    person = _person(ctx)
+    task = _own_task(Caller(person=person), task_id)
+    return await _get_manager().resume(person, task, note=note, persona=persona)
+
+
+@mcp.tool()
 async def task_status(task_id: str, ctx: Context) -> dict:
     """The state of one task.
 
     status is dispatched, running, success, failed, blocked, or timed_out.
     The result also has the branch, the pull request URL, the cost, the
-    summary, the error, the open question, and the scan result: clean,
-    partial, hit, or unavailable.
+    summary, the error, the open question, the scan result (clean, partial,
+    hit, or unavailable), the resumes of the task, and resumable: true when
+    the resume tool takes the task up again.
     """
-    task = _own_task(_caller(ctx), task_id)
+    caller = _caller(ctx)
+    task = {**_own_task(caller, task_id), "resumable": _get_manager().resumable(task_id)}
     return with_links(task, task_links(task)) if origin_of(ctx) else task
 
 

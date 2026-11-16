@@ -35,6 +35,8 @@ DEFAULT_MANAGER_HOST = "developer"
 DEFAULT_MANAGER_GRACE_S = 600
 # The days a task that did not end success keeps its work directory.
 DEFAULT_KEEP_FAILED_DAYS = 7
+# The resumes of one task that ran out of turns or out of time.
+DEFAULT_MAX_RESUMES = 2
 DEFAULT_WORKER_NETWORK = "developer_workers"
 DEFAULT_PUBLIC_NETWORK = "bridge"
 # The values of WORKER_FAKE_SESSION, a test aid of the Docker runtime.
@@ -208,9 +210,14 @@ class WorkConfig(_Model):
 
     ``keep_failed`` is the number of days a task that did not end ``success``
     keeps its directory after it ends. The sweeper then deletes it.
+
+    ``max_resumes`` is the number of times ``resume`` starts a new worker for
+    one task. A call past it is refused, so a task that loops still ends. The
+    value 0 refuses every resume.
     """
 
     keep_failed: int = Field(default=DEFAULT_KEEP_FAILED_DAYS, gt=0, strict=True)
+    max_resumes: int = Field(default=DEFAULT_MAX_RESUMES, ge=0, strict=True)
 
 
 class RunsConfig(_Model):

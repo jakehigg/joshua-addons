@@ -25,6 +25,12 @@ task, takes a question from a worker, and wakes the worker that waits for
 the answer. An answer to a task that stopped ``blocked`` or ``timed_out``
 after a push starts a new worker for the same task, on the pushed branch.
 
+A task that ran out of turns, ran out of time, or lost its worker is taken up
+again with ``resume``: one new worker, on the same repository, branch, work
+directory, and persona, with the brief, the report of the worker before it,
+and an optional note. ``work.max_resumes`` caps the resumes of one task, so a
+task that loops still ends.
+
 When a push fails, the worker stores a bundle of its commits on the manager
 (``<data dir>/bundles/<task id>.bundle``) before it reports. A task with a
 bundle is resumable also when it ``failed``: the new worker restores the
@@ -109,6 +115,19 @@ _COMMIT_CHARS = frozenset("0123456789abcdef")
 CLOSED_PR_STATES = frozenset({"closed", "merged", "locked"})
 # The states from which an answer resumes a task.
 RESUMABLE_STATUSES = ("blocked", "timed_out")
+# The states from which ``resume`` takes a task up again.
+RESUME_STATUSES = ("failed", "timed_out")
+# The text in the error of a task that ran out of turns, ran out of time, or
+# lost its worker. ``resume`` continues such a task, and no other.
+RESUME_ERROR_MARKS = (
+    "error_max_turns",
+    "max turns",
+    "turn limit",
+    "out of turns",
+    "persona timeout",
+    "timed out",
+    "the worker is gone",
+)
 # The most reference repositories of one task (refs).
 MAX_REFS = 5
 # The bundles of commits that a worker could not push.
@@ -178,6 +197,38 @@ async def retry_5xx[T](call: Callable[[], Awaitable[T]]) -> T:
             raise
         logger.warning({"message": "git host 5xx; one more attempt", "status_code": exc.status})
         return await call()
+
+
+def ran_out(task: dict[str, Any]) -> bool:
+    """True when ``task`` ended at the turn limit, at the session timeout, or with no worker.
+
+    A ``timed_out`` task ran past the time of its persona. Every other end
+    comes from the error text: a refusal, a rejected call, and a git or a
+    push failure name none of ``RESUME_ERROR_MARKS``.
+    """
+    if task["status"] == "timed_out":
+        return True
+    error = (task.get("error") or "").lower()
+    return any(mark in error for mark in RESUME_ERROR_MARKS)
+
+
+def resume_text(task: dict[str, Any], note: str | None) -> str:
+    """What the new worker of a resumed task is told: continue, do not start again."""
+    parts = [
+        "This task ran out of turns or out of time. Your work directory holds the "
+        "checkout of the worker before you. Do not start the task over. First read the "
+        "state of the checkout (git status, git log, and the diff of the branch). Commit "
+        "what is not committed. Then go on with the brief from there.",
+    ]
+    summary = ((task.get("report") or {}).get("summary") or "").strip()
+    if summary:
+        parts.append(f"The summary of the worker before you:\n{summary}")
+    error = (task.get("error") or "").strip()
+    if error:
+        parts.append(f"How that worker ended:\n{error}")
+    if note and note.strip():
+        parts.append(f"A note for this resume:\n{note.strip()}")
+    return "\n\n".join(parts)
 
 
 def finding_error(findings: list[Finding]) -> str:
@@ -363,7 +414,9 @@ class Manager:
         for task_id in pending:
             full = self.store.get_task_full(task_id)
             if full is not None:
-                await notify.send_report(self.settings, full, self._default_notify(full))
+                await notify.send_report(
+                    self.settings, self.report_row(full), self._default_notify(full)
+                )
 
     # --- effective values --------------------------------------------------
 
@@ -893,7 +946,7 @@ class Manager:
         # event, and the report event goes only when a person must see it.
         if full.get("run_id") and not await self.runs.step(full):
             return self.store.get_task(task_id)
-        await notify.send_report(self.settings, full, self._default_notify(full))
+        await notify.send_report(self.settings, self.report_row(full), self._default_notify(full))
         return self.store.get_task(task_id)
 
     async def _report_usage(self, task_id: str) -> None:
@@ -1128,12 +1181,22 @@ class Manager:
             "message": "The answer is stored for the worker.",
         }
 
-    async def _resume(self, person: str, full: dict[str, Any], text: str) -> dict[str, Any]:
+    async def _resume(
+        self,
+        person: str,
+        full: dict[str, Any],
+        text: str,
+        *,
+        message: str = "A new worker continues the task on its branch, with the answer.",
+        **changes: Any,
+    ) -> dict[str, Any]:
         """Start a new worker for a task that stopped, where the last worker stopped.
 
         The task keeps its id, person, repository, branch, persona, and brief.
         The last report moves to ``history``. The new worker gets a new task
-        token, and its brief holds the answer and the last summary as a note.
+        token, and its brief holds ``text`` as the answer and the last summary
+        as a note. ``changes`` holds more task fields to write with the row of
+        the resume, such as the persona and the resume count.
         """
         task_id = full["task_id"]
         history: list[dict[str, Any]] = list(full.get("history") or [])
@@ -1172,6 +1235,7 @@ class Manager:
                 asked_at=None,
                 paused_s=0,
                 last_wait_s=None,
+                **changes,
             )
         self._log_full.discard(task_id)
         logger.info({"message": "task resumed", "task_id": task_id, "person": person})
@@ -1182,12 +1246,110 @@ class Manager:
             "task_id": task_id,
             "status": "dispatched",
             "resumed": True,
-            "message": "A new worker continues the task on its branch, with the answer.",
+            "message": message,
         }
 
     def has_saved_work(self, task_id: str) -> bool:
         """True when a bundle, or a kept checkout in the work directory, holds the task's work."""
         return self.has_bundle(task_id) or self.workspaces.has_checkout(task_id)
+
+    # --- resume ------------------------------------------------------------
+
+    async def resume(
+        self,
+        person: str,
+        task: dict[str, Any],
+        note: str | None = None,
+        persona: str | None = None,
+    ) -> dict[str, Any]:
+        """Take up a task that ran out of turns or out of time, with one new worker.
+
+        The new worker gets the same repository, branch, work directory, and
+        persona, unless ``persona`` names another one. Its brief holds the
+        original brief, the report of the worker before it, the ``note`` when
+        there is one, and the instruction to read the checkout, commit what is
+        not committed, and go on. A task that ``resume_refusal`` refuses, and
+        a task at ``work.max_resumes``, get ``not_resumable``.
+        """
+        if note is not None and len(note) > MAX_TEXT:
+            return rejected("invalid_arguments", f"note is longer than {MAX_TEXT} characters")
+        full = self.store.get_task_full(task["task_id"])
+        assert full is not None
+        refused = self.resume_refusal(full)
+        if refused is not None:
+            return refused
+        chosen = full["persona"]
+        if persona:
+            resolved = self.resolve_persona(person, persona)
+            if resolved is None:
+                return rejected(
+                    "unknown_persona",
+                    f"the persona {persona!r} is not known; list_personas names the personas",
+                )
+            chosen = resolved
+        return await self._resume(
+            person,
+            full,
+            resume_text(full, note),
+            message="A new worker continues the task from the work in its directory.",
+            persona=chosen,
+            resumes=int(full["resumes"] or 0) + 1,
+        )
+
+    def resume_refusal(self, task: dict[str, Any]) -> dict[str, Any] | None:
+        """Why ``task`` (the full row) cannot be resumed, as a rejection, or None.
+
+        A task is resumable when it ``failed`` or ``timed_out``, when it ended
+        at the turn limit, at the session timeout, or with its worker gone,
+        when its work directory still holds a checkout, and when it has fewer
+        than ``work.max_resumes`` resumes.
+        """
+        task_id = task["task_id"]
+        status = task["status"]
+        if status not in RESUME_STATUSES:
+            return rejected(
+                "not_resumable",
+                f"task {task_id} is {status}; resume takes a task that failed or timed out",
+            )
+        if not ran_out(task):
+            return rejected(
+                "not_resumable",
+                f"task {task_id} did not end at the turn limit, at the session timeout, or "
+                "with its worker gone, so a new worker cannot take it up. Read the error with "
+                "task_output. An open question takes answer, and a failed push takes answer "
+                "too; every other end takes a new develop call.",
+            )
+        if not self.workspaces.enabled:
+            return rejected(
+                "not_resumable",
+                f"the addon keeps no work directory for task {task_id}, because "
+                "DEVELOPER_WORK_DIR is not set, so nothing holds its work. Call develop again.",
+            )
+        if not self.workspaces.has_checkout(task_id):
+            return rejected(
+                "not_resumable",
+                f"the work directory of task {task_id} holds no checkout: the sweeper deletes "
+                "a kept directory work.keep_failed days after the task ends. Call develop again "
+                "with the brief.",
+            )
+        used = int(task["resumes"] or 0)
+        limit = self.config.work.max_resumes
+        if used >= limit:
+            return rejected(
+                "not_resumable",
+                f"task {task_id} was resumed {used} time(s), the most that work.max_resumes "
+                "allows. Read the log with task_output before you try again.",
+            )
+        return None
+
+    def resumable(self, task_id: str) -> bool:
+        """True when ``resume`` takes the task up again."""
+        full = self.store.get_task_full(task_id)
+        return full is not None and self.resume_refusal(full) is None
+
+    def report_row(self, task: dict[str, Any]) -> dict[str, Any]:
+        """``task`` (the full row) with ``resumable``, for a report event."""
+        return {**task, "resumable": self.resume_refusal(task) is None}
 
     def push_only(self, task: dict[str, Any]) -> bool:
         """True when a resumed worker only pushes the saved commits, with no session.

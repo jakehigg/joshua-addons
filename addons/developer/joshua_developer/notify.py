@@ -161,7 +161,11 @@ def _reason(response: httpx.Response) -> str | None:
 
 
 def report_text(task: dict[str, Any]) -> str:
-    """The text of a report event, from the report fields of ``task`` only."""
+    """The text of a report event, from the report fields of ``task`` only.
+
+    ``resumable`` in ``task`` adds the line that says that ``resume`` can
+    take the task up again (see ``Manager.report_row``).
+    """
     status = str(task.get("status") or "unknown")
     lines = [
         f"Developer task {task.get('task_id')} ended: {status}.",
@@ -186,6 +190,11 @@ def report_text(task: dict[str, Any]) -> str:
     question = (task.get("open_question") or "").strip()
     if question:
         lines.append(fenced("Open question:", question[:MAX_QUESTION]))
+    if task.get("resumable"):
+        lines.append(
+            "The task can be resumed: the developer `resume` tool starts one new worker that "
+            "continues from the work in the task directory."
+        )
     if status == "success":
         lines.append("Tell the person the result, with the pull request link.")
     else:
