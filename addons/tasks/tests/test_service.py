@@ -142,6 +142,48 @@ async def test_update_project_rename_keeps_slug_and_unarchive(db):
     assert p.archived_at is None
 
 
+async def test_archive_in_place_hides_an_active_project_and_keeps_its_status(db):
+    await services.create_project(db, "Keep")
+    await services.create_project(db, "Abandoned", goal="a goal nobody reaches")
+    await services.create_task(db, "keep", "live task")
+    await services.create_task(db, "abandoned", "paint the shed")
+
+    p = await services.update_project(db, "abandoned", archived=True)
+    assert p.archived_at is not None
+    # archived as it stands: the status, and the completion, are untouched
+    assert p.status == "active" and p.completed_at is None
+
+    assert [x["slug"] for x in await services.list_projects(db)] == ["keep"]
+    assert [x["slug"] for x in await services.list_projects(db, include_finished=False)] == ["keep"]
+    assert [s["slug"] for s in await services.next_steps(db)] == ["keep"]
+    assert await services.search(db, "paint the shed", include_done=True) == {
+        "projects": [],
+        "tasks": [],
+    }
+    assert [x["slug"] for x in await services.list_archived_projects(db)] == ["abandoned"]
+
+    back = await services.update_project(db, "abandoned", archived=False)
+    assert back.archived_at is None and back.status == "active"
+    assert [x["slug"] for x in await services.list_projects(db)] == ["keep", "abandoned"]
+    assert await services.list_archived_projects(db) == []
+    assert [f["task"].title for f in (await services.search(db, "shed"))["tasks"]] == [
+        "paint the shed"
+    ]
+
+
+async def test_archive_hides_a_finished_project_from_both_listings(db):
+    await services.create_project(db, "Garage")
+    t = await services.create_task(db, "garage", "sweep")
+    await services.update_task(db, t.id, done=True)
+    await services.complete_project(db, "garage")
+
+    p = await services.update_project(db, "garage", archived=True)
+    assert p.status == "done"
+    assert await services.list_projects(db) == []
+    assert await services.list_projects(db, include_finished=True) == []
+    assert [x["status"] for x in await services.list_archived_projects(db)] == ["done"]
+
+
 async def test_slug_edge_cases(db):
     p = await services.create_project(db, "!!!")
     assert p.slug == "project"

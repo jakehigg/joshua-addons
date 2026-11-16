@@ -96,7 +96,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   color: var(--j-muted);
 }
 .dashboard-header { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
-.dashboard-header .toggle { margin-left: auto; }
+
+/* the done and the closed projects: their own section, quieter, at the bottom */
+#finished-projects {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--j-line-soft);
+}
+#finished-projects .section-label { color: var(--j-faint); }
 
 /* the search box: full width, with its one checkbox under it on a phone */
 .search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
@@ -120,8 +126,12 @@ input[type="search"]:focus { border-color: var(--j-accent); box-shadow: 0 0 0 3p
 }
 .ghost-link:hover { color: var(--j-text); background: var(--j-surface-2); text-decoration: none; }
 
-/* one card for each project */
+/* one card for each project, with its archive button beside it */
 .cards { display: flex; flex-direction: column; gap: 12px; }
+.card-row { display: flex; align-items: flex-start; gap: 8px; }
+.card-row .card { flex: 1 1 auto; min-width: 0; }
+.card-archive { flex: none; align-self: center; font-size: 13px; }
+.card-archive.confirming { color: var(--j-bad); background: var(--j-bad-soft); }
 
 .card {
   display: flex; flex-direction: column; gap: 10px;

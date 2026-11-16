@@ -141,14 +141,20 @@ async def test_a_task_carries_its_number_and_is_found_by_it(client) -> None:
 
 async def test_project_patch_rename_and_archive(client) -> None:
     p = (await client.post("/api/projects", json={"name": "Garden"})).json()
+    await client.post(f"/api/projects/{p['id']}/tasks", json={"title": "Dig"})
     r = await client.patch(f"/api/projects/{p['id']}", json={"name": "Yard", "archived": True})
     assert r.status_code == 200
     assert r.json()["name"] == "Yard" and r.json()["slug"] == "garden"
     assert r.json()["archived_at"] is not None
+    # an active project is archived as it stands: the status does not change
+    assert r.json()["status"] == "active"
+    # the projects page, and the next steps, get nothing of it
     assert (await client.get("/api/projects")).json() == []
+    assert (await client.get("/api/next-steps")).json() == []
     r = await client.patch(f"/api/projects/{p['id']}", json={"archived": False})
-    assert r.json()["archived_at"] is None
+    assert r.json()["archived_at"] is None and r.json()["status"] == "active"
     assert len((await client.get("/api/projects")).json()) == 1
+    assert len((await client.get("/api/next-steps")).json()) == 1
 
 
 async def test_group_flow(client) -> None:

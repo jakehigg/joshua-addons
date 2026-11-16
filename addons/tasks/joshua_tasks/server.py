@@ -233,6 +233,9 @@ async def list_projects(include_finished: bool = False) -> list[dict[str, Any]]:
     A blocked task is never the next_task. A project whose whole remaining
     work is blocked has next_task null and health stalled.
 
+    An archived project is in no result here, with include_finished true as
+    well. Use list_archived_projects for those.
+
     Args:
         include_finished: Set true to also see done and closed projects.
     """
@@ -330,7 +333,8 @@ async def next_steps(project: str | None = None, limit: int = 3) -> list[dict[st
 
     Each entry is a project summary (see list_projects) plus tasks, the
     next open tasks, each with its number ("task 24"). A paused or finished
-    project is left out unless named.
+    project is left out unless named, and an archived project is left out
+    as well.
 
     A task that waits for an open blocker is not a next step and is left
     out. A project whose whole remaining work waits keeps its place in the
@@ -362,8 +366,17 @@ async def rename_project(project: str, name: str) -> dict[str, Any]:
 @mcp.tool()
 async def archive_project(project: str) -> dict[str, Any]:
     """
-    Archive a project — hides it from the project list but keeps its data.
-    (There is no unarchive tool yet; ask a human to restore via the API.)
+    Archive a project: hide it everywhere, and keep its data.
+
+    A project is archived as it stands, from any status. It does not have to
+    be completed or closed first, and its status does not change. Use it for
+    work nobody will finish, because that work was not done.
+
+    An archived project is in no list_projects result (with
+    include_finished true as well), in no search_tasks result, and in no
+    next_steps result; its tasks are hidden with it. A tool that names the
+    project by its slug or its id still reads it. list_archived_projects
+    shows the archived projects, and unarchive_project brings one back.
 
     Args:
         project: Project slug or id.
@@ -371,6 +384,36 @@ async def archive_project(project: str) -> dict[str, Any]:
     async with _tool_session() as session:
         p = await service.update_project(session, project, archived=True)
         return {"ok": True, "project": _project_dict(p)}
+
+
+@mcp.tool()
+async def unarchive_project(project: str) -> dict[str, Any]:
+    """
+    Bring an archived project back, with the status it had.
+
+    Use it when a project was archived by mistake. The project is in the
+    lists, the searches, and the next steps again. A project that is not
+    archived stays as it is.
+
+    Args:
+        project: Project slug or id, from list_archived_projects.
+    """
+    async with _tool_session() as session:
+        p = await service.update_project(session, project, archived=False)
+        return {"ok": True, "project": _project_dict(p)}
+
+
+@mcp.tool()
+async def list_archived_projects() -> list[dict[str, Any]]:
+    """
+    The archived projects, oldest first, with the same fields as
+    list_projects. Nothing else shows them.
+
+    Call it to find a project a person wants back, then unarchive_project.
+    """
+    async with _tool_session() as session:
+        projects = await service.list_archived_projects(session)
+    return [_summary_dict(p) for p in projects]
 
 
 @mcp.tool()

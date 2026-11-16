@@ -435,6 +435,15 @@ async def _attach_next_tasks(session: AsyncSession, summaries: list[dict[str, An
     await attach_blocks(session, [s["next_task"] for s in summaries if s["next_task"] is not None])
 
 
+async def _summaries(session: AsyncSession, projects: list[Project]) -> list[dict[str, Any]]:
+    """One summary for each project given, in the order given."""
+    tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
+    blocked = await _blocked_in(session, tasks)
+    summaries = [summarize(p, tasks[p.id], groups[p.id], blocked) for p in projects]
+    await _attach_next_tasks(session, summaries)
+    return summaries
+
+
 async def list_projects(
     session: AsyncSession, include_archived: bool = False, include_finished: bool = True
 ) -> list[dict]:
@@ -444,12 +453,17 @@ async def list_projects(
         query = query.where(Project.archived_at.is_(None))
     if not include_finished:
         query = query.where(Project.status.not_in(FINISHED_STATUSES))
-    projects = list((await session.scalars(query)).all())
-    tasks, groups = await _tasks_and_groups_by_project(session, [p.id for p in projects])
-    blocked = await _blocked_in(session, tasks)
-    summaries = [summarize(p, tasks[p.id], groups[p.id], blocked) for p in projects]
-    await _attach_next_tasks(session, summaries)
-    return summaries
+    return await _summaries(session, list((await session.scalars(query)).all()))
+
+
+async def list_archived_projects(session: AsyncSession) -> list[dict]:
+    """The summaries of the archived projects, oldest first, whatever their status.
+
+    Nothing else lists an archived project, so this is how a person finds
+    one to bring back with ``update_project(archived=False)``.
+    """
+    query = select(Project).where(Project.archived_at.is_not(None)).order_by(Project.created_at)
+    return await _summaries(session, list((await session.scalars(query)).all()))
 
 
 async def project_summary(session: AsyncSession, ref: str | uuid.UUID) -> dict[str, Any]:
@@ -467,10 +481,10 @@ async def next_steps(
 ) -> list[dict[str, Any]]:
     """The next open tasks of every active project, or of one project.
 
-    Without ``ref``, a paused or finished project is left out, and so is a
-    project with nothing open. With ``ref``, that project is returned
-    whatever its status. Each entry is a summary plus ``tasks``, the first
-    ``limit`` open tasks in roadmap order.
+    Without ``ref``, an archived, a paused, or a finished project is left
+    out, and so is a project with nothing open. With ``ref``, that project
+    is returned whatever its status. Each entry is a summary plus
+    ``tasks``, the first ``limit`` open tasks in roadmap order.
 
     A task that waits for an open blocker is not a next step and is left
     out. A project whose whole remaining work waits keeps its place in the
@@ -567,6 +581,12 @@ async def update_project(
 
     ``goal`` and ``target_date`` clear when passed as ``None`` (or an empty
     goal) and stay when not passed. Use ``set_project_status`` for status.
+
+    ``archived=True`` archives the project as it stands, from any status,
+    and keeps the status it finds: a project nobody will finish is hidden
+    without a pretence that it is done. An archived project is in no
+    listing, no search, and no next step; ``archived=False`` brings it
+    back, with the same status.
     """
     project = await get_project(session, ref)
     if name is not None:
