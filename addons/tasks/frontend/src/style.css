@@ -6,6 +6,20 @@
 
 body { min-height: 100vh; min-height: 100dvh; }
 
+/* The one left edge of the task list. A row starts with the drag handle and
+   the checkbox: together these are --row-lead. The task number and the row
+   body come after them, at --row-edge from the outside of the card. The
+   group header, the backlog label, and the open note, link, and details
+   rows start on that same edge. The number has its own column, so the text
+   of each row starts at the same position, also when the number is wide. */
+:root {
+  --row-gap: 10px; /* between the columns of a row */
+  --row-pad: 8px; /* a row's own left padding, inside the card */
+  --row-lead: calc(22px + var(--row-gap) + 20px + var(--row-gap));
+  --row-edge: calc(1px + var(--row-pad) + var(--row-lead)); /* + the card's border */
+  --task-number: 30px; /* room for "#999"; a longer number uses the gap */
+}
+
 /* ---------------------------------------------------------------- shell */
 
 .wrap {
@@ -258,18 +272,17 @@ main.finished .group-add { display: none; }
 
 .group { display: flex; flex-direction: column; gap: 8px; }
 
-/* The header's own lead column (59px) plus its 10px gap puts .group-name at
-   the same left edge as a task's number/title (see .task-row below): 71px
-   from the card's left border either way. That is the one gutter the list
-   keeps down its whole length, so the header reads above its row, not
-   flush with it. */
+/* The first column of the header covers the handle and the checkbox of a
+   row, and its left padding is the border of the card and the padding of a
+   row. Thus .group-name starts on --row-edge: the same position as the task
+   number and the row body below it. */
 .group-header {
   display: grid;
-  grid-template-columns: 59px 1fr auto auto auto;
-  column-gap: 10px;
+  grid-template-columns: calc(22px + var(--row-gap) + 20px) 1fr auto auto auto;
+  column-gap: var(--row-gap);
   align-items: center;
   min-height: 30px;
-  padding: 0 2px;
+  padding: 0 2px 0 calc(1px + var(--row-pad));
   margin-bottom: 4px; /* a real break from the first row, on top of .group's own gap */
 }
 .group-handle { cursor: grab; color: var(--j-faint); user-select: none; touch-action: none; padding: 2px; }
@@ -299,6 +312,7 @@ main.finished .group-add { display: none; }
 #task-list {
   list-style: none;
   margin: 0;
+  padding: 0; /* no browser list indent: a row starts at the card's border */
   background: var(--j-surface);
   border: 1px solid var(--j-line-soft);
   border-radius: var(--j-radius);
@@ -322,20 +336,17 @@ main.finished .group-add { display: none; }
 /* ----------------------------------------------------------- task rows */
 
 .task {
-  padding: 14px 12px 14px 8px;
+  padding: 14px 12px 14px var(--row-pad);
   border-top: 1px solid var(--j-line);
   transition: background .15s, opacity .2s;
 }
 .task:first-child { border-top: 0; }
 .task:hover { background: rgba(255, 255, 255, .015); }
 
-/* The lead columns (22px handle, 20px checkbox, both with a 10px gap) put
-   .task-body at 62px from the row's own left padding: the same 62px the
-   expanded links/notes/details rows already indent by (below), and, with
-   the card's border and the row's own padding, the same 71px left edge the
-   group header's name sits at above (see .group-header). One gutter, kept
-   down the whole list. */
-.task-row { display: grid; grid-template-columns: 22px 20px 1fr auto; column-gap: 10px; align-items: center; min-height: 28px; }
+/* The first columns (the 22px handle and the 20px checkbox, with their
+   gaps) are --row-lead. Thus .task-body starts on --row-edge: the left edge
+   of the group header above it, and of the open rows below it. */
+.task-row { display: grid; grid-template-columns: 22px 20px 1fr auto; column-gap: var(--row-gap); align-items: center; min-height: 28px; }
 
 .drag-handle { cursor: grab; color: var(--j-faint); user-select: none; touch-action: none; padding: 2px 2px; font-size: 15px; }
 .drag-handle:active { cursor: grabbing; }
@@ -356,9 +367,12 @@ main.finished .group-add { display: none; }
   border: solid var(--j-accent-ink); border-width: 0 0 2.5px 2.5px; transform: rotate(-45deg);
 }
 
-/* The title and its badges share one column. The title keeps at least
-   ~18ch before the badges wrap under it; it never breaks per character. */
-.task-body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+/* The number has its own column at the start of the body, so the text of
+   each row starts at the same position. The title and its badges share the
+   column after it: the title keeps at least ~18ch before the badges wrap
+   under it; it never breaks per character. */
+.task-body { min-width: 0; display: grid; grid-template-columns: var(--task-number) minmax(0, 1fr); column-gap: var(--row-gap); align-items: center; }
+.task-text { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .task .title { flex: 1 1 auto; min-width: min(100%, 18ch); font-weight: 500; overflow-wrap: anywhere; cursor: text; }
 .task-title-input { flex: 1 1 100%; min-width: 0; height: 32px; padding: 0 8px; font-size: 16px; }
 /* the task number: the short name a person says; selectable, so it can be copied */
@@ -393,7 +407,7 @@ main.finished .group-add { display: none; }
 .task.blocked .title { color: var(--j-muted); }
 .task-links {
   display: flex; flex-direction: column; gap: 4px;
-  margin: 4px 0 2px; padding-left: 62px; padding-right: 8px;
+  margin: 4px 0 2px; padding-left: var(--row-lead); padding-right: 8px;
   font-size: 12.5px;
 }
 .task-link-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -453,7 +467,7 @@ main.finished .group-add { display: none; }
 }
 .notes-toggle:hover { color: var(--j-text); border-color: transparent; }
 .task-notes {
-  margin: 6px 0 2px; padding-left: 62px; padding-right: 8px;
+  margin: 6px 0 2px; padding-left: var(--row-lead); padding-right: 8px;
   color: var(--j-muted); font-size: 14px; line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
@@ -469,7 +483,7 @@ main.finished .group-add { display: none; }
 }
 
 /* details editor */
-.task-details { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 8px 2px 62px; }
+.task-details { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 8px 2px var(--row-lead); }
 .task-details label { display: flex; align-items: center; gap: 6px; color: var(--j-muted); font-size: 12.5px; font-weight: 500; }
 .task-details select,
 .task-details input[type="text"],
@@ -479,7 +493,8 @@ main.finished .group-add { display: none; }
 /* --------------------------------------------------------------- backlog */
 
 #backlog { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
-.backlog-header { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
+/* the backlog's label stands on the same left edge as a group's name */
+.backlog-header { display: flex; align-items: center; gap: 8px; padding: 0 2px 0 var(--row-edge); }
 #backlog-label { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--j-muted); }
 #add-task-input { width: 100%; height: 44px; padding: 0 14px; border-radius: var(--j-radius-sm); }
 
@@ -507,7 +522,9 @@ main.finished .group-add { display: none; }
   .task-actions .note-toggle,
   .task-actions .delete { display: none; }
   .task-details-actions { display: flex; }
-  .task-row { gap: 8px; }
+  /* a smaller gap on a phone: the row, the group header, and the backlog
+     label all use it, so the one left edge stays */
+  :root { --row-gap: 8px; }
 }
 @media (max-width: 420px) {
   #add-project .label { display: none; }
