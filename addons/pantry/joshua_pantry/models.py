@@ -212,5 +212,8 @@ class ConsumptionEvent(Base):
     note: Mapped[str | None] = mapped_column(Text, default=None)
     occurred_at: Mapped[datetime] = mapped_column(default=_now)
     source: Mapped[str] = mapped_column(Text, default="agent")
+    # How much of the item was used. Null empties the stock on hand; a
+    # quantity takes only that much of it (see ``inventory.depleted_at``).
+    quantity: Mapped[float | None] = mapped_column(default=None)
 
     item: Mapped[Item] = relationship(back_populates="consumption_events")

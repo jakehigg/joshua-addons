@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
 
+# The gitleaks binary of the credential scan. The tag pins the version.
+FROM ghcr.io/gitleaks/gitleaks:v8.30.1 AS gitleaks
+
 # Build stage: resolve and install the member and its dependencies.
 FROM python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /usr/local/bin/uv
@@ -15,6 +18,8 @@ RUN useradd --uid 1000 --create-home app
 WORKDIR /app
 COPY --from=builder --chown=1000:1000 /app/.venv /app/.venv
 COPY --from=builder --chown=1000:1000 /app/addons/developer /app/addons/developer
+# The manager scans the diff of a push with gitleaks.
+COPY --from=gitleaks /usr/bin/gitleaks /usr/local/bin/gitleaks
 # The home of developer.db. Owned by app, so the named volume in
 # docker-compose.yml, mounted over this directory, gets the same owner.
 RUN mkdir /data /work && chown 1000:1000 /data /work

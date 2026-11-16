@@ -22,6 +22,7 @@ async def test_lists_every_tool(app_factory) -> None:
         "set_purchase_cost",
         "set_purchase_store",
         "delete_purchase",
+        "delete_consumption",
         "delete_item",
         "add_alias",
         "merge_items",

@@ -23,6 +23,36 @@ releases, with the images and the packaged chart, are at
   new README section "Using your own worker image" has the run-time contract
   that an image must keep.
 
+- `pantry`: undo a consumption event. The new tool
+  `delete_consumption(consumption_id)` deletes one consumption event. It
+  then computes the status of the item again from the events that remain, so
+  a meal that named the wrong item no longer empties that item for good.
+  `get_item_history` gives the id of each event, in `recent_consumptions`.
+  The web UI mirrors the tool: the Admin page lists every consumption event,
+  and `DELETE /api/consumptions/<id>` deletes one.
+
+- `pantry`: use part of an item. `consume_items` takes a quantity for an
+  item, as `{"name": "chia seeds", "quantity": 0.25}`. The quantity comes
+  off the stock of the last purchase, and the item stays in stock while
+  stock remains. A purchase with no quantity on file counts as one unit. A
+  call that passes only names keeps the old behavior: it uses the item up.
+  The addon adds the `quantity` column to `consumption_events` on its next
+  start.
+
+- `developer`: the token usage of each task goes to joshua-ai core, so the
+  usage page counts the work of the addon beside the chat turns. The Claude
+  forwarder counts the tokens of each `v1/messages` answer, streaming and
+  not, and the manager sends one row to `POST <CORE_URL>/v1/usage` when the
+  task ends, with the `JOSHUA_TOKEN_DEVELOPER` bearer. The row holds the kind
+  `developer`, the task id, the model, the number of calls, and the input,
+  output, cache read, and cache write counts. It needs `CORE_URL`, which a
+  run already uses for the limits. Without `CORE_URL`, nothing is reported.
+  A core that does not know the kind `developer` answers 400, and the manager
+  logs one warning for the task. The counter reads a decoded copy of the
+  answer, so a compressed answer (`gzip` or `deflate`) is counted, and the
+  worker still gets the bytes of the API. An answer that the counter cannot
+  read is one warning in the manager log and no row.
+
 - `developer`: development auto-run. The new tool `run_project(repo, project,
   branch?, persona?, notify?)` works through the open tasks of a tasks
   project, in roadmap order, on one branch and one pull request. When a task
@@ -100,6 +130,16 @@ releases, with the images and the packaged chart, are at
   and the blocked state. The note of a task now sits behind a "note"
   control, which starts closed on every task, also after a reload. A long
   note no longer fills the screen. The API and the MCP tools do not change.
+
+- `developer`: the credential scan reads the diff of a push with `gitleaks`,
+  in place of its own patterns. The configuration
+  `joshua_developer/gitleaks.toml` takes every rule of the gitleaks default
+  configuration, and it allowlists placeholder values: a value in angle
+  brackets, such as `token = "<long-lived token, set by the Ansible role>"`,
+  and a line of prose are not findings. A finding names the gitleaks rule,
+  the file, and the line, and never the text that matched. The image holds
+  the `gitleaks` binary, pinned to v8.30.1. Without the binary, the scan is
+  `unavailable`: a diff that the scan did not read is never `clean`.
 
 ## 0.2.0 - 2026-11-08
 

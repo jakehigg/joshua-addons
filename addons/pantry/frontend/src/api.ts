@@ -44,6 +44,23 @@ export interface PurchaseListResponse {
   offset: number;
 }
 
+export interface ConsumptionRecord {
+  id: number;
+  item_id: number;
+  item_name: string;
+  occurred_at: string;
+  quantity: number | null;
+  note: string | null;
+  source: string;
+}
+
+export interface ConsumptionListResponse {
+  consumptions: ConsumptionRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface AliasEntry {
   id: number;
   alias: string;
@@ -109,4 +126,8 @@ export const api = {
     }),
   deletePurchase: (purchaseId: number) =>
     apiFetch<{ ok: boolean }>(`/api/purchases/${purchaseId}`, { method: "DELETE" }),
+  listConsumptions: (limit: number, offset: number) =>
+    apiFetch<ConsumptionListResponse>(`/api/consumptions?limit=${limit}&offset=${offset}`),
+  deleteConsumption: (consumptionId: number) =>
+    apiFetch<{ ok: boolean }>(`/api/consumptions/${consumptionId}`, { method: "DELETE" }),
 };
