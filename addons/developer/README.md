@@ -37,7 +37,8 @@ pushes one branch, sends one report, and stops.
 | `develop(repo, brief, base_branch?, branch?, persona?, notify?, refs?)` | Starts a task. Returns `task_id`, `persona`, and `status` at once. `refs` is a list of up to 5 reference repositories that the worker can read (see [Reference repositories](#reference-repositories)). |
 | `rework(repo, feedback, pr?, branch?, persona?, notify?, refs?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. `refs` is the same as for `develop`. |
 | `answer(task_id, text)` | Gives a waiting worker the answer to its question. On a task that stopped `blocked` or `timed_out` after a push, starts a new worker that continues on the branch. |
-| `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, and the open question. |
+| `resume(task_id, note?, persona?)` | Starts one new worker for a task that ran out of turns or out of time. The worker continues from the checkout in the work directory of the task (see [Resuming a task that ran out](#resuming-a-task-that-ran-out)). |
+| `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, the open question, the resumes, and `resumable`. |
 | `task_output(task_id)` | The full report and the session log. |
 | `list_tasks(limit?)` | The recent tasks of the person, newest first. `limit` is 1 to 100, default 10. |
 | `get_settings()` | The git name, the git email, the default persona, and the chat for reports. |
@@ -92,6 +93,10 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 - `answer` on a `failed` task resumes it when the manager has saved commits
   of the task (see [When a push fails](#when-a-push-fails)). `task_output` shows the reports of the earlier workers in
   `history`.
+- `resume` on a `failed` or `timed_out` task that ran out of turns or out of
+  time starts one new worker on the work it left (see [Resuming a task that
+  ran out](#resuming-a-task-that-ran-out)). `work.max_resumes` caps the
+  resumes of one task.
 - A manager restart does not end a task whose worker still runs. See
   [What a restart does to a running task](#what-a-restart-does-to-a-running-task).
 
@@ -373,7 +378,9 @@ worker:                            # the limits of one worker
   disk: 4Gi
   manager_grace: 600
   env: {}                          # extra variables for your own worker image. See "Using your own worker image".
-work: { keep_failed: 7 }           # days a kept work directory stays. See "The work directories".
+work:                              # the work directories. See "The work directories".
+  keep_failed: 7                   # days a kept work directory stays
+  max_resumes: 2                   # resumes of one task. See "Resuming a task that ran out".
 runs:                              # the limits ceilings of a run, in percent used. See "Development auto-run".
   ceiling_five_hour_pct: 80
   ceiling_seven_day_pct: 90
@@ -765,6 +772,39 @@ not lose the commits:
 When the bundle cannot be made or sent, the error says that the commits are
 lost, and `answer` returns `not_resumable`.
 
+## Resuming a task that ran out
+
+A big task can use every turn of its persona, or all of its time, before the
+work is done. `resume(task_id, note?, persona?)` gives such a task one more
+worker, instead of a new task with a new session.
+
+1. The new worker gets the same repository, the same branch, the same work
+   directory, and the same persona. `persona` takes another persona, for a
+   worker with another model.
+2. Its brief holds the original brief, the summary and the error of the
+   worker before it, the `note` when the call has one, and the instruction to
+   read the state of the checkout, commit what is not committed, and go on
+   from there. It never starts the task over.
+3. The work stays in one task: the report of the earlier worker goes into
+   `history`, which `task_output` returns, and the status, the cost, and the
+   commit of the task are written in place.
+
+`task_status` has `resumable`, so a resumable failure is clear without the
+log, and `resumes`, the count of the resumes so far. A task takes a resume
+when:
+
+- its status is `failed` or `timed_out`;
+- it ended at the turn limit, at the session timeout, or with its worker
+  gone, and not from a refusal, a rejected call, or a failed push, which
+  `answer` already takes;
+- its work directory still holds a checkout;
+- it has fewer than `work.max_resumes` resumes (default 2).
+
+Every other call gets `not_resumable`, and the message names the condition
+that failed. A task at `work.max_resumes` is done: read the log with
+`task_output` before you start the work again. The cap is what makes a task
+that loops end.
+
 ## What a restart does to a running task
 
 A deploy of the addon, a changed Secret with a Reloader, a node drain, and a
@@ -842,7 +882,9 @@ With kept storage, the manager has the storage mounted at
    cloning. When the remote branch moved, the worker rebases the kept
    commits on it; when that rebase fails, the commits stay as they are.
 4. `answer` also resumes a `failed` task whose directory holds a checkout,
-   for example a task that a manager restart failed.
+   for example a task that a manager restart failed. `resume` takes up a task
+   that ran out of turns or out of time from the same checkout (see
+   [Resuming a task that ran out](#resuming-a-task-that-ran-out)).
 5. A sweeper, at start and every hour, deletes a kept directory when its
    task ended more than `work.keep_failed` days ago (default 7), and a
    directory with no task in the store that is older than that. It logs each

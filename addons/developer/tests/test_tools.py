@@ -24,6 +24,7 @@ async def test_the_tool_list_is_final(app) -> None:
         "list_personas",
         "list_tasks",
         "pause_run",
+        "resume",
         "resume_run",
         "rework",
         "run_project",

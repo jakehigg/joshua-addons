@@ -48,9 +48,11 @@ configFile:
       manager_grace: 600
       env: {}
     # The days a task that did not end success keeps its work directory,
-    # with worker.workClaim set. The sweeper then deletes it.
+    # with worker.workClaim set. The sweeper then deletes it. max_resumes is
+    # the number of times the resume tool starts a new worker for one task.
     work:
       keep_failed: 7
+      max_resumes: 2
     # The limits ceilings of a run (run_project), in percent used. A run
     # pauses before a task when a window is at or over its ceiling.
     runs:

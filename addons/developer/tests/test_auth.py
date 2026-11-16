@@ -72,6 +72,7 @@ PERSON_TOOLS = [
     ("develop", {"repo": "github.com/example-home/app", "brief": "x"}),
     ("rework", {"repo": "github.com/example-home/app", "pr": 1, "feedback": "x"}),
     ("answer", {"task_id": "x", "text": "x"}),
+    ("resume", {"task_id": "x"}),
     ("get_settings", {}),
     ("set_settings", {"notify": "x"}),
     ("run_project", {"repo": "github.com/example-home/app", "project": "x"}),

@@ -8,6 +8,22 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: resume a task that ran out of turns. The new tool
+  `resume(task_id, note?, persona?)` starts one new worker for a task that
+  ended `failed` or `timed_out` at the turn limit, at the session timeout, or
+  with its worker gone. The worker gets the same repository, branch, work
+  directory, and persona, and a brief that holds the original brief, the
+  summary and the error of the worker before it, the `note` when the call has
+  one, and the instruction to read the checkout, commit what is not
+  committed, and go on. The work stays in one task: the earlier report goes
+  into `history`, which `task_output` returns. The new `work.max_resumes` key
+  of `developer.yaml` caps the resumes of one task, 2 by default, so a task
+  that loops still ends. `task_status` gets `resumable` and `resumes`, and
+  the report of a resumable failure says that the task can be resumed. A task
+  whose work directory the sweeper deleted, a task that ended for another
+  cause, and a task at the cap all get `not_resumable`, and the message names
+  the condition that failed.
+
 - `developer`: your own worker image, on both runtimes. The new `worker.env`
   block of `developer.yaml` holds extra environment variables for each
   worker, such as `CARGO_HOME: /tmp/cargo`, which the Docker runtime and the

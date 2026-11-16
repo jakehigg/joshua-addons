@@ -44,6 +44,8 @@ def test_defaults_without_a_file(tmp_path: Path) -> None:
     assert config.people == {}
     assert config.ask_wait_s == 7200
     assert config.ask_wait_of("opus") == 7200
+    assert config.work.keep_failed == 7
+    assert config.work.max_resumes == 2
 
 
 def test_the_run_settings(tmp_path: Path) -> None:
@@ -186,6 +188,8 @@ def test_a_package_host_that_is_not_a_name_is_refused(host: str) -> None:
         ({"people": {"alex": {"default_persona": "haiku"}}}, "people.alex.default_persona"),
         ({"network": "maybe"}, "network"),
         ({"max_workers": 0}, "max_workers"),
+        ({"work": {"max_resumes": -1}}, "work.max_resumes"),
+        ({"work": {"max_resumes": "2"}}, "work.max_resumes"),
         ({"ask_wait_s": 0}, "ask_wait_s"),
         ({"ask_wait_s": "60"}, "ask_wait_s"),
         ({"ask_wait_s": 1.5}, "ask_wait_s"),

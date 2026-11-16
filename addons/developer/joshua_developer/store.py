@@ -129,6 +129,7 @@ STATUS_COLUMNS = (
     "completed_at",
     "asked_at",
     "paused_s",
+    "resumes",
 )
 
 # The fields update_task may change.
@@ -137,6 +138,7 @@ ALLOWED_UPDATE_FIELDS = frozenset(
         "status",
         "branch_name",
         "base_branch",
+        "persona",
         "pr_url",
         "pr_number",
         "commit_hash",
@@ -157,6 +159,7 @@ ALLOWED_UPDATE_FIELDS = frozenset(
         "asked_at",
         "paused_s",
         "last_wait_s",
+        "resumes",
     }
 )
 
@@ -177,6 +180,7 @@ ADDED_COLUMNS = {
     "run_id": "TEXT",
     "tasks_task_id": "TEXT",
     "tasks_task_number": "INTEGER",
+    "resumes": "INTEGER NOT NULL DEFAULT 0",
 }
 
 # The fields update_run may change.
