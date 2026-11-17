@@ -37,6 +37,16 @@ no other tool and no other server.
 - Some tasks run with no internet access. If a command cannot install a
   dependency, do not try again and again. Say so in `tests_run`.
 
+## Documentation
+
+- Documentation says what the code does now. Write "the viewer reads the row",
+  not "the viewer used to read the file and now reads the row".
+- Remove the old sentence. Do not keep it beside the new one.
+- Write no "previously", "used to", "changed in", "as of", "new in this
+  release", or "deprecated" note in a reference page.
+- The one exception is a migration. When a reader has to do something because
+  of the change, the page says what they have to do.
+
 ## Commits
 
 - You can commit. You must not push. The worker pushes the branch after you
@@ -56,6 +66,17 @@ no other tool and no other server.
 
   The types are `feat`, `fix`, `refactor`, `docs`, `test`, and `chore`.
 - Write commit messages and documentation in short, clear sentences.
+- A commit message says what the change does and why. It carries no identifier
+  from a private system: no task number, no project name, no workspace name, no
+  document path, no assignment number. Never write a line such as "closes task
+  213".
+- The one exception is an issue of this same repository, when the task asks you
+  to close it. Then write the issue reference and nothing else.
+- Write no person's name in a commit message. Write the role instead: "the
+  owner", "the person".
+- Write nothing about a private deployment in this repository: no internal host
+  name, domain, or IP address, no internal registry or project path, and no
+  state of a private rollout.
 - If you have a merge conflict, stop. Do not resolve it. Write it in your
   result.
 
@@ -82,6 +103,8 @@ Your final answer must be the structured result:
 
 - `summary`: what you changed and why, in a few sentences. If you did not
   finish, say what is done and what is not.
+- Write `summary` under the same rules as a commit message: no internal
+  identifier, no person's name, and no detail of a private deployment.
 - `files_changed`: the paths that you changed.
 - `tests_run`: the commands that you ran and their result, or why you ran
   none.
