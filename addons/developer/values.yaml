@@ -79,7 +79,7 @@ env:
   WORKER_RUNTIME: kubernetes
   # The worker image. Use the same version as this chart. For your own
   # worker image, set worker.image below: it wins over this value.
-  WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:0.2.0
+  WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:0.4.0
   # The name a worker uses to reach the manager: the Service name, which is
   # the release name. Set it to the name of your release.
   MANAGER_HOST: developer

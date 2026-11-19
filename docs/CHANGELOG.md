@@ -6,6 +6,31 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-19
+
+### Upgrading from 0.2.0
+
+- Set `targetRevision` (ArgoCD) or `JOSHUA_ADDONS_VERSION` (compose) to
+  `0.4.0`, as [releasing.md](releasing.md#4-update-an-installation) says.
+- `developer`: the manager and the worker image must be of the same
+  release. Set the `env.WORKER_IMAGE` tag to `0.4.0` when your own values
+  name it.
+- `developer`: `run_project` needs `TASKS_URL`. Without it, the tool is
+  refused.
+- `developer`: the usage reporting and the limits need `CORE_URL`. Without
+  it, nothing is reported.
+- `developer`: the work directory needs the chart value `worker.workClaim`,
+  an existing ReadWriteMany claim, on Kubernetes. An empty value keeps the
+  `emptyDir`. On compose, the named volume `developer-work` needs Docker
+  Engine 26 or later.
+- `developer`: the package proxy is off by default. To use it, add the
+  `packages` block to `developer.yaml`, and add port 8003 to
+  `service.extraPorts`.
+- The databases upgrade on the next start: `pantry` adds the `quantity`
+  column to `consumption_events`, and `developer` adds the `runs` table and
+  the `run_id`, `tasks_task_id`, and `tasks_task_number` columns on `tasks`.
+  Nothing is dropped.
+
 ### Added
 
 - `developer`: your own worker image, on both runtimes. The new `worker.env`
