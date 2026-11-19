@@ -902,7 +902,7 @@ image, with the compilers and the tools that your repositories need. Build it
 `FROM` the worker image of your release, so it keeps the worker program:
 
 ```dockerfile
-FROM ghcr.io/jakehigg/joshua-addons-developer-worker:0.2.0
+FROM ghcr.io/jakehigg/joshua-addons-developer-worker:0.4.0
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends <your tools> \
     && rm -rf /var/lib/apt/lists/*
