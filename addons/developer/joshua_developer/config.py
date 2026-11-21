@@ -5,6 +5,11 @@ the personas, the git hosts, the repository lists, and the people. A token is
 never a value in ``developer.yaml``: a platform names the environment variable
 that holds its token with ``token_env``.
 
+Each repository pattern carries a class, ``public`` or ``internal``. The
+manager refuses a task that holds a writable public repository and an
+internal repository together, so internal text cannot travel into a public
+repository through one sandbox.
+
 Every error message names the key that is wrong, and never a token value.
 """
 
@@ -12,13 +17,22 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+from joshua_developer.repos import repo_allowed
 
 DEFAULT_DATA_DIR = "/data"
 DEFAULT_CONFIG = "/etc/joshua-addon/developer.yaml"
@@ -69,6 +83,11 @@ RESERVED_WORKER_ENV = frozenset(
 # When a worker pod pulls its image. Kubernetes only.
 IMAGE_PULL_POLICIES = ("Always", "IfNotPresent", "Never")
 DEFAULT_IMAGE_PULL_POLICY = "IfNotPresent"
+# The class of a repository. ``public`` is a repository that anybody can read;
+# ``internal`` is one whose text stays inside. A pattern with no class is
+# public.
+REPO_CLASSES = ("public", "internal")
+DEFAULT_REPO_CLASS = "public"
 
 # Text that starts like one of these is a token, not a name.
 TOKEN_PREFIXES = ("sk-ant-", "glpat-", "ghp_", "github_pat_", "xoxb-")
@@ -92,6 +111,49 @@ class ConfigError(ValueError):
 
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+def _check_pattern(value: str) -> str:
+    """``value`` as a repository pattern: stripped and lowercase."""
+    text = (value or "").strip().lower()
+    if not text:
+        raise ValueError("a repository pattern is host/owner/name, such as github.com/owner/*")
+    return text
+
+
+class RepoPattern(_Model):
+    """One repository pattern and its class.
+
+    A plain string in ``developer.yaml`` is the pattern with the class
+    ``public``. A mapping gives the class: ``{pattern: ..., class: internal}``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    pattern: str
+    repo_class: Literal["public", "internal"] = Field(default=DEFAULT_REPO_CLASS, alias="class")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _plain_string(cls, value: Any) -> Any:
+        return {"pattern": value} if isinstance(value, str) else value
+
+    @field_validator("pattern")
+    @classmethod
+    def _pattern(cls, value: str) -> str:
+        return _check_pattern(value)
+
+
+def repo_class(repo: str, patterns: Iterable[RepoPattern]) -> str | None:
+    """The class of ``repo``, from the patterns that match it, or None for no match.
+
+    A repository that matches patterns of both classes is ``internal``, the
+    class with the tighter rules.
+    """
+    found = {p.repo_class for p in patterns if repo_allowed(repo, [p.pattern])}
+    if "internal" in found:
+        return "internal"
+    return DEFAULT_REPO_CLASS if found else None
 
 
 class Persona(_Model):
@@ -154,7 +216,7 @@ class Person(_Model):
     default_persona: str | None = None
     notify: str | None = None
     platforms: dict[str, PersonPlatform] = Field(default_factory=dict)
-    repos: list[str] = Field(default_factory=list)
+    repos: list[RepoPattern] = Field(default_factory=list)
 
 
 class WorkerLimits(_Model):
@@ -246,7 +308,7 @@ class DeveloperConfig(_Model):
     work: WorkConfig = Field(default_factory=WorkConfig)
     runs: RunsConfig = Field(default_factory=RunsConfig)
     platforms: dict[str, Platform] = Field(default_factory=dict)
-    repos: list[str] = Field(default_factory=list)
+    repos: list[RepoPattern] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
 
     @field_validator("network", mode="before")

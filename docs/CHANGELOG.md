@@ -8,6 +8,15 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: a class for each repository pattern. An entry of `repos`, in
+  `developer.yaml`, is a plain pattern of class `public`, or a mapping with
+  `pattern` and `class` (`public` or `internal`). `develop` refuses a task
+  that holds a writable public repository and an internal reference
+  repository together, with the reason `repo_class_mixed`, before the task
+  takes a lock. Internal text then cannot travel into a public repository
+  through one sandbox. An existing file keeps its behavior, because a plain
+  pattern is public.
+
 - `tasks`: search finds a task by its number. A person who knows the number
   types `284`, or `#284`, in the search box of the web UI, or gives it to
   `search_tasks`, and that task comes first, done or not. The text search

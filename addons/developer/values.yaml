@@ -72,6 +72,12 @@ configFile:
       github.com:
         kind: github
         token_env: GITHUB_TOKEN
+    # The repository patterns, fnmatch on host/owner/name. A plain pattern
+    # is of class public. A mapping gives the class:
+    #   - pattern: git.example.net/platform/*
+    #     class: internal
+    # A task that writes to a public repository takes no internal reference
+    # repository. See "The repository class" in the README of the addon.
     repos: []
     people: {}
 
