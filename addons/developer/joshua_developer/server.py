@@ -347,8 +347,8 @@ async def task_status(task_id: str, ctx: Context) -> dict:
     status is dispatched, running, success, failed, blocked, or timed_out.
     The result also has the branch, the pull request URL, the cost, the
     summary, the error, the open question, the scan result (clean, partial,
-    hit, or unavailable), the resumes of the task, and resumable: true when
-    the resume tool takes the task up again.
+    hit, unavailable, or disabled), the resumes of the task, and resumable:
+    true when the resume tool takes the task up again.
     """
     caller = _caller(ctx)
     task = {**_own_task(caller, task_id), "resumable": _get_manager().resumable(task_id)}

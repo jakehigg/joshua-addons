@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
 import pytest
-from conftest import make_settings
+from conftest import GIT_TOKENS, make_settings
 from docker.errors import APIError, ImageNotFound, NotFound
 from joshua_developer import runtime_docker, server
 from joshua_developer.runtime import Report, TaskClock
@@ -463,6 +464,54 @@ def test_worker_env_reaches_the_worker(tmp_path) -> None:
     assert env["MANAGER_URL"] == "http://developer:8001"
     assert env["HOME"] == "/tmp/home"
     assert env["NO_PROXY"] == "developer,localhost,127.0.0.1,.svc,.cluster.local"
+
+
+def test_two_tasks_of_two_people_get_the_same_worker_environment(tmp_path) -> None:
+    """A worker holds nothing of its person but the token of its own task.
+
+    Only TASK_ID, TASK_TOKEN, and GIT_PROXY_URL (which carries the token)
+    differ between two tasks. No name, no repository, and no git token of a
+    person reaches the environment, so one worker cannot read the work of
+    another person.
+    """
+    config = {
+        "worker": {"env": {"PIP_INDEX_URL": "http://pypi"}},
+        "packages": {"enabled": True, "hosts": ["pypi.org"]},
+    }
+    settings = make_settings(tmp_path, config=config, work_dir=tmp_path / "work")
+    one = worker_environment(
+        settings,
+        {
+            **TASK,
+            "task_id": "11111111-aaaa-bbbb-cccc-dddddddddddd",
+            "worker_token": "tok-one",
+            "person": "alex",
+            "repo": "github.com/example-home/app",
+        },
+    )
+    two = worker_environment(
+        settings,
+        {
+            **TASK,
+            "task_id": "22222222-aaaa-bbbb-cccc-dddddddddddd",
+            "worker_token": "tok-two",
+            "person": "mia",
+            "persona": "opus",
+            "repo": "github.com/example-home/lib",
+        },
+    )
+    own = ("TASK_ID", "TASK_TOKEN", "GIT_PROXY_URL")
+    assert set(one) == set(two)
+    assert {name: one[name] for name in one if name not in own} == {
+        name: two[name] for name in two if name not in own
+    }
+    assert all(one[name] != two[name] for name in own)
+    for env, person in ((one, "alex"), (two, "mia")):
+        text = json.dumps(env)
+        assert person not in text
+        assert "example-home" not in text
+        for token in GIT_TOKENS.values():
+            assert token not in text
 
 
 @pytest.mark.parametrize("mode", ["1", "ask"])

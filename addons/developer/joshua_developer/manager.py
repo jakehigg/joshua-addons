@@ -3,9 +3,10 @@
 The MCP tools call this class. A call that breaks a rule gets a dict with
 ``status: "rejected"``, a ``reason``, and a ``message``. The reasons are
 ``invalid_arguments``, ``repo_not_allowed``, ``repo_not_configured``,
-``token_missing``, ``pr_not_found``, ``pr_not_open``, ``platform_error``,
-``unknown_persona``, ``concurrency_limit``, ``locked``, ``not_waiting``,
-``not_resumable``, and ``branch_is_base``. The run tools (see ``runs``) add
+``repo_class_mixed``, ``token_missing``, ``pr_not_found``, ``pr_not_open``,
+``platform_error``, ``unknown_persona``, ``concurrency_limit``, ``locked``,
+``not_waiting``, ``not_resumable``, and ``branch_is_base``. The run tools
+(see ``runs``) add
 ``tasks_not_configured``, ``tasks_unreachable``, ``project_not_found``,
 ``no_tasks``, ``run_exists``, ``run_not_found``, ``run_ambiguous``,
 ``run_not_pausable``, and ``run_not_resumable``.
@@ -13,6 +14,12 @@ The MCP tools call this class. A call that breaks a rule gets a dict with
 A task never works on its base branch, ``main``, or ``master``
 (``branch_is_base``). This is a guard, not a boundary: the git token can
 push to every branch that the host lets it write.
+
+Each repository pattern has a class, ``public`` or ``internal``. ``develop``
+refuses a task that holds a writable public repository and an internal
+reference repository together (``repo_class_mixed``), before the task takes
+a lock, so internal text cannot travel into a public repository through one
+sandbox.
 
 When a worker reports a push, the manager gates the pull request: it reads
 the diff of the worker's commits over the platform API and scans it for
@@ -63,7 +70,7 @@ from pathlib import Path
 from typing import Any
 
 from joshua_developer import notify, platforms, usage
-from joshua_developer.config import DeveloperConfig, Settings
+from joshua_developer.config import DeveloperConfig, RepoPattern, Settings, repo_class
 from joshua_developer.locks import LockedError, LockManager
 from joshua_developer.log import get_logger
 from joshua_developer.platforms import Platform, PlatformConfigError, PlatformError, Resolved
@@ -74,11 +81,10 @@ from joshua_developer.repos import (
     default_branch_name,
     normalize_repo,
     parse_pr,
-    repo_allowed,
 )
 from joshua_developer.runs import Runs
 from joshua_developer.runtime import Report, Runtime, TaskClock
-from joshua_developer.scan import Finding, ScanUnavailable, scan_diff
+from joshua_developer.scan import Finding, ScanUnavailable, scan_diff, scan_disabled
 from joshua_developer.store import (
     ACTIVE_STATUSES,
     TERMINAL_STATUSES,
@@ -441,10 +447,14 @@ class Manager:
     def _default_notify(self, task: dict[str, Any]) -> str | None:
         return self.effective_settings(task["person"])["notify"]
 
-    def allowed_patterns(self, person: str) -> list[str]:
+    def allowed_patterns(self, person: str) -> list[RepoPattern]:
         """The instance repository patterns plus the person's own."""
         entry = self.config.people.get(person)
         return [*self.config.repos, *(entry.repos if entry else [])]
+
+    def repo_class(self, person: str, repo: str) -> str | None:
+        """The class of ``repo`` for ``person``, or None when no pattern admits it."""
+        return repo_class(repo, self.allowed_patterns(person))
 
     def resolve_persona(self, person: str | None, requested: str | None) -> str | None:
         """The call argument, else the person's default, else the instance default.
@@ -493,6 +503,9 @@ class Manager:
         checked = self._admit_refs(person, admitted[0], refs)
         if isinstance(checked, dict):
             return checked
+        refused = self._admit_classes(person, admitted[0], checked)
+        if refused is not None:
+            return refused
         return await self._dispatch(
             task_id=task_id,
             person=person,
@@ -627,6 +640,30 @@ class Manager:
             refs.append(ref)
         return refs
 
+    def _admit_classes(self, person: str, repo: str, refs: list[str]) -> dict[str, Any] | None:
+        """Refuse a task that holds a writable public repository and an internal one.
+
+        The task repository is the writable one. An internal reference
+        repository beside it would let internal text travel into the public
+        repository through one sandbox. The refusal comes before the lock.
+        """
+        if self.repo_class(person, repo) != "public":
+            return None
+        for ref in refs:
+            if self.repo_class(person, ref) == "internal":
+                logger.warning(
+                    {
+                        "message": "refused a task that mixes the repository classes",
+                        "person": person,
+                    }
+                )
+                return rejected(
+                    "repo_class_mixed",
+                    f"the repository {repo} is public and the repository {ref} is internal; "
+                    "a task works in one repository class",
+                )
+        return None
+
     def _admit(self, person: str, raw_repo: str) -> tuple[str, Resolved] | dict[str, Any]:
         """Check the repository before any network call.
 
@@ -638,7 +675,7 @@ class Manager:
             repo = normalize_repo(raw_repo)
         except RepoError as exc:
             return rejected("invalid_arguments", str(exc))
-        if not repo_allowed(repo, self.allowed_patterns(person)):
+        if self.repo_class(person, repo) is None:
             logger.warning({"message": "refused a repository outside the list", "person": person})
             return rejected(
                 "repo_not_allowed",
@@ -974,7 +1011,9 @@ class Manager:
            and scan it. Without a ``clone_head``, the diff starts at the base
            branch. A hit fails the task (``_reject_push``). The scan is
            ``unavailable`` when a ``git`` host has no diff API, and when
-           gitleaks did not run.
+           gitleaks did not run. For a repository in
+           ``scan.disabled_repos``, the scan is ``disabled``: the manager
+           reads no diff of it.
         2. On a successful ``develop``, find the open pull request of the
            branch, or open one. On a ``rework``, check that the pull request
            is still there.
@@ -1002,12 +1041,16 @@ class Manager:
             return {"status": "failed", "error": str(exc)}
         out: dict[str, Any] = {}
         step = "the diff"
+        disabled = scan_disabled(repo, self.config.scan.disabled_repos)
         try:
-            if platform.kind == "git":
+            if disabled or platform.kind == "git":
                 diff = None
             else:
                 diff = await retry_5xx(lambda: platform.compare(repo, since, head))
-            if diff is None or diff.unavailable:
+            if disabled:
+                logger.info({"message": "the scan is off for this repository", "task_id": task_id})
+                out["scan"] = "disabled"
+            elif diff is None or diff.unavailable:
                 out["scan"] = "unavailable"
             else:
                 try:

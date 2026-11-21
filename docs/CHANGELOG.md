@@ -8,6 +8,34 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: a class for each repository pattern. An entry of `repos`, in
+  `developer.yaml`, is a plain pattern of class `public`, or a mapping with
+  `pattern` and `class` (`public` or `internal`). `develop` refuses a task
+  that holds a writable public repository and an internal reference
+  repository together, with the reason `repo_class_mixed`, before the task
+  takes a lock. Internal text then cannot travel into a public repository
+  through one sandbox. An existing file keeps its behavior, because a plain
+  pattern is public.
+
+- `developer-worker`: the tool surface of the worker is pinned. The option
+  check of the session refuses another tool, another MCP server, and an MCP
+  config that is not its own, so the isolation of a worker cannot widen by
+  accident. Tests hold the names of the tools and the servers, and prove that
+  two tasks of two people get the same worker environment, but their own task
+  token.
+
+- `developer-worker`: the prompt forbids a signature and an attribution. The
+  worker adds no "written for" line to a commit message, to a pull request, or
+  to a file. The `Co-Authored-By:` trailer of Claude Code stays.
+
+- `developer`: `scan.disabled_repos` in `developer.yaml`. The credential scan
+  of the pull request gate skips a push to a repository that a pattern in the
+  list admits, and `scan` is then `disabled`. A plaintext secret that belongs
+  in an internal repository no longer stops the work. Every pattern in the
+  list holds internal repositories only: a pattern that a `public` pattern
+  admits stops the addon at start, with the pattern in the message. The list
+  changes no rule of `gitleaks.toml`.
+
 - `tasks`: search finds a task by its number. A person who knows the number
   types `284`, or `#284`, in the search box of the web UI, or gives it to
   `search_tasks`, and that task comes first, done or not. The text search

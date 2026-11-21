@@ -3,7 +3,8 @@
 The session gets the file tools and Bash, and one MCP server: ``manager``,
 in-process, with the one tool ``ask``. It loads no settings from the
 checkout (``setting_sources=[]``) and no MCP config but its own. It never
-holds WebSearch or WebFetch; ``check_options`` refuses options that do.
+holds WebSearch or WebFetch. ``check_options`` refuses options with another
+tool, another MCP server, or settings from the checkout.
 
 The session runs on a ``Clock``. A watchdog interrupts the session when the
 clock has no time left. The clock pauses while ``ask`` waits for an answer.
@@ -250,12 +251,23 @@ def ask_server(asker: Asker) -> McpSdkServerConfig:
 
 
 def check_options(options: ClaudeAgentOptions) -> None:
-    """Refuse options that give the session the web, or settings from the checkout."""
+    """Refuse options that widen the session.
+
+    The session holds the tools of ``BASE_TOOLS``, the ask tool, and the one
+    MCP server ``manager``. It takes no tool of the web, no other MCP server
+    or MCP config, and no settings from the checkout.
+    """
     tools = set(options.tools or []) | set(options.allowed_tools)
     if tools & FORBIDDEN_TOOLS:
         raise AssertionError(f"the worker may not hold {sorted(tools & FORBIDDEN_TOOLS)}")
     if not isinstance(options.tools, list) or set(options.tools) - set(BASE_TOOLS):
         raise AssertionError("the worker holds only the file tools and Bash")
+    if tools - {*BASE_TOOLS, ASK_TOOL}:
+        raise AssertionError(f"the worker allows only the file tools, Bash, and {ASK_TOOL}")
+    if not isinstance(options.mcp_servers, dict) or set(options.mcp_servers) != {ASK_SERVER}:
+        raise AssertionError(f"the worker holds one MCP server, {ASK_SERVER}")
+    if options.strict_mcp_config is not True:
+        raise AssertionError("the worker reads no other MCP config: strict_mcp_config must be true")
     if options.setting_sources != []:
         raise AssertionError("the worker loads no settings: setting_sources must be []")
 

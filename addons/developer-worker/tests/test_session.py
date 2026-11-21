@@ -83,6 +83,50 @@ def test_build_options_holds_the_tools_and_no_settings(
     assert options.max_turns == 80
 
 
+def test_the_tool_surface_of_the_worker_is_exact(tmp_path: Path, manager: FakeManager) -> None:
+    """The tools and the servers of the session, name by name.
+
+    This test holds the names, so a tool or a server that the worker gains
+    fails it. The isolation of the worker cannot widen by accident.
+    """
+    options = options_for(tmp_path, manager, Clock(60))
+    assert set(options.tools) == {"Read", "Edit", "Write", "Bash", "Glob", "Grep"}
+    assert set(options.allowed_tools) == {
+        "Read",
+        "Edit",
+        "Write",
+        "Bash",
+        "Glob",
+        "Grep",
+        "mcp__manager__ask",
+    }
+    assert set(options.disallowed_tools) == {"WebSearch", "WebFetch"}
+    assert not {"WebSearch", "WebFetch"} & set(options.tools + options.allowed_tools)
+    assert set(options.mcp_servers) == {"manager"}
+    assert options.strict_mcp_config is True
+    assert options.setting_sources == []
+    session.check_options(options)
+
+
+def test_check_options_refuses_a_seventh_tool_or_a_second_server(
+    tmp_path: Path, manager: FakeManager
+) -> None:
+    server = options_for(tmp_path, manager, Clock(60)).mcp_servers["manager"]
+    for change, message in (
+        ({"tools": [*session.BASE_TOOLS, "Task"]}, "only the file tools"),
+        ({"allowed_tools": [*session.BASE_TOOLS, session.ASK_TOOL, "Task"]}, "allows only"),
+        ({"mcp_servers": {"manager": server, "other": server}}, "one MCP server"),
+        ({"mcp_servers": {}}, "one MCP server"),
+        ({"mcp_servers": "/work/mcp.json"}, "one MCP server"),
+        ({"strict_mcp_config": False}, "strict_mcp_config"),
+    ):
+        options = options_for(tmp_path, manager, Clock(60))
+        for key, value in change.items():
+            setattr(options, key, value)
+        with pytest.raises(AssertionError, match=message):
+            session.check_options(options)
+
+
 def test_the_cli_environment_points_at_the_forwarder(tmp_path: Path) -> None:
     env = session.cli_env(MANAGER_URL + "/", TASK_TOKEN, tmp_path / "h", tmp_path / "c")
     assert env["ANTHROPIC_BASE_URL"] == f"{MANAGER_URL}/worker/claude"

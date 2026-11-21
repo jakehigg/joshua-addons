@@ -65,9 +65,9 @@ brief, and `running` after that. `repo` is a URL or `host/owner/name`, such as
 
 A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
-`repo_not_configured`, `token_missing`, `pr_not_found`, `pr_not_open`,
-`platform_error`, `unknown_persona`, `concurrency_limit`, `locked`,
-`not_waiting`, `not_resumable`, and `branch_is_base`. The run tools add
+`repo_not_configured`, `repo_class_mixed`, `token_missing`, `pr_not_found`,
+`pr_not_open`, `platform_error`, `unknown_persona`, `concurrency_limit`,
+`locked`, `not_waiting`, `not_resumable`, and `branch_is_base`. The run tools add
 `tasks_not_configured`, `tasks_unreachable`, `project_not_found`, `no_tasks`,
 `run_exists`, `run_not_found`, `run_ambiguous`, `run_not_pausable`, and
 `run_not_resumable`. The rules:
@@ -80,6 +80,9 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
   same time. A task whose worker still starts holds its slot.
 - The persona is the `persona` argument, else the default of the person,
   else `default_persona`.
+- A `develop` works in one repository class. A task with a public `repo` and
+  an internal repository in `refs` gets `repo_class_mixed`, before the task
+  takes a lock (see [The repository class](#the-repository-class)).
 - A person sees only their own tasks.
 - `answer` on a `running` task works only when the worker waits for the
   answer to its open question. When the worker stopped the wait, or the
@@ -199,6 +202,28 @@ The read-only clone is a guard, not a boundary: the git token of a host can
 still write where the host lets it. Give a reference repository on a host
 whose token can only read when that matters.
 
+## The repository class
+
+Each repository pattern in `repos` has a class: `public` or `internal`. A
+pattern with no class is `public`. A repository that matches patterns of both
+classes is `internal`, the class with the tighter rules.
+
+- `public` is a repository that anybody can read.
+- `internal` is a repository whose text stays inside. The manager keeps it
+  out of a task that writes to a public repository, and `scan.disabled_repos`
+  can hold it (see [The credential scan of an internal
+  repository](#the-credential-scan-of-an-internal-repository)).
+
+A task writes to one repository: `repo`. A `develop` with a public `repo` and
+an internal repository in `refs` is refused with `repo_class_mixed`, before
+the task takes a lock. The message names both repositories and their classes.
+A task inside one class runs: a public repository with public references, and
+an internal repository with references of either class, because the writable
+repository is then internal.
+
+The class is a rule of this addon, not a permission on the git host. Give
+each host the smallest token scope as well.
+
 ## The task clock
 
 A task has a time limit on its work: the persona's `timeout_s`. The clock
@@ -303,6 +328,10 @@ hostile, and these rules limit what it can read and where its data can go:
    folder for each task, with limits on time, turns, memory, and CPU.
 8. **A person reaches only listed repositories.** The manager refuses a
    repository outside the person's list before it calls the git host.
+9. **A task works in one repository class.** The manager refuses a task that
+   holds a writable public repository and an internal repository together
+   (`repo_class_mixed`), so internal text cannot travel into a public
+   repository through one sandbox (see "The repository class").
 
 What a bad repository can still do: spend money on the Claude plan up to the
 persona limits, put text in a diff that a person reads, and send the content
@@ -384,6 +413,9 @@ work:                              # the work directories. See "The work directo
 runs:                              # the limits ceilings of a run, in percent used. See "Development auto-run".
   ceiling_five_hour_pct: 80
   ceiling_seven_day_pct: 90
+scan:                              # the credential scan of the pull request gate
+  disabled_repos:                  # patterns whose push is not scanned; each one is internal
+    - git.example.net/platform/*   # See "The credential scan of an internal repository".
 packages:                          # the package proxy. See "The package proxy".
   enabled: false                   # the default: no proxy, and no proxy variable in a worker
   hosts:                           # host names, never a pattern or an address
@@ -402,7 +434,9 @@ platforms:                         # a git host, its kind, and the token for all
     kind: gitlab
     token_env: GITLAB_TOKEN
 repos:                             # for all people; fnmatch on host/owner/name
-  - github.com/example-home/*
+  - github.com/example-home/*      # a plain pattern has the class public
+  - pattern: git.example.net/platform/*
+    class: internal                # public or internal. See "The repository class".
 people:                            # one entry for each person in DEVELOPER_TOKENS
   alex:
     git: { name: Alex Example, email: alex@users.noreply.github.com }
@@ -437,6 +471,22 @@ to a running task".
 runtimes give them to the worker. A name must be upper-case letters, digits,
 and underscores. A reserved name is not valid, and the manager stops at
 start with the name in the message. See "Using your own worker image".
+
+`repos` holds the repository patterns for all people, and
+`people.<id>.repos` the patterns of one person. An entry is a plain pattern,
+which is of class `public`, or a mapping with `pattern` and `class`
+(`public` or `internal`). See "The repository class". A pattern matches
+`host/owner/name` with `fnmatch`, in lowercase. `fnmatch` reads `*` as every
+character, the separator `/` as well, so `git.example.net/*` admits every
+group and every repository of that host. Name the groups you mean, such as
+`git.example.net/platform/*`.
+
+`scan.disabled_repos` holds the repository patterns whose push is not
+scanned. A pattern in it must hold internal repositories only: a pattern
+that a `public` pattern of `repos` or `people.<id>.repos` admits stops the
+addon at start, with the pattern in the message. The default is the empty
+list, so every repository is scanned. See "The credential scan of an
+internal repository".
 
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks is told to set `blocked`. `notify` is a
@@ -735,8 +785,9 @@ After the worker pushes, the manager:
    request. A `rework` push changes the pull request that is there.
 
 `scan` in `task_status` is `clean`, `partial` (the host sent no text for a
-file, or did not list every file), `hit`, or `unavailable` (a `git` host
-has no diff API, or `gitleaks` did not run). A scan that cannot read the
+file, or did not list every file), `hit`, `unavailable` (a `git` host
+has no diff API, or `gitleaks` did not run), or `disabled` (the repository
+is in `scan.disabled_repos`). A scan that cannot read the
 diff is never `clean`. GitHub lists at most 300 files in one compare
 reply. The
 manager reads the reply page by page, and when the list stops at that cap,
@@ -744,6 +795,28 @@ the scan is `partial`. A task that
 ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
 request. One `answer` call resumes it. A new `develop` with the same
 `branch` also continues the work, as a new task.
+
+### The credential scan of an internal repository
+
+An internal repository can hold a value with the shape of a credential that
+belongs there, such as a token in a test fixture or in a runbook. The scan
+would stop each such push. `scan.disabled_repos` in `developer.yaml` names
+the repository patterns that the scan skips:
+
+```yaml
+scan:
+  disabled_repos:
+    - git.example.net/platform/*
+```
+
+- A push to a repository that a pattern in the list admits runs no scan. The
+  manager reads no diff of it, and `scan` is `disabled`. The pull request
+  opens as it does for a clean push.
+- Every pattern in the list holds internal repositories only. A pattern that
+  a `public` pattern of `repos` or `people.<id>.repos` admits stops the addon
+  at start. The message names the pattern.
+- The list changes no rule of `gitleaks.toml`. A repository outside the list
+  gets the same scan as before.
 
 ## When a push fails
 

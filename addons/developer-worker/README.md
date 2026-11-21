@@ -52,6 +52,9 @@ directory has no compose file and no `values.yaml`.
    question to the person's chat through the manager and waits for the
    answer. When the manager says nobody gets the question, `ask` returns at
    once and tells the model to set `blocked`. The session never gets WebSearch or WebFetch.
+   The worker checks its own options twice before the session: another tool,
+   another MCP server, another MCP config, or a setting from the checkout
+   stops the session before it starts.
 5. The session has the persona timeout minus 90 seconds of work. The clock
    pauses while `ask` waits for an answer. The model can ask more than one
    question. `ask_wait_s`, a value from the brief, is the total waiting time
