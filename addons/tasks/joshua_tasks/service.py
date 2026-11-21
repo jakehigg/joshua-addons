@@ -805,15 +805,25 @@ async def reorder_groups(
 
 
 async def list_tasks(
-    session: AsyncSession, ref: str | uuid.UUID, include_done: bool = True
+    session: AsyncSession,
+    ref: str | uuid.UUID,
+    include_done: bool = True,
+    group: str | uuid.UUID | None = None,
 ) -> list[Task]:
-    """A project's tasks in stored order, each with its computed block fields."""
+    """A project's tasks in stored order, each with its computed block fields.
+
+    ``group`` (a group name or a group id) keeps the result in that one
+    group, so a caller reads a large project one phase at a time.
+    """
     project = await get_project(session, ref)
     query = (
         select(Task).where(Task.project_id == project.id).order_by(Task.position, Task.created_at)
     )
     if not include_done:
         query = query.where(Task.done.is_(False))
+    if group is not None:
+        found = await resolve_group(session, project.id, group)
+        query = query.where(Task.group_id == found.id)
     return await attach_blocks(session, list((await session.scalars(query)).all()))
 
 
@@ -844,6 +854,22 @@ async def resolve_task(session: AsyncSession, ref: TaskRef) -> Task:
     if task is None:
         raise NotFoundError(f"task not found: {ref}")
     return task
+
+
+async def task_detail(session: AsyncSession, task_id: TaskRef) -> dict[str, Any]:
+    """One task in full, by its number or its UUID, with where it lives.
+
+    The shape of one entry of ``search``: the ``task``, with its notes and
+    its computed block fields, the summary of its ``project``, and its
+    ``group`` (``None`` for a task in the backlog).
+    """
+    task = await resolve_task(session, task_id)
+    await attach_blocks(session, [task])
+    return {
+        "task": task,
+        "project": await project_summary(session, task.project_id),
+        "group": await get_group(session, task.group_id) if task.group_id else None,
+    }
 
 
 async def _next_task_number(session: AsyncSession) -> int:
@@ -1050,6 +1076,51 @@ async def move_task(session: AsyncSession, task_id: TaskRef, to_project: str | u
 
 # --- search -------------------------------------------------------------------
 
+# How much of the notes a search shows: the matched line and one line on each
+# side, cut to this many characters around the match.
+EXCERPT_LINES_AROUND: Final = 1
+EXCERPT_CHARS: Final = 500
+
+
+def _window(text: str, at: int) -> str:
+    """At most ``EXCERPT_CHARS`` of ``text`` around ``at``, with … where it is cut."""
+    if len(text) <= EXCERPT_CHARS:
+        return text
+    end = min(max(at + EXCERPT_CHARS // 2, EXCERPT_CHARS), len(text))
+    start = end - EXCERPT_CHARS
+    return ("…" if start else "") + text[start:end] + ("…" if end < len(text) else "")
+
+
+def notes_excerpt(notes: str, query: str) -> str | None:
+    """The matched line of ``notes``, and one line on each side. Never the whole notes.
+
+    ``None`` when the text is not in the notes, which is how a task that
+    matches on its title only reads. A long excerpt is cut around the match.
+    """
+    needle = query.strip().lower()
+    if not needle:
+        return None
+    lines = notes.splitlines()
+    for index, line in enumerate(lines):
+        found = line.lower().find(needle)
+        if found < 0:
+            continue
+        start = max(index - EXCERPT_LINES_AROUND, 0)
+        excerpt = "\n".join(lines[start : index + EXCERPT_LINES_AROUND + 1])
+        before = sum(len(before_line) + 1 for before_line in lines[start:index])
+        return _window(excerpt, before + found)
+    return None
+
+
+def query_number(query: str) -> int | None:
+    """The task number a query names (``284`` or ``#284``), or ``None``.
+
+    People say a task by its number, so a search takes the number as well as
+    the text.
+    """
+    text = query.strip().removeprefix("#").strip()
+    return int(text) if text.isdigit() else None
+
 
 async def search(
     session: AsyncSession,
@@ -1068,6 +1139,10 @@ async def search(
     matches too, and a done or closed project as well. ``project`` (an id,
     a slug, or a name) narrows the task match to one project.
 
+    A query that is a task number (``284`` or ``#284``) puts that task
+    first, done or not, and the text matches of the digits follow it,
+    because a title can hold a number as well.
+
     The result has ``projects``, project summaries oldest first, and
     ``tasks``, one entry for each task with the ``task``, the summary of
     its ``project``, and its ``group`` (``None`` for a task in the
@@ -1076,7 +1151,8 @@ async def search(
     inside a project. ``limit`` caps each list. An empty query matches
     nothing.
     """
-    needle = query.strip().lower()
+    number = query_number(query)
+    needle = query.strip().lower() if number is None else str(number)
     if not needle or limit <= 0:
         return {"projects": [], "tasks": []}
     only = (await get_project(session, project)).id if project is not None else None
@@ -1092,25 +1168,29 @@ async def search(
         for p in projects
         if needle in p.name.lower() or (p.goal is not None and needle in p.goal.lower())
     ]
+    numbered: list[dict[str, Any]] = []
     found_tasks: list[dict[str, Any]] = []
     for p in projects:
         if only is not None and p.id != only:
             continue
         by_id = {g.id: g for g in groups[p.id]}
         for task in roadmap_order(tasks[p.id], groups[p.id]):
+            entry = {
+                "task": task,
+                "project": summaries[p.id],
+                "group": by_id.get(task.group_id) if task.group_id else None,
+            }
+            # The task the query names comes first, whether it is done or not.
+            if task.number == number:
+                numbered.append(entry)
+                continue
             if task.done and not include_done:
                 continue
             if needle not in task.title.lower() and needle not in task.notes.lower():
                 continue
-            found_tasks.append(
-                {
-                    "task": task,
-                    "project": summaries[p.id],
-                    "group": by_id.get(task.group_id) if task.group_id else None,
-                }
-            )
+            found_tasks.append(entry)
     found_projects = found_projects[:limit]
-    found_tasks = found_tasks[:limit]
+    found_tasks = (numbered + found_tasks)[:limit]
     await attach_blocks(session, [f["task"] for f in found_tasks])
     await _attach_next_tasks(session, list(summaries.values()))
     return {"projects": found_projects, "tasks": found_tasks}

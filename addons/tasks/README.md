@@ -87,8 +87,9 @@ project.
 | `unarchive_project` | Brings an archived project back, with the status it had. |
 | `list_archived_projects` | The archived projects. Nothing else shows them. |
 | `next_steps` | The next open tasks of every active project, or of one project, in roadmap order. |
-| `search_tasks` | Finds the projects and the tasks that hold a word. Use it before you add a task, to see whether it is there already. |
-| `list_tasks` | The tasks of one project in roadmap order: each group with its tasks, then the backlog. |
+| `search_tasks` | Finds the projects and the tasks that hold a word, or the task with a number. Use it before you add a task, to see whether it is there already. |
+| `list_tasks` | The tasks of one project in roadmap order: each group with its tasks, then the backlog. The notes are left out, and `group` reads one group. |
+| `get_task` | One task in full: its notes, its size, its due date, its assignee, its project, its group, and its links. |
 | `create_task` | Adds a task to a project, at the end of the backlog or of a group, with an optional size, due date, and assignee. |
 | `update_task` | Changes the title, notes, size, due date, or assignee of a task. |
 | `set_task_done` | Marks a task done or not done. Reports the tasks it unblocked, and warns when a blocker of its own is still open. |
@@ -109,10 +110,23 @@ id. A date argument is `YYYY-MM-DD`; an empty string clears a date. Every
 result that holds a task gives its number. The REST API finds a task by its
 number at `GET /api/tasks/by-number/<number>`.
 
+A result must fit in one answer to the caller, so the notes of a task are
+read one task at a time. `get_task` gives one task in full, with its notes.
+`list_tasks` gives no `notes` field, until `include_notes` is true, and its
+`group` argument reads one group of a large project. A result that is still
+too large holds the project, `task_count`, the groups with their counts and
+no tasks, `too_large` true, and a hint that names `group` and
+`include_notes`. `search_tasks` with `include_notes` gives each task a
+`notes_excerpt`: the matched line of the notes and one line on each side,
+and `null` when the match is in the title only.
+
 `search_tasks` matches a substring, and case does not matter. A project
-matches on its name or its goal, and a task on its title or its notes. The
-result keeps the two kinds apart: the projects first, then the tasks. The
-projects come oldest first, and the tasks come project by project, in
+matches on its name or its goal, and a task on its title or its notes. A
+query that is a task number (`284` or `#284`) gives that task first, done or
+not, and the text matches of the digits follow it, because a title can hold
+a number as well. The search box of the web UI takes a number in the same
+way. The result keeps the two kinds apart: the projects first, then the
+tasks. The projects come oldest first, and the tasks come project by project, in
 roadmap order inside a project. Only open tasks and unfinished projects are
 searched, until `include_done` is true. An archived project is never
 searched. `project` keeps the task match in one project, and `limit` caps

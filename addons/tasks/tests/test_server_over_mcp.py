@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
 from conftest import mcp_session
+from joshua_tasks.server import MAX_RESULT_CHARS
 
 TOOL_NAMES = {
     "list_projects",
@@ -15,6 +17,7 @@ TOOL_NAMES = {
     "unarchive_project",
     "list_archived_projects",
     "list_tasks",
+    "get_task",
     "create_task",
     "update_task",
     "set_task_done",
@@ -67,9 +70,9 @@ async def call_error(session, name: str, args: dict) -> str:
 
 
 @with_session
-async def test_tool_names_are_exactly_the_twenty_four(session) -> None:
+async def test_tool_names_are_exactly_the_twenty_five(session) -> None:
     names = [t.name for t in (await session.list_tools()).tools]
-    assert len(names) == 24
+    assert len(names) == 25
     assert set(names) == TOOL_NAMES
 
 
@@ -86,7 +89,8 @@ async def test_tools_declare_their_arguments(session) -> None:
         "archive_project": ({"project"}, {"project"}),
         "unarchive_project": ({"project"}, {"project"}),
         "list_archived_projects": (set(), set()),
-        "list_tasks": ({"project", "include_done"}, {"project"}),
+        "list_tasks": ({"project", "include_done", "include_notes", "group"}, {"project"}),
+        "get_task": ({"task_id"}, {"task_id"}),
         "create_task": (
             {"project", "title", "notes", "group", "size", "due_date", "assignee"},
             {"project", "title"},
@@ -110,7 +114,10 @@ async def test_tools_declare_their_arguments(session) -> None:
         "set_project_status": ({"project", "status"}, {"project", "status"}),
         "next_steps": ({"project", "limit"}, set()),
         "set_group_target_date": ({"group_id", "target_date"}, {"group_id", "target_date"}),
-        "search_tasks": ({"query", "include_done", "project", "limit"}, {"query"}),
+        "search_tasks": (
+            {"query", "include_done", "project", "limit", "include_notes"},
+            {"query"},
+        ),
         "block_task": ({"task_id", "blocker_id"}, {"task_id", "blocker_id"}),
         "unblock_task": ({"task_id", "blocker_id"}, {"task_id", "blocker_id"}),
     }
@@ -208,6 +215,101 @@ async def test_list_tasks_include_done_false_and_group_counts(session) -> None:
     assert (group["task_count"], group["done_count"]) == (2, 1)
     assert [t["title"] for t in group["tasks"]] == ["b"]
     assert [t["title"] for t in listing["backlog"]] == ["loose"]
+
+
+@with_session
+async def test_list_tasks_leaves_the_notes_out_until_asked(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    await call(session, "create_task", {"project": "p", "title": "a", "notes": "the long notes"})
+    lean = await call(session, "list_tasks", {"project": "p"})
+    assert "notes" not in lean["backlog"][0]
+    full = await call(session, "list_tasks", {"project": "p", "include_notes": True})
+    assert full["backlog"][0]["notes"] == "the long notes"
+
+
+@with_session
+async def test_list_tasks_reads_one_group(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    await call(session, "create_group", {"project": "p", "name": "Phase 1"})
+    await call(session, "create_group", {"project": "p", "name": "Phase 2"})
+    await call(session, "create_task", {"project": "p", "title": "a", "group": "Phase 1"})
+    await call(session, "create_task", {"project": "p", "title": "b", "group": "Phase 2"})
+    await call(session, "create_task", {"project": "p", "title": "loose"})
+
+    one = await call(session, "list_tasks", {"project": "p", "group": "phase 1"})
+    assert [g["name"] for g in one["groups"]] == ["Phase 1"]
+    assert [t["title"] for t in one["groups"][0]["tasks"]] == ["a"]
+    assert one["backlog"] == []
+    assert one["project"]["task_count"] == 3
+    assert "group not found: nope" in await call_error(
+        session, "list_tasks", {"project": "p", "group": "nope"}
+    )
+
+
+@with_session
+async def test_list_tasks_of_fifty_long_tasks_fits_the_result_limit(session) -> None:
+    await call(session, "create_project", {"name": "Big"})
+    await call(session, "create_group", {"project": "big", "name": "Phase 1"})
+    for n in range(50):
+        await call(
+            session,
+            "create_task",
+            {"project": "big", "title": f"task {n}", "notes": "n" * 1800, "group": "Phase 1"},
+        )
+    listing = await call(session, "list_tasks", {"project": "big"})
+    assert len(listing["groups"][0]["tasks"]) == 50
+    assert "too_large" not in listing
+    assert len(json.dumps(listing)) <= MAX_RESULT_CHARS
+
+    # The same project with the notes does not fit: the answer says so, and
+    # names the way to read it.
+    answer = await call(session, "list_tasks", {"project": "big", "include_notes": True})
+    assert answer["too_large"] is True
+    assert answer["task_count"] == 50
+    assert [(g["name"], g["task_count"]) for g in answer["groups"]] == [("Phase 1", 50)]
+    assert "tasks" not in answer["groups"][0]
+    assert "backlog" not in answer
+    assert "group" in answer["hint"] and "include_notes" in answer["hint"]
+    assert len(json.dumps(answer)) <= MAX_RESULT_CHARS
+
+
+@with_session
+async def test_get_task_reads_one_task_in_full(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    await call(session, "create_group", {"project": "p", "name": "Phase 1"})
+    blocker = await call(session, "create_task", {"project": "p", "title": "first"})
+    task = await call(
+        session,
+        "create_task",
+        {
+            "project": "p",
+            "title": "second",
+            "notes": "the long notes",
+            "group": "Phase 1",
+            "size": "m",
+            "due_date": "2030-02-02",
+            "assignee": "Sam",
+        },
+    )
+    await call(
+        session,
+        "block_task",
+        {"task_id": str(task["number"]), "blocker_id": str(blocker["number"])},
+    )
+
+    found = await call(session, "get_task", {"task_id": str(task["number"])})
+    assert found["id"] == task["id"] and found["number"] == task["number"]
+    assert found["notes"] == "the long notes"
+    assert (found["size"], found["due_date"], found["assignee"]) == ("M", "2030-02-02", "Sam")
+    assert found["project"] == {"name": "P", "slug": "p"}
+    assert found["group"]["name"] == "Phase 1"
+    assert found["blocked"] is True
+    assert [b["number"] for b in found["blockers"]] == [blocker["number"]]
+
+    first = await call(session, "get_task", {"task_id": blocker["id"]})
+    assert first["group"] is None
+    assert [b["number"] for b in first["blocking"]] == [task["number"]]
+    assert "task not found: 404" in await call_error(session, "get_task", {"task_id": "404"})
 
 
 @with_session
@@ -591,6 +693,45 @@ async def test_search_tasks_done_archived_limit_and_no_match(session) -> None:
     assert "project not found" in await call_error(
         session, "search_tasks", {"query": "paint", "project": "nope"}
     )
+
+
+@with_session
+async def test_search_tasks_finds_a_task_by_its_number(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    first = await call(session, "create_task", {"project": "p", "title": "paint the wall"})
+    wanted = await call(session, "create_task", {"project": "p", "title": "tape the edges"})
+    number = wanted["number"]
+
+    for query in (str(number), f"#{number}"):
+        found = await call(session, "search_tasks", {"query": query})
+        assert [t["id"] for t in found["tasks"]] == [wanted["id"]]
+
+    # the number names a done task as well
+    await call(session, "set_task_done", {"task_id": wanted["id"], "done": True})
+    done = await call(session, "search_tasks", {"query": str(number)})
+    assert [t["id"] for t in done["tasks"]] == [wanted["id"]]
+
+    # a title that holds the digits follows the task with the number
+    await call(session, "update_task", {"task_id": first["id"], "title": f"after task {number}"})
+    both = await call(session, "search_tasks", {"query": str(number)})
+    assert [t["id"] for t in both["tasks"]] == [wanted["id"], first["id"]]
+
+
+@with_session
+async def test_search_tasks_include_notes_gives_an_excerpt_around_the_match(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    notes = "line before\nthe paint line\nline after\nthe last line"
+    await call(session, "create_task", {"project": "p", "title": "a", "notes": notes})
+    await call(session, "create_task", {"project": "p", "title": "paint the door"})
+
+    plain = await call(session, "search_tasks", {"query": "paint"})
+    assert "notes_excerpt" not in plain["tasks"][0]
+
+    found = await call(session, "search_tasks", {"query": "paint", "include_notes": True})
+    # the matched line, and one line on each side: never the whole notes
+    assert found["tasks"][0]["notes_excerpt"] == "line before\nthe paint line\nline after"
+    # the second task matches on its title, so it has no excerpt
+    assert found["tasks"][1]["notes_excerpt"] is None
 
 
 # --- blocking (issue #52) ------------------------------------------------------
