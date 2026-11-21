@@ -84,7 +84,7 @@ from joshua_developer.repos import (
 )
 from joshua_developer.runs import Runs
 from joshua_developer.runtime import Report, Runtime, TaskClock
-from joshua_developer.scan import Finding, ScanUnavailable, scan_diff
+from joshua_developer.scan import Finding, ScanUnavailable, scan_diff, scan_disabled
 from joshua_developer.store import (
     ACTIVE_STATUSES,
     TERMINAL_STATUSES,
@@ -1011,7 +1011,9 @@ class Manager:
            and scan it. Without a ``clone_head``, the diff starts at the base
            branch. A hit fails the task (``_reject_push``). The scan is
            ``unavailable`` when a ``git`` host has no diff API, and when
-           gitleaks did not run.
+           gitleaks did not run. For a repository in
+           ``scan.disabled_repos``, the scan is ``disabled``: the manager
+           reads no diff of it.
         2. On a successful ``develop``, find the open pull request of the
            branch, or open one. On a ``rework``, check that the pull request
            is still there.
@@ -1039,12 +1041,16 @@ class Manager:
             return {"status": "failed", "error": str(exc)}
         out: dict[str, Any] = {}
         step = "the diff"
+        disabled = scan_disabled(repo, self.config.scan.disabled_repos)
         try:
-            if platform.kind == "git":
+            if disabled or platform.kind == "git":
                 diff = None
             else:
                 diff = await retry_5xx(lambda: platform.compare(repo, since, head))
-            if diff is None or diff.unavailable:
+            if disabled:
+                logger.info({"message": "the scan is off for this repository", "task_id": task_id})
+                out["scan"] = "disabled"
+            elif diff is None or diff.unavailable:
                 out["scan"] = "unavailable"
             else:
                 try:

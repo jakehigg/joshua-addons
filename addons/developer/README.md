@@ -413,6 +413,9 @@ work:                              # the work directories. See "The work directo
 runs:                              # the limits ceilings of a run, in percent used. See "Development auto-run".
   ceiling_five_hour_pct: 80
   ceiling_seven_day_pct: 90
+scan:                              # the credential scan of the pull request gate
+  disabled_repos:                  # patterns whose push is not scanned; each one is internal
+    - git.example.net/platform/*   # See "The credential scan of an internal repository".
 packages:                          # the package proxy. See "The package proxy".
   enabled: false                   # the default: no proxy, and no proxy variable in a worker
   hosts:                           # host names, never a pattern or an address
@@ -477,6 +480,13 @@ which is of class `public`, or a mapping with `pattern` and `class`
 character, the separator `/` as well, so `git.example.net/*` admits every
 group and every repository of that host. Name the groups you mean, such as
 `git.example.net/platform/*`.
+
+`scan.disabled_repos` holds the repository patterns whose push is not
+scanned. A pattern in it must hold internal repositories only: a pattern
+that a `public` pattern of `repos` or `people.<id>.repos` admits stops the
+addon at start, with the pattern in the message. The default is the empty
+list, so every repository is scanned. See "The credential scan of an
+internal repository".
 
 Give each person a `notify` chat. Without one, a report and a question go
 nowhere, and a worker that asks is told to set `blocked`. `notify` is a
@@ -775,8 +785,9 @@ After the worker pushes, the manager:
    request. A `rework` push changes the pull request that is there.
 
 `scan` in `task_status` is `clean`, `partial` (the host sent no text for a
-file, or did not list every file), `hit`, or `unavailable` (a `git` host
-has no diff API, or `gitleaks` did not run). A scan that cannot read the
+file, or did not list every file), `hit`, `unavailable` (a `git` host
+has no diff API, or `gitleaks` did not run), or `disabled` (the repository
+is in `scan.disabled_repos`). A scan that cannot read the
 diff is never `clean`. GitHub lists at most 300 files in one compare
 reply. The
 manager reads the reply page by page, and when the list stops at that cap,
@@ -784,6 +795,28 @@ the scan is `partial`. A task that
 ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
 request. One `answer` call resumes it. A new `develop` with the same
 `branch` also continues the work, as a new task.
+
+### The credential scan of an internal repository
+
+An internal repository can hold a value with the shape of a credential that
+belongs there, such as a token in a test fixture or in a runbook. The scan
+would stop each such push. `scan.disabled_repos` in `developer.yaml` names
+the repository patterns that the scan skips:
+
+```yaml
+scan:
+  disabled_repos:
+    - git.example.net/platform/*
+```
+
+- A push to a repository that a pattern in the list admits runs no scan. The
+  manager reads no diff of it, and `scan` is `disabled`. The pull request
+  opens as it does for a clean push.
+- Every pattern in the list holds internal repositories only. A pattern that
+  a `public` pattern of `repos` or `people.<id>.repos` admits stops the addon
+  at start. The message names the pattern.
+- The list changes no rule of `gitleaks.toml`. A repository outside the list
+  gets the same scan as before.
 
 ## When a push fails
 

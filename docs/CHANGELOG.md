@@ -17,6 +17,14 @@ releases, with the images and the packaged chart, are at
   through one sandbox. An existing file keeps its behavior, because a plain
   pattern is public.
 
+- `developer`: `scan.disabled_repos` in `developer.yaml`. The credential scan
+  of the pull request gate skips a push to a repository that a pattern in the
+  list admits, and `scan` is then `disabled`. A plaintext secret that belongs
+  in an internal repository no longer stops the work. Every pattern in the
+  list holds internal repositories only: a pattern that a `public` pattern
+  admits stops the addon at start, with the pattern in the message. The list
+  changes no rule of `gitleaks.toml`.
+
 - `tasks`: search finds a task by its number. A person who knows the number
   types `284`, or `#284`, in the search box of the web UI, or gives it to
   `search_tasks`, and that task comes first, done or not. The text search

@@ -282,6 +282,24 @@ class WorkConfig(_Model):
     max_resumes: int = Field(default=DEFAULT_MAX_RESUMES, ge=0, strict=True)
 
 
+class ScanConfig(_Model):
+    """The credential scan of the pull request gate (``scan`` in ``developer.yaml``).
+
+    ``disabled_repos`` holds the repository patterns whose push is not
+    scanned, so a plaintext secret that belongs in such a repository does not
+    stop the work. Every pattern in it is of class ``internal``: a pattern
+    that holds a public repository stops the addon at load. The list never
+    relaxes a rule in ``gitleaks.toml``.
+    """
+
+    disabled_repos: list[str] = Field(default_factory=list)
+
+    @field_validator("disabled_repos")
+    @classmethod
+    def _patterns(cls, value: list[str]) -> list[str]:
+        return [_check_pattern(item) for item in value]
+
+
 class RunsConfig(_Model):
     """The ceilings of a run (``runs`` in ``developer.yaml``), in percent used.
 
@@ -307,6 +325,7 @@ class DeveloperConfig(_Model):
     packages: PackagesConfig = Field(default_factory=PackagesConfig)
     work: WorkConfig = Field(default_factory=WorkConfig)
     runs: RunsConfig = Field(default_factory=RunsConfig)
+    scan: ScanConfig = Field(default_factory=ScanConfig)
     platforms: dict[str, Platform] = Field(default_factory=dict)
     repos: list[RepoPattern] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
@@ -416,6 +435,35 @@ def _check_references(config: DeveloperConfig) -> None:
                 raise ConfigError(
                     f"developer.yaml: {key} needs a kind, because platforms has no entry for it"
                 )
+    _check_disabled_repos(config)
+
+
+def all_repo_patterns(config: DeveloperConfig) -> list[RepoPattern]:
+    """Every repository pattern of the file: the instance list and the people lists."""
+    return [
+        *config.repos,
+        *(pattern for person in config.people.values() for pattern in person.repos),
+    ]
+
+
+def _check_disabled_repos(config: DeveloperConfig) -> None:
+    """Refuse a ``scan.disabled_repos`` pattern that holds a public repository.
+
+    The scan is the gate before the pull request of a public repository, so
+    it stays on there. A pattern holds a public repository when a pattern of
+    class ``public`` admits it.
+    """
+    for index, pattern in enumerate(config.scan.disabled_repos):
+        public = [
+            entry.pattern
+            for entry in all_repo_patterns(config)
+            if entry.repo_class == "public" and repo_allowed(pattern, [entry.pattern])
+        ]
+        if public:
+            raise ConfigError(
+                f"developer.yaml: scan.disabled_repos[{index}]: the pattern {pattern} is in the "
+                f"public pattern {public[0]}; the scan stays on for a public repository"
+            )
 
 
 def _check_host(key: str, host: str) -> None:

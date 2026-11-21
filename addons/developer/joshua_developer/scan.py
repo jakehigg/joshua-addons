@@ -14,6 +14,11 @@ scan maps it back to the line of the new file.
 
 Without the ``gitleaks`` binary, the scan raises ``ScanUnavailable``. It
 never reports a diff clean that it did not read.
+
+``scan.disabled_repos`` in ``developer.yaml`` names the repositories that
+the scan skips (``scan_disabled``). Each one is an internal repository, so a
+plaintext secret that belongs there does not stop the work. The list changes
+no rule of ``gitleaks.toml``.
 """
 
 from __future__ import annotations
@@ -23,11 +28,13 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from joshua_developer.platforms import Diff
+from joshua_developer.repos import repo_allowed
 
 # The binary, and the configuration file that ships beside this module.
 GITLEAKS = "gitleaks"
@@ -96,6 +103,11 @@ def added_lines(patch: str) -> list[tuple[int, str]]:
 def available() -> bool:
     """True when the gitleaks binary is on the path and executable."""
     return shutil.which(GITLEAKS) is not None
+
+
+def scan_disabled(repo: str, patterns: Iterable[str]) -> bool:
+    """True when ``repo`` matches one of the ``scan.disabled_repos`` patterns."""
+    return repo_allowed(repo, patterns)
 
 
 def run_gitleaks(args: list[str]) -> subprocess.CompletedProcess[str]:

@@ -58,6 +58,13 @@ configFile:
     runs:
       ceiling_five_hour_pct: 80
       ceiling_seven_day_pct: 90
+    # The credential scan of the pull request gate. disabled_repos holds the
+    # repository patterns whose push is not scanned. Each pattern holds
+    # internal repositories only: a pattern that a public pattern admits
+    # stops the addon at start. See "The credential scan of an internal
+    # repository" in the README of the addon.
+    scan:
+      disabled_repos: []
     # The package proxy of the manager, on port 8003. With enabled: true, a
     # worker gets HTTPS_PROXY, HTTP_PROXY, and NO_PROXY, and reaches these
     # hosts only, so it can install dependencies and run the tests. The
