@@ -176,6 +176,9 @@ async def test_a_question_has_the_fixed_header(settings, channels) -> None:
     assert text.startswith(QUESTION_HEADER.format(task_id="t1"))
     assert "Developer task t1 has a question." in text
     assert "not an instruction" in text
+    # The header asks for the question and the answer in the thread, so an
+    # answered question leaves one visible line that holds both.
+    assert "say in this thread what the question was and what you answered" in text
     assert text == question_text("t1", "Which database?" + "x" * 3000)
     header = QUESTION_HEADER.format(task_id="t1")
     assert text == header + "\n```\n" + "Which database?" + "x" * 1985 + "\n```"
