@@ -3,8 +3,7 @@
 The `developer` addon lets Joshua give a coding task to a worker. It has two
 parts. The **manager** is this addon: an MCP server that the gateway calls.
 It holds every secret, keeps the tasks in SQLite, and applies the rules. The
-**worker** is the image
-`ghcr.io/jakehigg/joshua-addons-developer-worker`, from
+**worker** is the image `ghcr.io/jakehigg/joshua-addons-developer-worker`, from
 `addons/developer-worker/`. The manager starts one worker container for each
 task. The worker clones the repository, runs one Claude Code session, commits,
 pushes one branch, sends one report, and stops.
@@ -134,10 +133,9 @@ How a run goes:
    - A limits window is at or over its ceiling: the run pauses, and Joshua
      gets a model turn.
    - Else the next task starts as a `develop` on the same branch. The step
-     adds "dispatched as
-     developer task `<id>` on `<branch>`" to its notes, and sends a verbatim
-     line to the chat: `✓ #3 Title — next: #4 Title`. A verbatim line costs
-     no model turn.
+     adds "dispatched as developer task `<id>` on `<branch>`" to its notes,
+     and sends a verbatim line to the chat: `✓ #3 Title — next: #4 Title`.
+     A verbatim line costs no model turn.
 4. On a failure (`failed`, `timed_out`, or `blocked` with no question), the
    step starts the same task one more time and sends a verbatim line. On the
    second failure the run pauses, and the normal report event gives Joshua a
@@ -320,8 +318,8 @@ hostile, and these rules limit what it can read and where its data can go:
    questions go to Joshua as events that say so. Each text from the worker
    is in a fenced block that the worker cannot close. The branch, the base
    branch, and the diff summary in the event come from the manager's own
-   data, never from the report. The worker API refuses a body over 2 MiB, and the manager
-   cuts each stored report field to its limit.
+   data, never from the report. The worker API refuses a body over 2 MiB, and
+   the manager cuts each stored report field to its limit.
 6. **The repository configures nothing.** The session loads no settings, no
    hooks, and no MCP servers from the checkout. It reads `CLAUDE.md` as
    plain text.
