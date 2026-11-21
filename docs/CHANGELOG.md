@@ -17,6 +17,13 @@ releases, with the images and the packaged chart, are at
   through one sandbox. An existing file keeps its behavior, because a plain
   pattern is public.
 
+- `developer-worker`: the tool surface of the worker is pinned. The option
+  check of the session refuses another tool, another MCP server, and an MCP
+  config that is not its own, so the isolation of a worker cannot widen by
+  accident. Tests hold the names of the tools and the servers, and prove that
+  two tasks of two people get the same worker environment, but their own task
+  token.
+
 - `developer-worker`: the prompt forbids a signature and an attribution. The
   worker adds no "written for" line to a commit message, to a pull request, or
   to a file. The `Co-Authored-By:` trailer of Claude Code stays.
