@@ -8,6 +8,12 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `tasks`: search finds a task by its number. A person who knows the number
+  types `284`, or `#284`, in the search box of the web UI, or gives it to
+  `search_tasks`, and that task comes first, done or not. The text search
+  runs as well, because a title can hold a number, and those matches follow.
+  The result row holds the number, the title, and the project.
+
 - `tasks`: read one task, and lists that fit in one result. The new tool
   `get_task(task_id)` gives one task in full, with its notes, its size, its
   due date, its assignee, its project, its group, and its links, so nothing

@@ -562,3 +562,48 @@ async def test_task_detail_holds_the_notes_the_project_the_group_and_the_links(d
     ] == [task.number]
     with pytest.raises(services.NotFoundError):
         await services.task_detail(db, 9999)
+
+
+async def test_query_number_reads_a_task_number():
+    assert services.query_number("284") == 284
+    assert services.query_number(" #284 ") == 284
+    assert services.query_number("#") is None
+    assert services.query_number("paint") is None
+    assert services.query_number("284 paint") is None
+
+
+async def test_search_by_number_puts_that_task_first(db):
+    await services.create_project(db, "P")
+    first = await services.create_task(db, "p", "paint the wall")
+    numbered = await services.create_task(db, "p", "tape the edges")
+
+    found = await services.search(db, str(numbered.number))
+    assert [f["task"].id for f in found["tasks"]] == [numbered.id]
+    assert [f["task"].id for f in (await services.search(db, f"#{numbered.number}"))["tasks"]] == [
+        numbered.id
+    ]
+    # a done task the query names comes back as well
+    await services.update_task(db, numbered.id, done=True)
+    assert [f["task"].id for f in (await services.search(db, str(numbered.number)))["tasks"]] == [
+        numbered.id
+    ]
+    # the text search runs as well: a title that holds the digits follows
+    await services.update_task(db, first.id, title=f"task {numbered.number} needs paint")
+    both = await services.search(db, str(numbered.number))
+    assert [f["task"].id for f in both["tasks"]] == [numbered.id, first.id]
+    # a number no task has is a text search only
+    assert (await services.search(db, "9999"))["tasks"] == []
+
+
+async def test_search_by_number_keeps_the_project_filter_and_the_limit(db):
+    await services.create_project(db, "Mine")
+    await services.create_project(db, "Yours")
+    mine = await services.create_task(db, "mine", "a task")
+    await services.create_task(db, "yours", "another task")
+
+    assert [
+        f["project"]["slug"] for f in (await services.search(db, str(mine.number)))["tasks"]
+    ] == ["mine"]
+    assert (await services.search(db, str(mine.number), project="yours"))["tasks"] == []
+    await services.update_project(db, "mine", archived=True)
+    assert (await services.search(db, str(mine.number)))["tasks"] == []

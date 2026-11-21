@@ -696,6 +696,28 @@ async def test_search_tasks_done_archived_limit_and_no_match(session) -> None:
 
 
 @with_session
+async def test_search_tasks_finds_a_task_by_its_number(session) -> None:
+    await call(session, "create_project", {"name": "P"})
+    first = await call(session, "create_task", {"project": "p", "title": "paint the wall"})
+    wanted = await call(session, "create_task", {"project": "p", "title": "tape the edges"})
+    number = wanted["number"]
+
+    for query in (str(number), f"#{number}"):
+        found = await call(session, "search_tasks", {"query": query})
+        assert [t["id"] for t in found["tasks"]] == [wanted["id"]]
+
+    # the number names a done task as well
+    await call(session, "set_task_done", {"task_id": wanted["id"], "done": True})
+    done = await call(session, "search_tasks", {"query": str(number)})
+    assert [t["id"] for t in done["tasks"]] == [wanted["id"]]
+
+    # a title that holds the digits follows the task with the number
+    await call(session, "update_task", {"task_id": first["id"], "title": f"after task {number}"})
+    both = await call(session, "search_tasks", {"query": str(number)})
+    assert [t["id"] for t in both["tasks"]] == [wanted["id"], first["id"]]
+
+
+@with_session
 async def test_search_tasks_include_notes_gives_an_excerpt_around_the_match(session) -> None:
     await call(session, "create_project", {"name": "P"})
     notes = "line before\nthe paint line\nline after\nthe last line"

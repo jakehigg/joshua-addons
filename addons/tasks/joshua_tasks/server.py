@@ -809,12 +809,16 @@ async def search_tasks(
     An archived project, and every task in it, is never searched. An empty
     query matches nothing.
 
+    A query that is a task number ("284" or "#284") gives that task first,
+    done or not. The text search runs as well, because a title can hold a
+    number, and those matches follow.
+
     With include_notes, each task also carries notes_excerpt: the matched
     line of its notes and one line on each side, or null when the match is
     in the title only. Read the whole notes of a task with get_task.
 
     Args:
-        query: The word or phrase to look for.
+        query: The word or phrase to look for, or a task number ("284").
         include_done: Set true to also match done tasks and done or closed projects.
         project: Project slug or id, to match tasks in one project only.
         limit: How many projects, and how many tasks, at most (default 20).

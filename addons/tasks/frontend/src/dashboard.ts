@@ -355,7 +355,11 @@ export function searchTaskView(found: SearchTask): SearchTaskView {
 export function searchView(query: string, result: SearchResult | null): SearchView {
   const text = query.trim();
   if (!text) {
-    return { message: "Type a word to search every project and task.", projects: [], tasks: [] };
+    return {
+      message: "Type a word, or a task number, to search every project and task.",
+      projects: [],
+      tasks: [],
+    };
   }
   if (!result) return { message: "Searching…", projects: [], tasks: [] };
   if (result.projects.length === 0 && result.tasks.length === 0) {

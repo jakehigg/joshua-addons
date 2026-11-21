@@ -1112,6 +1112,16 @@ def notes_excerpt(notes: str, query: str) -> str | None:
     return None
 
 
+def query_number(query: str) -> int | None:
+    """The task number a query names (``284`` or ``#284``), or ``None``.
+
+    People say a task by its number, so a search takes the number as well as
+    the text.
+    """
+    text = query.strip().removeprefix("#").strip()
+    return int(text) if text.isdigit() else None
+
+
 async def search(
     session: AsyncSession,
     query: str,
@@ -1129,6 +1139,10 @@ async def search(
     matches too, and a done or closed project as well. ``project`` (an id,
     a slug, or a name) narrows the task match to one project.
 
+    A query that is a task number (``284`` or ``#284``) puts that task
+    first, done or not, and the text matches of the digits follow it,
+    because a title can hold a number as well.
+
     The result has ``projects``, project summaries oldest first, and
     ``tasks``, one entry for each task with the ``task``, the summary of
     its ``project``, and its ``group`` (``None`` for a task in the
@@ -1137,7 +1151,8 @@ async def search(
     inside a project. ``limit`` caps each list. An empty query matches
     nothing.
     """
-    needle = query.strip().lower()
+    number = query_number(query)
+    needle = query.strip().lower() if number is None else str(number)
     if not needle or limit <= 0:
         return {"projects": [], "tasks": []}
     only = (await get_project(session, project)).id if project is not None else None
@@ -1153,25 +1168,29 @@ async def search(
         for p in projects
         if needle in p.name.lower() or (p.goal is not None and needle in p.goal.lower())
     ]
+    numbered: list[dict[str, Any]] = []
     found_tasks: list[dict[str, Any]] = []
     for p in projects:
         if only is not None and p.id != only:
             continue
         by_id = {g.id: g for g in groups[p.id]}
         for task in roadmap_order(tasks[p.id], groups[p.id]):
+            entry = {
+                "task": task,
+                "project": summaries[p.id],
+                "group": by_id.get(task.group_id) if task.group_id else None,
+            }
+            # The task the query names comes first, whether it is done or not.
+            if task.number == number:
+                numbered.append(entry)
+                continue
             if task.done and not include_done:
                 continue
             if needle not in task.title.lower() and needle not in task.notes.lower():
                 continue
-            found_tasks.append(
-                {
-                    "task": task,
-                    "project": summaries[p.id],
-                    "group": by_id.get(task.group_id) if task.group_id else None,
-                }
-            )
+            found_tasks.append(entry)
     found_projects = found_projects[:limit]
-    found_tasks = found_tasks[:limit]
+    found_tasks = (numbered + found_tasks)[:limit]
     await attach_blocks(session, [f["task"] for f in found_tasks])
     await _attach_next_tasks(session, list(summaries.values()))
     return {"projects": found_projects, "tasks": found_tasks}

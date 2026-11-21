@@ -604,9 +604,11 @@ async def search(request: Request) -> Response:
     """``?query=`` is the text to find.
 
     The match is a case-insensitive substring, on a project's name or goal
-    and on a task's title or notes. ``?include_done=true`` also matches
-    done tasks and done or closed projects; an archived project is never
-    matched. ``?project=<id|slug>`` narrows the task match to one project.
+    and on a task's title or notes. A query that is a task number (``284``
+    or ``#284``) gives that task first, and the text matches follow.
+    ``?include_done=true`` also matches done tasks and done or closed
+    projects; an archived project is never matched.
+    ``?project=<id|slug>`` narrows the task match to one project.
     ``?limit=`` caps each list (default 20).
     """
     query = request.query_params.get("query", "")

@@ -571,6 +571,26 @@ async def test_search_endpoint(client) -> None:
     assert (await client.get("/api/search")).json() == {"projects": [], "tasks": []}
 
 
+async def test_search_endpoint_finds_a_task_by_its_number(client) -> None:
+    """The web UI search box takes a task number, which the person says out loud."""
+    p = (await client.post("/api/projects", json={"name": "Hallway"})).json()
+    await client.post(f"/api/projects/{p['id']}/tasks", json={"title": "Tape edges"})
+    buy = (await client.post(f"/api/projects/{p['id']}/tasks", json={"title": "Buy paint"})).json()
+    number = buy["number"]
+
+    for query in (str(number), f"#{number}"):
+        found = (await client.get("/api/search", params={"query": query})).json()
+        assert [f["task"]["id"] for f in found["tasks"]] == [buy["id"]]
+        # the row holds the project, so a person sees where the task lives
+        assert found["tasks"][0]["project"]["slug"] == "hallway"
+
+    # a numeric query runs the text search as well, and the number comes first
+    tape = (await client.get("/api/search", params={"query": "tape"})).json()["tasks"][0]["task"]
+    await client.patch(f"/api/tasks/{tape['id']}", json={"title": f"after task {number}"})
+    both = (await client.get("/api/search", params={"query": str(number)})).json()
+    assert [f["task"]["id"] for f in both["tasks"]] == [buy["id"], tape["id"]]
+
+
 async def test_search_endpoint_bad_parameters(client) -> None:
     r = await client.get("/api/search", params={"query": "x", "limit": "lots"})
     assert r.status_code == 422
