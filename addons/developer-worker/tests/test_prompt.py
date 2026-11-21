@@ -98,3 +98,13 @@ def test_the_prompt_tells_the_model_to_commit_and_not_push() -> None:
     assert "call `ask` once with one clear question" in base
     assert "MR_URL" not in base
     assert "structured result" in base
+
+
+def test_the_prompt_forbids_a_signature_or_an_attribution() -> None:
+    base = " ".join(prompt.base_prompt().split())
+    assert (
+        'Add no signature, no attribution, and no "written for" line to a commit message, '
+        "to a pull request, or to a file." in base
+    )
+    assert 'Write no line such as "Written by the Joshua developer for the owner".' in base
+    assert "The `Co-Authored-By:` trailer of Claude Code is not such a line, and it stays." in base

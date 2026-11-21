@@ -17,6 +17,10 @@ releases, with the images and the packaged chart, are at
   through one sandbox. An existing file keeps its behavior, because a plain
   pattern is public.
 
+- `developer-worker`: the prompt forbids a signature and an attribution. The
+  worker adds no "written for" line to a commit message, to a pull request, or
+  to a file. The `Co-Authored-By:` trailer of Claude Code stays.
+
 - `developer`: `scan.disabled_repos` in `developer.yaml`. The credential scan
   of the pull request gate skips a push to a repository that a pattern in the
   list admits, and `scan` is then `disabled`. A plaintext secret that belongs

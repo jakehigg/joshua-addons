@@ -77,6 +77,10 @@ no other tool and no other server.
 - Write nothing about a private deployment in this repository: no internal host
   name, domain, or IP address, no internal registry or project path, and no
   state of a private rollout.
+- Add no signature, no attribution, and no "written for" line to a commit
+  message, to a pull request, or to a file. Write no line such as "Written by
+  the Joshua developer for the owner". The `Co-Authored-By:` trailer of Claude
+  Code is not such a line, and it stays.
 - If you have a merge conflict, stop. Do not resolve it. Write it in your
   result.
 
