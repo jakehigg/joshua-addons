@@ -112,7 +112,7 @@ def _own_task(caller: Caller, task_id: str) -> dict[str, Any]:
 
 
 def _linked(result: dict[str, Any], workspace: str | None) -> dict | CallToolResult:
-    """``result`` of a start tool, with the pull request link on a workspace call."""
+    """``result`` of a start tool, with the link of the pull request it reworks."""
     task_id = result.get("task_id")
     if not workspace or not task_id:
         return result
@@ -137,15 +137,17 @@ async def develop(
 
     repo is a URL or host/owner/name, such as github.com/owner/name. brief is
     all the context the worker gets: the goal, the acceptance criteria, the
-    links, and what you read in the issue. Its first line is the pull request
-    title. branch is the branch to work on; without it the task gets a new
-    branch, joshua/<first line in kebab case>-<id>. base_branch is the branch
-    to start from and the pull request target; without it, main. persona is a name from
+    links, and what you read in the issue. branch is the branch to work on;
+    without it the task gets a new branch,
+    joshua/<first line in kebab case>-<id>. base_branch is the branch to
+    start from; without it, main. persona is a name from
     list_personas. notify is the chat that gets the report; without it, the
     person's setting. refs is a list of up to 5 other repositories, in the
     same form as repo, that the worker can read: each one is cloned read-only
     next to the checkout, on its default branch, so the worker can port or
-    copy code from it. The worker pushes only to repo. A call is rejected when
+    copy code from it. The worker pushes only to repo. The task ends at the
+    pushed branch: it opens no pull request, so you write the pull request
+    text from the report and open it yourself. A call is rejected when
     the repository, or one in refs, is not in the person's list, when its git
     host has no platform or no token, when too many tasks run, or when
     another task works on the same branch.
@@ -200,13 +202,6 @@ async def rework(
     return _linked(result, workspace)
 
 
-def _run_result(result: dict[str, Any], ctx: Context) -> dict | CallToolResult:
-    """``result`` of a run tool, with the pull request link on a workspace call."""
-    if not origin_of(ctx) or not result.get("pr_url"):
-        return result
-    return with_links(result, task_links({**result, "task_id": result.get("run_id")}))
-
-
 def _own_run(ctx: Context, run_id: str | None, project: str | None) -> dict[str, Any]:
     """The run for a ``run_id`` or a ``project`` of the caller, or a rejection dict."""
     return _get_manager().runs.find(_person(ctx), run_id, project)
@@ -221,20 +216,21 @@ async def run_project(
     persona: str | None = None,
     notify: str | None = None,
 ) -> dict:
-    """Work through the open tasks of a tasks project on one branch and one pull request.
+    """Work through the open tasks of a tasks project on one branch.
 
     project is a project id, slug, or name from the tasks addon. The run starts
     the first open task in roadmap order, as develop on branch (default
     feat-<project slug>). Each finished task is marked done in tasks, and the
-    next one starts as rework of the same pull request, with no model turn. The
-    person gets a verbatim line for each finished task, and a message at the end
-    of a phase (a task group), at the limits ceiling, on a question, on a
-    failure that one retry did not fix, and at the end of the project. A run
-    never merges. repo, persona, and notify are as for develop. A call is
-    rejected when the tasks addon is not set (TASKS_URL), when the project is
-    unknown or has no ready task, or when the project already has an active or
-    paused run on the repository. Use run_status, pause_run, resume_run, and
-    stop_run to follow and steer it.
+    next one starts on the same branch, with no model turn. The person gets a
+    verbatim line for each finished task, and a message at the end of a phase
+    (a task group), at the limits ceiling, on a question, on a failure that one
+    retry did not fix, and at the end of the project. A run opens no pull
+    request, and it never merges: it ends at the branch, and you write the pull
+    request text and open it yourself. repo, persona, and notify are as for
+    develop. A call is rejected when the tasks addon is not set (TASKS_URL),
+    when the project is unknown or has no ready task, or when the project
+    already has an active or paused run on the repository. Use run_status,
+    pause_run, resume_run, and stop_run to follow and steer it.
     """
     person = _person(ctx)
     result = await _get_manager().runs.start(
@@ -246,12 +242,12 @@ async def run_project(
         notify_to=notify,
         workspace=origin_of(ctx),
     )
-    return _run_result(result, ctx)
+    return result
 
 
 @mcp.tool()
 async def run_status(ctx: Context, run_id: str | None = None, project: str | None = None) -> dict:
-    """The state of a run: its status, branch, pull request, and current task.
+    """The state of a run: its status, branch, and current task.
 
     Give run_id or project. With neither, the result lists your recent runs.
     status is active, paused, stopped, or done.
@@ -263,7 +259,7 @@ async def run_status(ctx: Context, run_id: str | None = None, project: str | Non
     run = manager.runs.find(caller.person, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(manager.runs.describe(run), ctx)
+    return manager.runs.describe(run)
 
 
 @mcp.tool()
@@ -272,7 +268,7 @@ async def pause_run(ctx: Context, run_id: str | None = None, project: str | None
     run = _own_run(ctx, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(await _get_manager().runs.pause(run), ctx)
+    return await _get_manager().runs.pause(run)
 
 
 @mcp.tool()
@@ -285,7 +281,7 @@ async def resume_run(ctx: Context, run_id: str | None = None, project: str | Non
     run = _own_run(ctx, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(await _get_manager().runs.resume(run), ctx)
+    return await _get_manager().runs.resume(run)
 
 
 @mcp.tool()
@@ -294,7 +290,7 @@ async def stop_run(ctx: Context, run_id: str | None = None, project: str | None 
     run = _own_run(ctx, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(await _get_manager().runs.stop(run), ctx)
+    return await _get_manager().runs.stop(run)
 
 
 @mcp.tool()
@@ -345,10 +341,12 @@ async def task_status(task_id: str, ctx: Context) -> dict:
     """The state of one task.
 
     status is dispatched, running, success, failed, blocked, or timed_out.
-    The result also has the branch, the pull request URL, the cost, the
-    summary, the error, the open question, the scan result (clean, partial,
-    hit, unavailable, or disabled), the resumes of the task, and resumable:
-    true when the resume tool takes the task up again.
+    The result also has the branch, the base branch, the diff summary, the
+    cost, the summary, the error, the open question, the scan result (clean,
+    partial, hit, unavailable, or disabled), the resumes of the task, and
+    resumable: true when the resume tool takes the task up again. pr_url and
+    pr_number name the pull request that a rework works on; a develop task
+    has none, because the developer opens no pull request.
     """
     caller = _caller(ctx)
     task = {**_own_task(caller, task_id), "resumable": _get_manager().resumable(task_id)}

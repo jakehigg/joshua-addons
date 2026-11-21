@@ -231,7 +231,7 @@ def test_runs_are_stored_listed_and_updated(store: TaskStore) -> None:
     assert store.run_has_active_task("r1") is False
     full = store.get_task_full("t1")
     assert full is not None and (full["run_id"], full["tasks_task_number"]) == ("r1", 3)
-    store.update_run("r1", status="paused", retried=True, pr_number=4, current_task_id="t1")
+    store.update_run("r1", status="paused", retried=True, current_task_id="t1")
     assert store.get_run("r1")["retried"] is True  # type: ignore[index]
     assert store.find_open_run("a", "p1")["run_id"] == "r2"  # type: ignore[index]
     store.update_run("r2", status="done")

@@ -3,7 +3,6 @@ platform entry and its token. Every test is offline."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 
 import certifi
@@ -91,41 +90,6 @@ def assert_gitlab_headers(request: httpx.Request) -> None:
 
 
 # --- github ----------------------------------------------------------------
-
-
-async def test_github_open_pr() -> None:
-    recorder = Recorder(json_reply(201, GH_PR))
-    platform = GitHubPlatform("github.com", TOKEN, client=client_for(recorder))
-    found = await platform.open_pr(GH_REPO, "joshua/fix-7", "main", "Fix it", "Body")
-    request = recorder.last
-    assert request.method == "POST"
-    assert str(request.url) == "https://api.github.com/repos/example-home/app/pulls"
-    assert json.loads(request.content) == {
-        "title": "Fix it",
-        "head": "joshua/fix-7",
-        "base": "main",
-        "body": "Body",
-    }
-    assert_github_headers(request)
-    assert found.number == 7
-    assert found.html_url == "https://github.com/example-home/app/pull/7"
-    assert found.url.startswith("https://api.github.com/")
-
-
-async def test_github_find_pr() -> None:
-    recorder = Recorder(json_reply(200, [GH_PR]))
-    platform = GitHubPlatform("github.com", TOKEN, client=client_for(recorder))
-    found = await platform.find_pr(GH_REPO, "joshua/fix-7")
-    request = recorder.last
-    assert request.method == "GET"
-    assert request.url.path == "/repos/example-home/app/pulls"
-    assert request.url.params["head"] == "example-home:joshua/fix-7"
-    assert request.url.params["state"] == "open"
-    assert_github_headers(request)
-    assert found is not None and found.number == 7
-
-    none = GitHubPlatform("github.com", TOKEN, client=client_for(Recorder(json_reply(200, []))))
-    assert await none.find_pr(GH_REPO, "other") is None
 
 
 async def test_github_pr() -> None:
@@ -243,66 +207,6 @@ async def test_github_enterprise_uses_the_api_v3_base() -> None:
 # --- gitlab ----------------------------------------------------------------
 
 
-async def test_gitlab_open_pr_with_a_subgroup() -> None:
-    recorder = Recorder(json_reply(201, GL_MR))
-    platform = GitLabPlatform("gitlab.example.net", TOKEN, client=client_for(recorder))
-    found = await platform.open_pr(GL_REPO, "joshua/fix-3", "develop", "Fix it", "Body")
-    request = recorder.last
-    assert request.method == "POST"
-    assert request.url.raw_path.decode() == (
-        "/api/v4/projects/group%2Fsub%2Fproject/merge_requests"
-    )
-    assert request.url.host == "gitlab.example.net"
-    assert json.loads(request.content) == {
-        "source_branch": "joshua/fix-3",
-        "target_branch": "develop",
-        "title": "Fix it",
-        "description": "Body",
-    }
-    assert_gitlab_headers(request)
-    assert found.number == 3
-    assert found.html_url.endswith("/merge_requests/3")
-
-
-async def test_gitlab_find_pr() -> None:
-    recorder = Recorder(json_reply(200, [GL_MR]))
-    platform = GitLabPlatform("gitlab.example.net", TOKEN, client=client_for(recorder))
-    found = await platform.find_pr(GL_REPO, "joshua/fix-3")
-    request = recorder.last
-    assert request.method == "GET"
-    assert request.url.raw_path.decode().split("?")[0] == (
-        "/api/v4/projects/group%2Fsub%2Fproject/merge_requests"
-    )
-    assert request.url.params["source_branch"] == "joshua/fix-3"
-    assert request.url.params["state"] == "opened"
-    assert_gitlab_headers(request)
-    assert found is not None and found.number == 3
-
-    none = GitLabPlatform(
-        "gitlab.example.net", TOKEN, client=client_for(Recorder(json_reply(200, [])))
-    )
-    assert await none.find_pr(GL_REPO, "x") is None
-
-
-async def test_gitlab_find_pr_skips_a_merge_request_from_a_fork() -> None:
-    fork = {**GL_MR, "iid": 9, "source_project_id": 99}
-    unknown = {**GL_MR, "iid": 10, "source_project_id": None}
-    recorder = Recorder(json_reply(200, [fork, unknown, GL_MR]))
-    platform = GitLabPlatform("gitlab.example.net", TOKEN, client=client_for(recorder))
-    found = await platform.find_pr(GL_REPO, "joshua/fix-3")
-    assert found is not None and found.number == 3
-    only_fork = GitLabPlatform(
-        "gitlab.example.net", TOKEN, client=client_for(Recorder(json_reply(200, [fork])))
-    )
-    assert await only_fork.find_pr(GL_REPO, "joshua/fix-3") is None
-    # project_id stands in when target_project_id is missing.
-    old = {k: v for k, v in GL_MR.items() if k != "target_project_id"}
-    older = GitLabPlatform(
-        "gitlab.example.net", TOKEN, client=client_for(Recorder(json_reply(200, [old])))
-    )
-    assert (await older.find_pr(GL_REPO, "joshua/fix-3")) is not None
-
-
 async def test_gitlab_pr() -> None:
     recorder = Recorder(json_reply(200, GL_MR))
     platform = GitLabPlatform("gitlab.example.net", TOKEN, client=client_for(recorder))
@@ -386,8 +290,6 @@ async def test_an_error_never_holds_the_token(kind, repo) -> None:
     platform = kind(host, TOKEN, client=client_for(recorder))
     for call in (
         lambda: platform.pr(repo, 1),
-        lambda: platform.find_pr(repo, "b"),
-        lambda: platform.open_pr(repo, "b", "main", "t", "x"),
         lambda: platform.compare(repo, "main", "b"),
         lambda: platform.delete_branch(repo, "b"),
     ):
@@ -448,8 +350,6 @@ def test_count_lines() -> None:
 async def test_the_git_kind_refuses_the_pull_request_calls() -> None:
     platform = GitPlatform("git.example.org")
     for call in (
-        lambda: platform.open_pr("git.example.org/g/p", "b", "main", "t", "x"),
-        lambda: platform.find_pr("git.example.org/g/p", "b"),
         lambda: platform.pr("git.example.org/g/p", 1),
         lambda: platform.delete_branch("git.example.org/g/p", "b"),
     ):

@@ -46,8 +46,8 @@ no Claude token, no fleet token, and no memory access. By default, it can
 connect to the manager and to no other address, except the cluster DNS
 resolver on Kubernetes. The manager forwards its Claude requests, its git
 traffic, and, with the `packages` block on, its package downloads. It scans
-each diff before it opens a pull request. `addons/developer/README.md` has
-the full security model.
+the diff of each push, and a task ends at the pushed branch.
+`addons/developer/README.md` has the full security model.
 
 Every other addon stays one container.
 

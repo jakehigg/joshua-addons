@@ -9,6 +9,9 @@ the host of a repository and builds the adapter:
 - ``gitlab``: the GitLab REST API v4 at ``https://<host>/api/v4``.
 - ``git``: no API. A task ends at the pushed branch.
 
+No adapter opens a pull request or a merge request. An adapter reads the
+pull request that a ``rework`` names, reads a diff, and deletes a branch.
+
 A reply that is not 2xx raises ``PlatformError``. Its message never holds the
 token or a URL with a credential.
 """
@@ -135,12 +138,6 @@ def count_lines(patch: str) -> tuple[int, int]:
 
 class Platform(Protocol):
     kind: str
-
-    async def open_pr(
-        self, repo: str, head: str, base: str, title: str, body: str
-    ) -> PullRequest: ...
-
-    async def find_pr(self, repo: str, head: str) -> PullRequest | None: ...
 
     async def pr(self, repo: str, number: int) -> PullRequest: ...
 
@@ -278,24 +275,6 @@ class GitHubPlatform(_HttpPlatform):
             state=data.get("state"),
         )
 
-    async def open_pr(self, repo: str, head: str, base: str, title: str, body: str) -> PullRequest:
-        data = await self._request(
-            "POST",
-            f"{self._repo_path(repo)}/pulls",
-            json={"title": title, "head": head, "base": base, "body": body},
-        )
-        return self._parse(data)
-
-    async def find_pr(self, repo: str, head: str) -> PullRequest | None:
-        _, path = split_repo(repo)
-        owner = path.split("/", 1)[0]
-        data = await self._request(
-            "GET",
-            f"{self._repo_path(repo)}/pulls",
-            params={"head": f"{owner}:{head}", "state": "open"},
-        )
-        return self._parse(data[0]) if data else None
-
     async def pr(self, repo: str, number: int) -> PullRequest:
         return self._parse(await self._request("GET", f"{self._repo_path(repo)}/pulls/{number}"))
 
@@ -390,37 +369,6 @@ class GitLabPlatform(_HttpPlatform):
             state=data.get("state"),
         )
 
-    async def open_pr(self, repo: str, head: str, base: str, title: str, body: str) -> PullRequest:
-        data = await self._request(
-            "POST",
-            f"{self._project(repo)}/merge_requests",
-            json={
-                "source_branch": head,
-                "target_branch": base,
-                "title": title,
-                "description": body,
-            },
-        )
-        return self._parse(data)
-
-    async def find_pr(self, repo: str, head: str) -> PullRequest | None:
-        """The open merge request from ``head`` of this project into this project.
-
-        A merge request from a fork with a branch of the same name has
-        another ``source_project_id``, and is not taken.
-        """
-        data = await self._request(
-            "GET",
-            f"{self._project(repo)}/merge_requests",
-            params={"source_branch": head, "state": "opened"},
-        )
-        for item in data or []:
-            target = item.get("target_project_id", item.get("project_id"))
-            source = item.get("source_project_id")
-            if source is not None and source == target:
-                return self._parse(item)
-        return None
-
     async def pr(self, repo: str, number: int) -> PullRequest:
         return self._parse(
             await self._request("GET", f"{self._project(repo)}/merge_requests/{number}")
@@ -468,12 +416,6 @@ class GitPlatform:
         return PlatformUnsupported(
             f"the git host {self.host} has no API for {what}; the task ends at the pushed branch"
         )
-
-    async def open_pr(self, repo: str, head: str, base: str, title: str, body: str) -> PullRequest:
-        raise self._refuse("pull requests")
-
-    async def find_pr(self, repo: str, head: str) -> PullRequest | None:
-        raise self._refuse("pull requests")
 
     async def pr(self, repo: str, number: int) -> PullRequest:
         raise self._refuse("pull requests")

@@ -92,8 +92,8 @@ The report has these fields: `status`, `summary`, `files_changed`,
 not pushed), `error`, the token counts, the cost, and `log`. The manager scans the diff from
 `clone_head` to the branch, and deletes the branch after a scan hit only
 when `created_branch` is true on a `develop`. The report has no field for
-the branch name or the pull request. The manager takes them from its own
-data, and it refuses a report with an unknown field.
+the branch name. The manager takes the branch from its own data, and it
+refuses a report with an unknown field.
 
 ## When the manager restarts
 

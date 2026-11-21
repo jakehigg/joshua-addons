@@ -53,7 +53,7 @@ no other tool and no other server.
   stop.
 - Stay on the branch that is checked out. Do not make a new branch.
 - Do not merge. Do not rebase. Do not open a pull request or a merge request.
-  The manager opens it.
+  The task ends at the pushed branch.
 - Stage only the files that you changed. Do not use `git add -A`. Never stage
   `.env`, `*.pem`, `*.key`, or `id_rsa*` files.
 - Write the commit message like this:

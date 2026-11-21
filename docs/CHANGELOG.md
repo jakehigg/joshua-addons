@@ -29,7 +29,7 @@ releases, with the images and the packaged chart, are at
   to a file. The `Co-Authored-By:` trailer of Claude Code stays.
 
 - `developer`: `scan.disabled_repos` in `developer.yaml`. The credential scan
-  of the pull request gate skips a push to a repository that a pattern in the
+  of the push gate skips a push to a repository that a pattern in the
   list admits, and `scan` is then `disabled`. A plaintext secret that belongs
   in an internal repository no longer stops the work. Every pattern in the
   list holds internal repositories only: a pattern that a `public` pattern
@@ -53,6 +53,19 @@ releases, with the images and the packaged chart, are at
   a hint that names `group` and `include_notes`. `search_tasks` takes
   `include_notes` as well, and then each task carries `notes_excerpt`: the
   matched line of the notes and one line on each side.
+
+### Changed
+
+- `developer`: a task ends at the pushed branch. The addon opens no pull
+  request and no merge request, for any repository, and it writes no pull
+  request text. The report of a task that pushed holds the repository, the
+  branch, the base branch, the diff summary, the files changed, and the
+  tests, so Joshua writes the text and opens the pull request itself. A run
+  of `run_project` works through its tasks as `develop` on one branch, and
+  its result and `run_status` no longer hold `pr_url` and `pr_number`. On a
+  task, `pr_url` and `pr_number` name the pull request that a `rework` works
+  on; a `develop` task has none. The database adds the `diff_summary` column
+  on `tasks` at the next start, and drops nothing.
 
 ## 0.4.0 - 2026-11-19
 

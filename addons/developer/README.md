@@ -2,9 +2,8 @@
 
 The `developer` addon lets Joshua give a coding task to a worker. It has two
 parts. The **manager** is this addon: an MCP server that the gateway calls.
-It holds every secret, keeps the tasks in SQLite, applies the rules, and
-opens the pull request. The **worker** is the image
-`ghcr.io/jakehigg/joshua-addons-developer-worker`, from
+It holds every secret, keeps the tasks in SQLite, and applies the rules. The
+**worker** is the image `ghcr.io/jakehigg/joshua-addons-developer-worker`, from
 `addons/developer-worker/`. The manager starts one worker container for each
 task. The worker clones the repository, runs one Claude Code session, commits,
 pushes one branch, sends one report, and stops.
@@ -13,8 +12,8 @@ pushes one branch, sends one report, and stops.
 
 - Change code in a repository on GitHub, GitHub Enterprise, GitLab, or a
   plain git host, on a new branch or on the branch of an open pull request.
-- Open the pull request (GitHub) or the merge request (GitLab) after a clean
-  credential scan.
+- Scan the diff of a pushed branch for credentials, and delete the branch of
+  a `develop` on a hit.
 - Ask Joshua questions in the middle of a task, and wait for the answers,
   for up to `ask_wait_s` in total (see "The task clock").
 - Install the dependencies of the project and run its tests, when the
@@ -23,6 +22,9 @@ pushes one branch, sends one report, and stops.
 
 ## What it cannot do
 
+- Open a pull request or a merge request. A task ends at the pushed branch,
+  and the report holds what Joshua needs to write the pull request text and
+  open it.
 - Merge a pull request, move a label, or read an issue. The addon has no
   tool for these. Joshua reads the issue and puts what the worker needs in
   the brief.
@@ -38,14 +40,14 @@ pushes one branch, sends one report, and stops.
 | `rework(repo, feedback, pr?, branch?, persona?, notify?, refs?)` | Starts a task on the source branch of a pull request. `pr` is a number or a URL. On a `git` host, give `branch` and not `pr`. `refs` is the same as for `develop`. |
 | `answer(task_id, text)` | Gives a waiting worker the answer to its question. On a task that stopped `blocked` or `timed_out` after a push, starts a new worker that continues on the branch. |
 | `resume(task_id, note?, persona?)` | Starts one new worker for a task that ran out of turns or out of time. The worker continues from the checkout in the work directory of the task (see [Resuming a task that ran out](#resuming-a-task-that-ran-out)). |
-| `task_status(task_id)` | The status, the branch, the pull request, the scan result, the cost, the summary, the open question, the resumes, and `resumable`. |
+| `task_status(task_id)` | The status, the branch, the base branch, the diff summary, the scan result, the cost, the summary, the open question, the resumes, and `resumable`. `pr_url` and `pr_number` name the pull request that a `rework` works on; a `develop` task has none. |
 | `task_output(task_id)` | The full report and the session log. |
 | `list_tasks(limit?)` | The recent tasks of the person, newest first. `limit` is 1 to 100, default 10. |
 | `get_settings()` | The git name, the git email, the default persona, and the chat for reports. |
 | `set_settings(git_name?, git_email?, default_persona?, notify?)` | Changes these four settings. An empty string removes the change. |
 | `list_personas()` | The personas, and the default persona of the person. |
-| `run_project(repo, project, branch?, persona?, notify?)` | Starts a run: it works through the open tasks of a tasks project on one branch and one pull request (see [Development auto-run](#development-auto-run)). |
-| `run_status(run_id?, project?)` | The status, the branch, the pull request, and the current task of a run. With no argument, it lists the recent runs of the person. |
+| `run_project(repo, project, branch?, persona?, notify?)` | Starts a run: it works through the open tasks of a tasks project on one branch (see [Development auto-run](#development-auto-run)). |
+| `run_status(run_id?, project?)` | The status, the branch, and the current task of a run. With no argument, it lists the recent runs of the person. |
 | `pause_run(run_id?, project?)` | Pauses a run. The task that runs now goes on; no next task starts. |
 | `resume_run(run_id?, project?)` | Resumes a paused run, and starts its next open task. |
 | `stop_run(run_id?, project?)` | Stops a run for good. |
@@ -108,19 +110,20 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `run_project` replaces the project loop that a manager prompt (such as
 `40-projects.md`) runs by hand. A **run** works through the open tasks of one
 project of the tasks addon, in roadmap order. It owns one branch (default
-`feat-<project slug>`) and one pull request in one repository. It never merges.
+`feat-<project slug>`) in one repository. It opens no pull request, and it
+never merges.
 
 How a run goes:
 
 1. `run_project` starts the first task as `develop`. The brief is the task
-   title, the task notes, and the line "Commit and push your work." The first
-   line is the title of the pull request. A project that has an `active` or
-   `paused` run in the same repository gets `run_exists`.
+   title, the task notes, and the line "Commit and push your work." A project
+   that has an `active` or `paused` run in the same repository gets
+   `run_exists`.
 2. The task ends. The manager records the report. When the task is a task of
    a run, the manager then takes one step. A step never raises into the
    report.
-3. On `success`, the step marks the tasks task done, and adds "done in
-   `<pull request>`" to its notes. It then reads the limits and the next task:
+3. On `success`, the step marks the tasks task done, and adds "done on
+   `<branch>`" to its notes. It then reads the limits and the next task:
    - No open task is left: the run is `done`, and Joshua gets a model turn:
      "Project `<name>` finished".
    - Every open task waits for a blocker: the run pauses, and Joshua gets a
@@ -129,11 +132,10 @@ How a run goes:
      Joshua gets a model turn: "Phase `<name>` done". Say `resume` to go on.
    - A limits window is at or over its ceiling: the run pauses, and Joshua
      gets a model turn.
-   - Else the next task starts as `rework` of the pull request (or `develop`
-     again, when no pull request exists yet). The step adds "dispatched as
-     developer task `<id>` on `<branch>`" to its notes, and sends a verbatim
-     line to the chat: `✓ #3 Title — next: #4 Title`. A verbatim line costs
-     no model turn.
+   - Else the next task starts as a `develop` on the same branch. The step
+     adds "dispatched as developer task `<id>` on `<branch>`" to its notes,
+     and sends a verbatim line to the chat: `✓ #3 Title — next: #4 Title`.
+     A verbatim line costs no model turn.
 4. On a failure (`failed`, `timed_out`, or `blocked` with no question), the
    step starts the same task one more time and sends a verbatim line. On the
    second failure the run pauses, and the normal report event gives Joshua a
@@ -159,9 +161,6 @@ core cannot give is unknown too. The ceilings are the `runs` block of
 `developer.yaml`: `ceiling_five_hour_pct` (default 80) and
 `ceiling_seven_day_pct` (default 90).
 
-A call with a workspace stamp gets a `resource_link` to the pull request in
-the result of each run tool, once the run has a pull request.
-
 ## Workspaces
 
 A call from a Joshua workspace carries the workspace id in
@@ -174,10 +173,10 @@ chat has no such key, and then nothing here applies.
   field with the same id in its body to `/v1/events`. Channels then runs the
   event in the workspace. An event of a task without an id has no `workspace`
   field.
-- `develop`, `rework`, and `task_status` add an MCP `resource_link` block to
-  their result when the call has the id and the task has a pull request. The
-  link is the URL of the pull request. A task has no report page, so no link
-  names one. A call with no id gets the same result as before, with no link.
+- `rework` and `task_status` add an MCP `resource_link` block to their result
+  when the call has the id and the task works on a pull request. The link is
+  the URL of that pull request. A `develop` task has none, so its result has
+  no link. A call with no id gets the same result, with no link.
 
 ## Reference repositories
 
@@ -193,8 +192,8 @@ in the same form as `repo`, at most 5.
   `/work/refs/<host>/<owner>/<name>`. The clone has no push URL, and its
   files are read-only. The session can read the folder, and the prompt tells
   the model to read the source there and write the code into the checkout.
-- The worker pushes only the task branch of `repo`. The manager scans and
-  opens the pull request only there.
+- The worker pushes only the task branch of `repo`, and the manager scans
+  only that diff.
 - The git host tunnel lets the task reach the host of each reference
   repository too, and the brief carries the token of each such host.
 
@@ -311,16 +310,16 @@ hostile, and these rules limit what it can read and where its data can go:
    the package hosts in that block, with no credential (see "The package
    proxy"). On Kubernetes, a worker can also use the cluster DNS resolver, so
    a DNS tunnel through the resolver stays possible.
-4. **The manager gates the pull request.** It scans the diff of the worker's
-   commits for credentials before it opens the pull request. A hit fails the
-   task, and deletes the branch only when the task made it. A person reads
-   every pull request.
+4. **The manager gates the push.** It scans the diff of the worker's commits
+   for credentials. A hit fails the task, and deletes the branch only when
+   the task made it. The task ends at the pushed branch: the addon opens no
+   pull request, so no text of a task reaches a repository without a reader.
 5. **The worker's words are data, not instructions.** Its report and its
    questions go to Joshua as events that say so. Each text from the worker
-   is in a fenced block that the worker cannot close. The branch and the
-   pull request in the event come from the manager's own data, never from
-   the report. The worker API refuses a body over 2 MiB, and the manager
-   cuts each stored report field to its limit.
+   is in a fenced block that the worker cannot close. The branch, the base
+   branch, and the diff summary in the event come from the manager's own
+   data, never from the report. The worker API refuses a body over 2 MiB, and
+   the manager cuts each stored report field to its limit.
 6. **The repository configures nothing.** The session loads no settings, no
    hooks, and no MCP servers from the checkout. It reads `CLAUDE.md` as
    plain text.
@@ -413,7 +412,7 @@ work:                              # the work directories. See "The work directo
 runs:                              # the limits ceilings of a run, in percent used. See "Development auto-run".
   ceiling_five_hour_pct: 80
   ceiling_seven_day_pct: 90
-scan:                              # the credential scan of the pull request gate
+scan:                              # the credential scan of the push gate
   disabled_repos:                  # patterns whose push is not scanned; each one is internal
     - git.example.net/platform/*   # See "The credential scan of an internal repository".
 packages:                          # the package proxy. See "The package proxy".
@@ -719,11 +718,11 @@ requests and its limits.
 
 ## Git hosts
 
-| `kind` | API | Pull requests | Credential user name |
+| `kind` | API | What the API gives | Credential user name |
 |---|---|---|---|
-| `github` | `https://api.github.com` for `github.com`. `https://<host>/api/v3` for GitHub Enterprise. | yes | `x-access-token` |
-| `gitlab` | `https://<host>/api/v4`, for GitLab.com and a self-hosted GitLab | yes, merge requests | `oauth2` |
-| `git` | none | no. The task ends at the pushed branch. | `git` |
+| `github` | `https://api.github.com` for `github.com`. `https://<host>/api/v3` for GitHub Enterprise. | a pull request, a diff, a branch delete | `x-access-token` |
+| `gitlab` | `https://<host>/api/v4`, for GitLab.com and a self-hosted GitLab | a merge request, a diff, a branch delete | `oauth2` |
+| `git` | none | nothing. A `rework` needs an API, and the scan is `unavailable`. | `git` |
 
 The key of a platform is the host of the repository, with the port when the
 repository address has one. For a task, the manager uses the person's entry
@@ -754,11 +753,7 @@ A task never works on its base branch, `main`, or `master`. `develop` and
 `rework` refuse such a branch with `branch_is_base`, and a `rework` on a
 `git` host refuses `main` and `master`.
 
-On GitLab, the manager finds the merge request of a branch only when it
-comes from the same project. A merge request from a fork with a branch of
-the same name is not taken.
-
-### The pull request gate
+### The push gate
 
 After the worker pushes, the manager:
 
@@ -781,8 +776,9 @@ After the worker pushes, the manager:
    this task made it: a `develop` whose worker found no branch on the remote.
    A branch that was there before the task stays, and the error says so. A
    `rework` never deletes the branch.
-4. On a clean `develop` with status `success`, finds or opens the pull
-   request. A `rework` push changes the pull request that is there.
+4. On a `rework` with status `success`, reads the pull request again, and
+   fails the task when it is gone. A `develop` ends at the pushed branch: the
+   addon opens no pull request and no merge request, for any repository.
 
 `scan` in `task_status` is `clean`, `partial` (the host sent no text for a
 file, or did not list every file), `hit`, `unavailable` (a `git` host
@@ -792,9 +788,14 @@ diff is never `clean`. GitHub lists at most 300 files in one compare
 reply. The
 manager reads the reply page by page, and when the list stops at that cap,
 the scan is `partial`. A task that
-ends `blocked` or `timed_out` keeps its pushed branch and gets no pull
-request. One `answer` call resumes it. A new `develop` with the same
-`branch` also continues the work, as a new task.
+ends `blocked` or `timed_out` keeps its pushed branch. One `answer` call
+resumes it. A new `develop` with the same `branch` also continues the work,
+as a new task.
+
+The report of a task that pushed holds the repository, the branch, the base
+branch, the diff summary (`diff_summary`: the files, the lines added, and the
+lines removed), the files changed, and the tests. Joshua writes the pull
+request text from these lines and opens the pull request itself.
 
 ### The credential scan of an internal repository
 
@@ -810,8 +811,8 @@ scan:
 ```
 
 - A push to a repository that a pattern in the list admits runs no scan. The
-  manager reads no diff of it, and `scan` is `disabled`. The pull request
-  opens as it does for a clean push.
+  manager reads no diff of it, so `scan` is `disabled` and the task has no
+  diff summary.
 - Every pattern in the list holds internal repositories only. A pattern that
   a `public` pattern of `repos` or `people.<id>.repos` admits stops the addon
   at start. The message names the pattern.

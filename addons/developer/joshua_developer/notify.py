@@ -8,11 +8,11 @@ Two events exist: the report of a task that ended, and a question from a
 worker. The text of each comes from the report fields or the question only,
 never from the brief. The text says that the worker's words are data.
 
-Each text from the worker (summary, error, question, files) is in a fenced
-block, and a triple backtick in it becomes three single quotes. So a worker
-cannot close the fence and write a line that looks like the manager's. The
-lines outside the fences (status, repository, branch, pull request) come from
-the manager's own data only.
+Each text from the worker (summary, error, question, files, tests) is in a
+fenced block, and a triple backtick in it becomes three single quotes. So a
+worker cannot close the fence and write a line that looks like the manager's.
+The lines outside the fences (status, repository, branch, base branch, diff
+summary) come from the manager's own data only.
 
 The retry rules:
 
@@ -48,6 +48,7 @@ MAX_SUMMARY = 1500
 MAX_ERROR = 1500
 MAX_QUESTION = 2000
 MAX_FILES = 50
+MAX_TESTS = 50
 FENCE = "```"
 
 QUESTION_HEADER = (
@@ -163,8 +164,10 @@ def _reason(response: httpx.Response) -> str | None:
 def report_text(task: dict[str, Any]) -> str:
     """The text of a report event, from the report fields of ``task`` only.
 
-    ``resumable`` in ``task`` adds the line that says that ``resume`` can
-    take the task up again (see ``Manager.report_row``).
+    The text holds what the agent needs to write the pull request itself:
+    the repository, the branch, the base branch, the diff summary, the files
+    changed, and the tests. ``resumable`` in ``task`` adds the line that says
+    that ``resume`` can take the task up again (see ``Manager.report_row``).
     """
     status = str(task.get("status") or "unknown")
     lines = [
@@ -174,8 +177,12 @@ def report_text(task: dict[str, Any]) -> str:
     ]
     if task.get("branch_name"):
         lines.append(f"Branch: {task['branch_name']}")
+    if task.get("base_branch"):
+        lines.append(f"Base branch: {task['base_branch']}")
     if task.get("pr_url"):
-        lines.append(f"Pull request: {task['pr_url']}")
+        lines.append(f"Pull request of the rework: {task['pr_url']}")
+    if task.get("diff_summary"):
+        lines.append(f"Diff: {task['diff_summary']}")
     summary = (task.get("summary") or "").strip()
     if summary:
         lines.append(fenced("Summary:", summary[:MAX_SUMMARY]))
@@ -184,6 +191,10 @@ def report_text(task: dict[str, Any]) -> str:
     if files:
         shown = files[:MAX_FILES] + (["..."] if len(files) > MAX_FILES else [])
         lines.append(fenced("Files changed:", "\n".join(shown)))
+    tests = [str(line) for line in report.get("tests_run") or []]
+    if tests:
+        shown = tests[:MAX_TESTS] + (["..."] if len(tests) > MAX_TESTS else [])
+        lines.append(fenced("Tests run:", "\n".join(shown)))
     error = (task.get("error") or "").strip()
     if error:
         lines.append(fenced("Error:", error[:MAX_ERROR]))
@@ -196,7 +207,11 @@ def report_text(task: dict[str, Any]) -> str:
             "continues from the work in the task directory."
         )
     if status == "success":
-        lines.append("Tell the person the result, with the pull request link.")
+        lines.append(
+            "The branch is pushed, and the developer opened no pull request. Write the "
+            "pull request text from the lines above, open the pull request yourself, and "
+            "tell the person the result."
+        )
     else:
         lines.append("Tell the person the result in short.")
     return "\n".join(lines)

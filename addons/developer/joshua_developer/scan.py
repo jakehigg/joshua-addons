@@ -1,4 +1,4 @@
-"""The credential scan: the gate before a pull request.
+"""The credential scan: the gate after a push.
 
 After a worker pushes, the manager reads the diff over the platform API and
 scans the added lines with ``gitleaks``. A finding names the file, the line
