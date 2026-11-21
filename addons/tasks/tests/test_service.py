@@ -498,3 +498,67 @@ async def test_search_empty_query_no_match_and_limit(db):
     assert [f["task"].title for f in limited["tasks"]] == ["paint 0", "paint 1"]
     assert len(limited["projects"]) == 1
     assert services.SEARCH_LIMIT == 20
+
+
+async def test_notes_excerpt_is_the_matched_line_and_one_line_each_side():
+    notes = "first line\nsecond line\nthe PAINT line\nfourth line\nfifth line"
+    assert services.notes_excerpt(notes, "paint") == ("second line\nthe PAINT line\nfourth line")
+    assert services.notes_excerpt(notes, "first") == "first line\nsecond line"
+    assert services.notes_excerpt(notes, "zebra") is None
+    assert services.notes_excerpt(notes, "   ") is None
+    assert services.notes_excerpt("", "paint") is None
+
+
+async def test_notes_excerpt_cuts_a_long_line_around_the_match():
+    notes = "x" * 2000 + " paint " + "y" * 2000
+    excerpt = services.notes_excerpt(notes, "paint")
+    assert "paint" in excerpt
+    assert len(excerpt) <= services.EXCERPT_CHARS + 2
+    assert excerpt.startswith("…") and excerpt.endswith("…")
+
+
+async def test_list_tasks_reads_one_group(db):
+    await services.create_project(db, "P")
+    g = await services.create_group(db, "p", "Phase 1")
+    await services.create_task(db, "p", "in the phase", group=g.id)
+    done = await services.create_task(db, "p", "also in the phase", group="phase 1")
+    await services.update_task(db, done.id, done=True)
+    await services.create_task(db, "p", "in the backlog")
+
+    assert {t.title for t in await services.list_tasks(db, "p")} == {
+        "in the phase",
+        "also in the phase",
+        "in the backlog",
+    }
+    by_name = await services.list_tasks(db, "p", group="Phase 1")
+    assert [t.title for t in by_name] == ["in the phase", "also in the phase"]
+    by_id = await services.list_tasks(db, "p", group=g.id)
+    assert [t.title for t in by_id] == ["in the phase", "also in the phase"]
+    open_only = await services.list_tasks(db, "p", include_done=False, group=g.id)
+    assert [t.title for t in open_only] == ["in the phase"]
+    with pytest.raises(services.NotFoundError):
+        await services.list_tasks(db, "p", group="nope")
+
+
+async def test_task_detail_holds_the_notes_the_project_the_group_and_the_links(db):
+    await services.create_project(db, "P")
+    g = await services.create_group(db, "p", "Phase 1")
+    blocker = await services.create_task(db, "p", "first")
+    task = await services.create_task(db, "p", "second", notes="the long notes", group=g.id)
+    await services.block_task(db, task.number, blocker.number)
+
+    found = await services.task_detail(db, task.number)
+    assert found["task"].notes == "the long notes"
+    assert found["project"]["slug"] == "p"
+    assert found["group"].name == "Phase 1"
+    assert found["task"].blocked is True
+    assert [ref["number"] for ref in found["task"].blockers] == [blocker.number]
+
+    by_id = await services.task_detail(db, str(task.id))
+    assert by_id["task"].id == task.id
+    assert (await services.task_detail(db, blocker.number))["group"] is None
+    assert [
+        ref["number"] for ref in (await services.task_detail(db, blocker.number))["task"].blocking
+    ] == [task.number]
+    with pytest.raises(services.NotFoundError):
+        await services.task_detail(db, 9999)

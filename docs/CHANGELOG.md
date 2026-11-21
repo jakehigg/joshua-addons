@@ -6,6 +6,20 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+### Added
+
+- `tasks`: read one task, and lists that fit in one result. The new tool
+  `get_task(task_id)` gives one task in full, with its notes, its size, its
+  due date, its assignee, its project, its group, and its links, so nothing
+  has to write to read. `list_tasks` leaves the `notes` field out, which
+  keeps a project of 50 tasks with long notes inside the result limit, and
+  the new `include_notes` brings the notes back. Its new `group` argument
+  reads one group at a time. A result that is still too large holds the
+  project, `task_count`, the groups with their counts, `too_large` true, and
+  a hint that names `group` and `include_notes`. `search_tasks` takes
+  `include_notes` as well, and then each task carries `notes_excerpt`: the
+  matched line of the notes and one line on each side.
+
 ## 0.4.0 - 2026-11-19
 
 ### Upgrading from 0.2.0

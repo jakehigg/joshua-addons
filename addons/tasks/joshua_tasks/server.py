@@ -11,6 +11,7 @@ boundary.
 from __future__ import annotations
 
 import hmac
+import json
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -36,6 +37,11 @@ logger = get_logger("tasks")
 # Only ``/mcp`` needs a bearer token. ``/healthz``, ``/api/*`` (the REST API
 # behind the web UI), and the UI itself at ``/`` stay open.
 PROTECTED_PREFIX = "/mcp"
+
+# A result above this many characters of JSON does not reach the caller, which
+# refuses it whole. ``list_tasks`` answers with the shape of the project, and
+# a hint, instead of a result nobody reads.
+MAX_RESULT_CHARS = 40_000
 
 # Set by ``lifespan`` on startup, cleared on shutdown. A tool called before
 # startup (or after shutdown) fails loudly instead of touching no database.
@@ -117,12 +123,13 @@ def _task_ref_dict(ref: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _task_dict(t: Task) -> dict[str, Any]:
+def _task_dict(t: Task, include_notes: bool = True) -> dict[str, Any]:
+    """One task as the tools return it. Without ``include_notes``, no ``notes`` field."""
     return {
         "id": str(t.id),
         "number": t.number,
         "title": t.title,
-        "notes": t.notes,
+        **({"notes": t.notes} if include_notes else {}),
         "done": t.done,
         "size": t.size,
         "due_date": _iso(t.due_date),
@@ -135,10 +142,16 @@ def _task_dict(t: Task) -> dict[str, Any]:
     }
 
 
-def _found_task_dict(found: dict[str, Any]) -> dict[str, Any]:
-    """One task match from ``service.search``, with its project and its group."""
+def _found_task_dict(found: dict[str, Any], query: str | None = None) -> dict[str, Any]:
+    """One task match from ``service.search``, with its project and its group.
+
+    With ``query``, the task also carries ``notes_excerpt``: the matched line
+    of its notes and one line on each side, or null when the match is in the
+    title only. Never the whole notes.
+    """
     task: Task = found["task"]
     group: Group | None = found["group"]
+    excerpt = {"notes_excerpt": service.notes_excerpt(task.notes, query)} if query else {}
     return {
         "id": str(task.id),
         "number": task.number,
@@ -151,6 +164,7 @@ def _found_task_dict(found: dict[str, Any]) -> dict[str, Any]:
         "group": {"id": str(group.id), "name": group.name} if group else None,
         "blocked": task.blocked,
         "blockers": [_task_ref_dict(r) for r in task.blockers],
+        **excerpt,
     }
 
 
@@ -417,7 +431,12 @@ async def list_archived_projects() -> list[dict[str, Any]]:
 
 
 @mcp.tool()
-async def list_tasks(project: str, include_done: bool = True) -> dict[str, Any]:
+async def list_tasks(
+    project: str,
+    include_done: bool = True,
+    include_notes: bool = False,
+    group: str | None = None,
+) -> dict[str, Any]:
     """
     A project's tasks in roadmap order: each group (a phase) with its tasks,
     then the backlog (tasks in no group). The order is the order to do them
@@ -433,34 +452,92 @@ async def list_tasks(project: str, include_done: bool = True) -> dict[str, Any]:
     blockers (the tasks it waits for), and blocking (the tasks that wait for
     it). Set a link with block_task.
 
+    A task has no notes field here, because the notes of a large project do
+    not fit in one result. Read the notes of one task with get_task, or ask
+    for them with include_notes.
+
+    A result that is still too large holds the project, task_count, the
+    groups with their counts and no tasks, too_large true, and a hint. Call
+    the tool again for one group, or without include_notes.
+
     Args:
         project: Project slug or id.
         include_done: Set false to only see open tasks (counts still include done).
+        include_notes: Set true to also get the full notes of every task.
+        group: Group name or id, to read the tasks of that one group.
     """
     async with _tool_session() as session:
         summary = await service.project_summary(session, project)
-        tasks = await service.list_tasks(session, project, include_done=include_done)
+        one = (
+            await service.resolve_group(session, summary["id"], group)
+            if group is not None
+            else None
+        )
+        tasks = await service.list_tasks(
+            session, project, include_done=include_done, group=one.id if one else None
+        )
         groups = await service.list_groups(session, project)
+    if one is not None:
+        groups = [g for g in groups if g["id"] == one.id]
     by_group: dict[str, list[dict[str, Any]]] = {}
     backlog: list[dict[str, Any]] = []
     for t in tasks:
         target = by_group.setdefault(str(t.group_id), []) if t.group_id else backlog
-        target.append(_task_dict(t))
-    return {
+        target.append(_task_dict(t, include_notes=include_notes))
+    group_dicts = [
+        {
+            "id": str(g["id"]),
+            "name": g["name"],
+            "target_date": _iso(g["target_date"]),
+            "task_count": g["task_count"],
+            "done_count": g["done_count"],
+            "percent": g["percent"],
+        }
+        for g in groups
+    ]
+    result = {
         "project": _summary_dict(summary),
-        "groups": [
-            {
-                "id": str(g["id"]),
-                "name": g["name"],
-                "target_date": _iso(g["target_date"]),
-                "task_count": g["task_count"],
-                "done_count": g["done_count"],
-                "percent": g["percent"],
-                "tasks": by_group.get(str(g["id"]), []),
-            }
-            for g in groups
-        ],
+        "groups": [{**g, "tasks": by_group.get(g["id"], [])} for g in group_dicts],
         "backlog": backlog,
+    }
+    if len(json.dumps(result)) <= MAX_RESULT_CHARS:
+        return result
+    return {
+        "project": result["project"],
+        "task_count": len(tasks),
+        "groups": group_dicts,
+        "too_large": True,
+        "hint": (
+            "the tasks of this project do not fit in one result. Call list_tasks with "
+            "group set to one of the groups above, and with include_notes false. Read "
+            "the notes of one task with get_task."
+        ),
+    }
+
+
+@mcp.tool()
+async def get_task(task_id: str) -> dict[str, Any]:
+    """
+    One task in full: its notes, size, due_date, assignee, its project, its
+    group, and its blocking links. Use it to read the notes of a task, which
+    list_tasks leaves out.
+
+    The task also carries its number ("task 24"), blocked (true while it
+    waits for an open task), blockers (the tasks it waits for), and blocking
+    (the tasks that wait for it). group is null for a task in the project's
+    backlog.
+
+    Args:
+        task_id: The task's number ("24") or its id. Both name the same task.
+    """
+    tid = _task_ref(task_id, "task_id")
+    async with _tool_session() as session:
+        found = await service.task_detail(session, tid)
+    group: Group | None = found["group"]
+    return {
+        **_task_dict(found["task"]),
+        "project": {"name": found["project"]["name"], "slug": found["project"]["slug"]},
+        "group": {"id": str(group.id), "name": group.name} if group else None,
     }
 
 
@@ -710,6 +787,7 @@ async def search_tasks(
     include_done: bool = False,
     project: str | None = None,
     limit: int = service.SEARCH_LIMIT,
+    include_notes: bool = False,
 ) -> dict[str, Any]:
     """
     Search the projects and the tasks for a word. Call it before
@@ -731,11 +809,16 @@ async def search_tasks(
     An archived project, and every task in it, is never searched. An empty
     query matches nothing.
 
+    With include_notes, each task also carries notes_excerpt: the matched
+    line of its notes and one line on each side, or null when the match is
+    in the title only. Read the whole notes of a task with get_task.
+
     Args:
         query: The word or phrase to look for.
         include_done: Set true to also match done tasks and done or closed projects.
         project: Project slug or id, to match tasks in one project only.
         limit: How many projects, and how many tasks, at most (default 20).
+        include_notes: Set true to get an excerpt of the notes around each match.
     """
     async with _tool_session() as session:
         found = await service.search(
@@ -743,7 +826,7 @@ async def search_tasks(
         )
     return {
         "projects": [_summary_dict(p) for p in found["projects"]],
-        "tasks": [_found_task_dict(f) for f in found["tasks"]],
+        "tasks": [_found_task_dict(f, query if include_notes else None) for f in found["tasks"]],
     }
 
 
