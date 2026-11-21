@@ -221,7 +221,7 @@ def build_brief(manager: Manager, task: dict[str, Any]) -> dict[str, Any]:
         "bundle": bool(history) and manager.has_bundle(task["task_id"]),
         # The earlier session was complete: push the saved commits, with no session.
         "push_only": push_only,
-        # The report fields of that session, for the pull request.
+        # The report fields of that session, for the report of the task.
         "saved": (
             {
                 "summary": previous.get("summary") or "",

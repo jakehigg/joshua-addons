@@ -21,11 +21,14 @@ reference repository together (``repo_class_mixed``), before the task takes
 a lock, so internal text cannot travel into a public repository through one
 sandbox.
 
-When a worker reports a push, the manager gates the pull request: it reads
-the diff of the worker's commits over the platform API and scans it for
-credentials. A hit fails the task, and deletes the branch only when the task
-made it. A clean diff gets a pull request. The branch and the pull request
-come from the task row and the platform, never from the report.
+When a worker reports a push, the manager gates the push: it reads the diff
+of the worker's commits over the platform API and scans it for credentials.
+A hit fails the task, and deletes the branch only when the task made it. A
+clean diff ends at the pushed branch: the addon opens no pull request and no
+merge request, for any repository. The report carries the repository, the
+branch, the base branch, the diff summary, the files changed, and the tests,
+so the agent of the person writes the pull request text and opens it. The
+branch comes from the task row, never from the report.
 
 The manager also serves the worker side: it mints the task token of each
 task, takes a question from a worker, and wakes the worker that waits for
@@ -73,10 +76,15 @@ from joshua_developer import notify, platforms, usage
 from joshua_developer.config import DeveloperConfig, RepoPattern, Settings, repo_class
 from joshua_developer.locks import LockedError, LockManager
 from joshua_developer.log import get_logger
-from joshua_developer.platforms import Platform, PlatformConfigError, PlatformError, Resolved
+from joshua_developer.platforms import (
+    Diff,
+    Platform,
+    PlatformConfigError,
+    PlatformError,
+    Resolved,
+)
 from joshua_developer.repos import (
     RepoError,
-    brief_title,
     check_branch,
     default_branch_name,
     normalize_repo,
@@ -235,6 +243,15 @@ def resume_text(task: dict[str, Any], note: str | None) -> str:
     if note and note.strip():
         parts.append(f"A note for this resume:\n{note.strip()}")
     return "\n\n".join(parts)
+
+
+def diff_summary(diff: Diff) -> str:
+    """The size of a diff in one line, for the report of the task."""
+    files = len(diff.files) + len(diff.unscanned)
+    text = f"{files} file(s) changed, {diff.additions} added, {diff.deletions} removed"
+    if diff.truncated:
+        text += "; the git host did not list every file"
+    return text
 
 
 def finding_error(findings: list[Finding]) -> str:
@@ -1013,10 +1030,12 @@ class Manager:
            ``unavailable`` when a ``git`` host has no diff API, and when
            gitleaks did not run. For a repository in
            ``scan.disabled_repos``, the scan is ``disabled``: the manager
-           reads no diff of it.
-        2. On a successful ``develop``, find the open pull request of the
-           branch, or open one. On a ``rework``, check that the pull request
-           is still there.
+           reads no diff of it. A diff that was read also gives
+           ``diff_summary``, for the report.
+        2. On a ``rework``, check that the pull request is still there.
+
+        A clean ``develop`` ends at the pushed branch. The addon opens no
+        pull request and no merge request.
 
         A ``PlatformError`` fails the task and keeps the branch. A 5xx gets
         one more attempt.
@@ -1047,6 +1066,8 @@ class Manager:
                 diff = None
             else:
                 diff = await retry_5xx(lambda: platform.compare(repo, since, head))
+            if diff is not None and not diff.unavailable:
+                out["diff_summary"] = diff_summary(diff)
             if disabled:
                 logger.info({"message": "the scan is off for this repository", "task_id": task_id})
                 out["scan"] = "disabled"
@@ -1066,24 +1087,7 @@ class Manager:
                     out["scan"] = "partial" if diff.unscanned or diff.truncated else "clean"
             if report.status != "success" or platform.kind == "git":
                 return out
-            if task["task_type"] == "develop":
-                step = "the pull request"
-
-                async def find_or_open() -> platforms.PullRequest:
-                    # A second attempt finds the pull request that a first
-                    # attempt opened, so a retry never opens two.
-                    found = await platform.find_pr(repo, head)
-                    if found is None:
-                        found = await platform.open_pr(
-                            repo, head, base, self._pr_title(task), self._pr_body(task, report)
-                        )
-                        logger.info({"message": "pull request opened", "task_id": task_id})
-                    return found
-
-                found = await retry_5xx(find_or_open)
-                out["pr_url"] = found.html_url or found.url
-                out["pr_number"] = found.number
-            else:
+            if task["task_type"] == "rework":
                 step = "the pull request"
                 number = int(task["pr_number"])
                 try:
@@ -1153,23 +1157,7 @@ class Manager:
             "error": error,
             "scan": "hit",
             "findings": [finding.to_dict() for finding in findings],
-            "pr_url": None,
-            "pr_number": None,
         }
-
-    def _pr_title(self, task: dict[str, Any]) -> str:
-        return brief_title(task["brief"]) or f"Developer task {task['task_id']}"
-
-    def _pr_body(self, task: dict[str, Any], report: Report) -> str:
-        person = self.effective_settings(task["person"])
-        name = person["git_name"] or task["person"]
-        parts = [report.summary.strip() or "No summary."]
-        if report.files_changed:
-            parts.append("Files changed:\n" + "\n".join(f"- {f}" for f in report.files_changed))
-        if report.tests_run:
-            parts.append("Tests run:\n" + "\n".join(f"- {t}" for t in report.tests_run))
-        parts.append(f"Written by the Joshua developer for {name}. Task {task['task_id']}.")
-        return "\n\n".join(parts)
 
     # --- answer ------------------------------------------------------------
 
@@ -1273,6 +1261,7 @@ class Manager:
                 open_question=None,
                 scan=None,
                 findings=None,
+                diff_summary=None,
                 started_at=None,
                 completed_at=None,
                 asked_at=None,

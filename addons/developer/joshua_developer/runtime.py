@@ -31,9 +31,8 @@ from joshua_developer.store import utcnow
 class Report(BaseModel):
     """The report a worker sends when its task ends.
 
-    The report has no field for the branch or the pull request. The manager
-    takes them from the task row and from the platform only. An unknown field
-    is a validation error.
+    The report has no field for the branch. The manager takes the branch from
+    the task row only. An unknown field is a validation error.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -44,7 +43,7 @@ class Report(BaseModel):
     tests_run: list[str] = Field(default_factory=list)
     open_question: str | None = None
     # True when the worker pushed the task's branch. The manager then scans
-    # the diff and opens or finds the pull request.
+    # the diff of the pushed commits.
     pushed: bool = False
     # The branch the worker pushed. It must be the task's branch.
     head: str | None = None

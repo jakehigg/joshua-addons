@@ -1,11 +1,10 @@
 """Development auto-run: one task of a tasks project after the other.
 
-``run_project`` starts a run. A run owns one branch and one pull request of
-one repository, and it works through the open tasks of one tasks project in
-roadmap order. When the developer task of a run ends, ``Runs.step`` takes the
-next step: it marks the tasks task done, checks the limits, reads the next
-task, and dispatches it as a ``rework`` of the run's pull request. It never
-merges.
+``run_project`` starts a run. A run owns one branch of one repository, and it
+works through the open tasks of one tasks project in roadmap order. When the
+developer task of a run ends, ``Runs.step`` takes the next step: it marks the
+tasks task done, checks the limits, reads the next task, and dispatches it on
+the same branch. A run opens no pull request, and it never merges.
 
 A step costs no model turn. The person's chat gets a verbatim line for each
 finished task. A model turn comes only when a person must act: a failure that

@@ -283,7 +283,7 @@ class WorkConfig(_Model):
 
 
 class ScanConfig(_Model):
-    """The credential scan of the pull request gate (``scan`` in ``developer.yaml``).
+    """The credential scan of the push gate (``scan`` in ``developer.yaml``).
 
     ``disabled_repos`` holds the repository patterns whose push is not
     scanned, so a plaintext secret that belongs in such a repository does not
@@ -449,9 +449,9 @@ def all_repo_patterns(config: DeveloperConfig) -> list[RepoPattern]:
 def _check_disabled_repos(config: DeveloperConfig) -> None:
     """Refuse a ``scan.disabled_repos`` pattern that holds a public repository.
 
-    The scan is the gate before the pull request of a public repository, so
-    it stays on there. A pattern holds a public repository when a pattern of
-    class ``public`` admits it.
+    The scan is the gate on a push to a public repository, so it stays on
+    there. A pattern holds a public repository when a pattern of class
+    ``public`` admits it.
     """
     for index, pattern in enumerate(config.scan.disabled_repos):
         public = [
