@@ -1,5 +1,5 @@
 """The manager and the git host: the allowlist and the token at dispatch, the
-rework branch, and the gate after a push (scan, then pull request).
+rework branch, and the gate after a push.
 
 The fake git host of conftest answers every adapter call. Nothing leaves the
 process.
@@ -315,7 +315,7 @@ async def test_the_brief_log_line_holds_no_contents(manager, caplog) -> None:
 # --- after the push --------------------------------------------------------
 
 
-async def test_a_clean_push_opens_a_pull_request(manager, git_host, reports) -> None:
+async def test_a_clean_push_ends_at_the_branch(manager, git_host, reports) -> None:
     git_host.compare_files = [clean_file()]
     task = await develop(manager)
     head = task["branch_name"]
@@ -323,30 +323,39 @@ async def test_a_clean_push_opens_a_pull_request(manager, git_host, reports) -> 
     assert row is not None
     assert row["status"] == "success"
     assert row["scan"] == "clean"
-    assert row["pr_url"] == "https://github.com/example-home/app/pull/42"
-    assert row["pr_number"] == 42
+    # The diff of the scan is the only call: the addon opens no pull request.
     assert git_host.calls() == [
-        f"GET /repos/example-home/app/compare/main...{head}?per_page=100&page=1",
-        f"GET /repos/example-home/app/pulls?head=example-home%3A{head.replace('/', '%2F')}"
-        "&state=open",
-        "POST /repos/example-home/app/pulls",
+        f"GET /repos/example-home/app/compare/main...{head}?per_page=100&page=1"
     ]
-    body = json.loads(git_host.requests[-1].content)
-    assert body["title"] == "Add a /healthz route"
-    assert body["head"] == head and body["base"] == "main"
-    assert "Added the route." in body["body"]
-    assert "- app.py" in body["body"] and "- pytest" in body["body"]
-    assert "Written by the Joshua developer for Alex Example" in body["body"]
-    assert task["task_id"] in body["body"]
-    assert [r["pr_url"] for r in reports] == [row["pr_url"]]
+    assert row["pr_url"] is None and row["pr_number"] is None
+    assert len(reports) == 1 and reports[0]["task_id"] == task["task_id"]
+    assert "pull/" not in notify.report_text(reports[0])
     assert manager.locks.get(REPO, task["scope"]) is None
 
 
-async def test_the_pr_title_is_cut_to_72_characters(manager, git_host) -> None:
-    task = await develop(manager, brief="Word " * 40)
-    await manager.record_report(task["task_id"], pushed())
-    title = json.loads(git_host.requests[-1].content)["title"]
-    assert len(title) <= 72 and title.startswith("Word Word")
+async def test_the_report_holds_what_the_pull_request_text_needs(
+    manager, git_host, reports
+) -> None:
+    git_host.compare_files = [clean_file(), clean_file("other.py")]
+    task = await develop(manager, branch="feature/x", base_branch="develop")
+    row = await manager.record_report(
+        task["task_id"],
+        pushed(
+            head="feature/x",
+            files_changed=["app.py", "other.py"],
+            tests_run=["pytest -q: 12 passed"],
+        ),
+    )
+    assert row is not None and row["status"] == "success"
+    assert row["diff_summary"] == "2 file(s) changed, 2 added, 0 removed"
+    text = notify.report_text(reports[0])
+    assert f"Repository: {REPO}" in text
+    assert "Branch: feature/x" in text
+    assert "Base branch: develop" in text
+    assert "Diff: 2 file(s) changed, 2 added, 0 removed" in text
+    assert "app.py\nother.py" in text
+    assert "pytest -q: 12 passed" in text
+    assert "open the pull request yourself" in text
 
 
 async def test_a_scan_hit_deletes_the_branch_and_fails(manager, git_host, reports) -> None:
@@ -452,34 +461,16 @@ def test_the_report_has_no_field_for_the_branch_or_the_pr(field: str) -> None:
         Report.model_validate({"status": "success", field: "x"})
 
 
-async def test_an_existing_pr_is_reused(manager, git_host) -> None:
-    task = await develop(manager, branch="feature/x")
-    git_host.override(
-        "GET", r"/pulls$", httpx.Response(200, json=[github_pr(9, "feature/x", "main")])
-    )
-    row = await manager.record_report(task["task_id"], pushed())
-    assert row is not None
-    assert (row["status"], row["pr_number"]) == ("success", 9)
-    assert row["pr_url"] == "https://github.com/example-home/app/pull/9"
-    assert git_host.calls("POST") == []
-
-
-async def test_a_gitlab_push_opens_a_merge_request(manager, git_host) -> None:
+async def test_a_gitlab_push_opens_no_merge_request(manager, git_host) -> None:
     git_host.compare_files = [{"new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}]
     task = await develop(manager, GL_REPO, branch="feature/x", base_branch="develop")
     row = await manager.record_report(task["task_id"], pushed())
     assert row is not None
     assert row["status"] == "success"
-    assert row["pr_url"] == "https://gitlab.example.net/g/p/-/merge_requests/42"
+    assert row["pr_url"] is None and row["pr_number"] is None
+    assert row["diff_summary"] == "1 file(s) changed, 1 added, 1 removed"
     project = "/api/v4/projects/group%2Fsub%2Fproject"
-    assert git_host.calls() == [
-        f"GET {project}/repository/compare?from=develop&to=feature%2Fx",
-        f"GET {project}/merge_requests?source_branch=feature%2Fx&state=opened",
-        f"POST {project}/merge_requests",
-    ]
-    body = json.loads(git_host.requests[-1].content)
-    assert body["source_branch"] == "feature/x" and body["target_branch"] == "develop"
-    assert body["title"] == "Add a /healthz route"
+    assert git_host.calls() == [f"GET {project}/repository/compare?from=develop&to=feature%2Fx"]
 
 
 async def test_a_git_host_ends_at_the_branch(manager, git_host) -> None:
@@ -502,7 +493,7 @@ async def test_a_scan_without_gitleaks_is_unavailable_and_never_clean(
     row = await manager.record_report(task["task_id"], pushed())
     assert row is not None
     assert (row["status"], row["scan"]) == ("success", "unavailable")
-    assert row["pr_number"] == 42
+    assert row["pr_number"] is None
     assert gitleaks.calls == []
     text = " ".join(str(record.msg) for record in caplog.records)
     assert "scan unavailable" in text and SECRET not in text
@@ -531,7 +522,7 @@ async def test_a_report_without_a_push_touches_no_host(manager, git_host) -> Non
     assert git_host.requests == []
 
 
-async def test_a_failed_push_is_scanned_and_gets_no_pr(manager, git_host) -> None:
+async def test_a_failed_push_is_scanned(manager, git_host) -> None:
     task = await develop(manager)
     row = await manager.record_report(task["task_id"], pushed(status="timed_out"))
     assert row is not None
@@ -552,14 +543,14 @@ async def test_a_push_to_another_branch_fails_without_a_call(manager, git_host) 
 async def test_a_host_error_fails_the_task_and_keeps_the_branch(manager, git_host) -> None:
     token = GIT_TOKENS["GITHUB_TOKEN_ALEX"]
     git_host.override(
-        "POST", r"/pulls$", httpx.Response(422, json={"message": f"Validation Failed {token}"})
+        "GET", r"/compare/", httpx.Response(422, json={"message": f"Validation Failed {token}"})
     )
     task = await develop(manager, branch="feature/x")
     row = await manager.record_report(task["task_id"], pushed())
     assert row is not None
     assert row["status"] == "failed"
     assert row["error"] == (
-        "the git host refused the call for the pull request "
+        "the git host refused the call for the diff "
         "(HTTP 422: Validation Failed [redacted]); the branch feature/x stays"
     )
     assert git_host.calls("DELETE") == []

@@ -202,13 +202,6 @@ async def rework(
     return _linked(result, workspace)
 
 
-def _run_result(result: dict[str, Any], ctx: Context) -> dict | CallToolResult:
-    """``result`` of a run tool, with the link of its pull request, when it has one."""
-    if not origin_of(ctx) or not result.get("pr_url"):
-        return result
-    return with_links(result, task_links({**result, "task_id": result.get("run_id")}))
-
-
 def _own_run(ctx: Context, run_id: str | None, project: str | None) -> dict[str, Any]:
     """The run for a ``run_id`` or a ``project`` of the caller, or a rejection dict."""
     return _get_manager().runs.find(_person(ctx), run_id, project)
@@ -228,15 +221,16 @@ async def run_project(
     project is a project id, slug, or name from the tasks addon. The run starts
     the first open task in roadmap order, as develop on branch (default
     feat-<project slug>). Each finished task is marked done in tasks, and the
-    next one starts on the same branch, with no model turn. The
-    person gets a verbatim line for each finished task, and a message at the end
-    of a phase (a task group), at the limits ceiling, on a question, on a
-    failure that one retry did not fix, and at the end of the project. A run
-    opens no pull request, and it never merges. repo, persona, and notify are as for develop. A call is
-    rejected when the tasks addon is not set (TASKS_URL), when the project is
-    unknown or has no ready task, or when the project already has an active or
-    paused run on the repository. Use run_status, pause_run, resume_run, and
-    stop_run to follow and steer it.
+    next one starts on the same branch, with no model turn. The person gets a
+    verbatim line for each finished task, and a message at the end of a phase
+    (a task group), at the limits ceiling, on a question, on a failure that one
+    retry did not fix, and at the end of the project. A run opens no pull
+    request, and it never merges: it ends at the branch, and you write the pull
+    request text and open it yourself. repo, persona, and notify are as for
+    develop. A call is rejected when the tasks addon is not set (TASKS_URL),
+    when the project is unknown or has no ready task, or when the project
+    already has an active or paused run on the repository. Use run_status,
+    pause_run, resume_run, and stop_run to follow and steer it.
     """
     person = _person(ctx)
     result = await _get_manager().runs.start(
@@ -248,7 +242,7 @@ async def run_project(
         notify_to=notify,
         workspace=origin_of(ctx),
     )
-    return _run_result(result, ctx)
+    return result
 
 
 @mcp.tool()
@@ -265,7 +259,7 @@ async def run_status(ctx: Context, run_id: str | None = None, project: str | Non
     run = manager.runs.find(caller.person, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(manager.runs.describe(run), ctx)
+    return manager.runs.describe(run)
 
 
 @mcp.tool()
@@ -274,7 +268,7 @@ async def pause_run(ctx: Context, run_id: str | None = None, project: str | None
     run = _own_run(ctx, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(await _get_manager().runs.pause(run), ctx)
+    return await _get_manager().runs.pause(run)
 
 
 @mcp.tool()
@@ -287,7 +281,7 @@ async def resume_run(ctx: Context, run_id: str | None = None, project: str | Non
     run = _own_run(ctx, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(await _get_manager().runs.resume(run), ctx)
+    return await _get_manager().runs.resume(run)
 
 
 @mcp.tool()
@@ -296,7 +290,7 @@ async def stop_run(ctx: Context, run_id: str | None = None, project: str | None 
     run = _own_run(ctx, run_id, project)
     if run.get("status") == "rejected":
         return run
-    return _run_result(await _get_manager().runs.stop(run), ctx)
+    return await _get_manager().runs.stop(run)
 
 
 @mcp.tool()

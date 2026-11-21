@@ -105,7 +105,7 @@ async def test_an_answer_resumes_a_blocked_task_end_to_end(manager, git_host) ->
     done = Report(status="success", summary="Done.", pushed=True, head="feature")
     task = await manager.record_report(task_id, done)
     assert task is not None and task["status"] == "success"
-    assert task["pr_number"] == 42
+    assert task["pr_number"] is None
     final = manager.store.get_task_full(task_id)
     assert final is not None
     assert final["report"]["summary"] == "Done."

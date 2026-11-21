@@ -25,7 +25,6 @@ from joshua_developer.server import build_app
 from joshua_developer.store import TaskStore
 
 REPO = "github.com/example-home/app"
-PR = "https://github.com/example-home/app/pull/42"
 WORKSPACE = "6f1c2d1e-0b1a-4c55-9d7e-2f3a4b5c6d7e"
 G1, G2 = str(uuid.uuid4()), str(uuid.uuid4())
 
@@ -162,7 +161,7 @@ def current(manager: Manager, run_id: str) -> dict[str, Any]:
 async def finish(
     manager: Manager, run_id: str, status: str = "success", question: str | None = None, **row: Any
 ) -> None:
-    """End the current task of a run, with a pull request on the row."""
+    """End the current task of a run. ``row`` sets fields on the task row first."""
     task = current(manager, run_id)
     if row:
         manager.store.update_task(task["task_id"], **row)
@@ -283,17 +282,16 @@ async def test_a_success_marks_done_and_dispatches_the_next_task(settings, servi
     manager = make_manager(settings)
     run_id = await started(manager, services, workspace=WORKSPACE)
     first = current(manager, run_id)
-    await finish(manager, run_id, pr_url=PR, pr_number=42)
+    await finish(manager, run_id)
     one = services.by_number(1)
     assert one["done"] is True
-    assert one["notes"].splitlines()[-1] == f"done in {PR}"
-    run = manager.store.get_run(run_id)
-    assert run["pr_number"] == 42 and run["pr_url"] == PR  # type: ignore[index]
+    assert one["notes"].splitlines()[-1] == "done on feat-chat"
     second = current(manager, run_id)
     assert second["task_id"] != first["task_id"]
-    assert second["task_type"] == "rework" and second["pr_number"] == 42
+    # Every task of a run is a develop: the run has no pull request.
+    assert second["task_type"] == "develop" and second["pr_number"] is None
     assert second["run_id"] == run_id and second["tasks_task_number"] == 2
-    assert second["instructions"] == "Two\n\nDetail.\n\nCommit and push your work."
+    assert second["brief"] == "Two\n\nDetail.\n\nCommit and push your work."
     assert second["workspace"] == WORKSPACE
     assert services.by_number(2)["notes"].splitlines()[-1].startswith("dispatched as developer")
     # One verbatim line, and no model turn for the report.
@@ -306,11 +304,12 @@ async def test_the_last_task_ends_the_run_with_a_wake(settings, services) -> Non
     services.add(1, "One")
     manager = make_manager(settings)
     run_id = await started(manager, services)
-    await finish(manager, run_id, pr_url=PR, pr_number=42)
+    await finish(manager, run_id)
     assert manager.store.get_run(run_id)["status"] == "done"  # type: ignore[index]
     [event] = services.events
     assert "verbatim" not in event
-    assert "Project Chat Project finished" in event["text"] and PR in event["text"]
+    assert "Project Chat Project finished" in event["text"]
+    assert "Branch: feat-chat" in event["text"]
 
 
 async def test_a_phase_end_pauses_and_resume_goes_on(settings, services) -> None:
@@ -318,7 +317,7 @@ async def test_a_phase_end_pauses_and_resume_goes_on(settings, services) -> None
     services.add(2, "Two", G2)
     manager = make_manager(settings)
     run_id = await started(manager, services)
-    await finish(manager, run_id, pr_url=PR, pr_number=42)
+    await finish(manager, run_id)
     run = manager.store.get_run(run_id)
     assert run["status"] == "paused"  # type: ignore[index]
     [event] = services.events
@@ -348,7 +347,7 @@ async def test_the_ceiling_pauses_and_unknown_runs(settings, services, limits, p
     services.add(2, "Two")
     manager = make_manager(settings)
     run_id = await started(manager, services)
-    await finish(manager, run_id, pr_url=PR, pr_number=42)
+    await finish(manager, run_id)
     assert (manager.store.get_run(run_id)["status"] == "paused") is paused  # type: ignore[index]
     if paused:
         [event] = services.events
@@ -497,10 +496,10 @@ async def test_a_tasks_failure_at_the_step_pauses_the_run(settings, services) ->
     manager = make_manager(settings)
     run_id = await started(manager, services)
     services.tasks_error = httpx.ConnectError("refused")
-    await finish(manager, run_id, pr_url=PR, pr_number=42)
+    await finish(manager, run_id)
     assert manager.store.get_run(run_id)["status"] == "paused"  # type: ignore[index]
     [event] = services.events
-    assert "not reachable" in event["text"] and PR in event["text"]
+    assert "not reachable" in event["text"] and "Branch: feat-chat" in event["text"]
 
 
 async def test_a_bug_in_the_step_never_reaches_the_report(settings, services, monkeypatch) -> None:
@@ -694,7 +693,7 @@ async def test_another_person_cannot_see_or_steer_a_run(settings, services) -> N
         assert still["status"] == "active"
 
 
-async def test_a_stamped_call_gets_the_pull_request_link(settings, services) -> None:
+async def test_a_stamped_call_gets_no_pull_request_link(settings, services) -> None:
     services.add(1, "One")
     services.add(2, "Two")
     app = build_app(settings, stub_delay_s=None)
@@ -703,19 +702,15 @@ async def test_a_stamped_call_gets_the_pull_request_link(settings, services) -> 
         result = await session.call_tool(
             "run_project", {"repo": REPO, "project": "chat"}, meta=meta
         )
-        # The pull request does not exist yet: the result has no link.
+        # A run has no pull request, so the result of a run tool has no link.
         assert [b.type for b in result.content] == ["text"]
         run_id = payload(result)["run_id"]
+        stamped = await session.call_tool("run_status", {"run_id": run_id}, meta=meta)
+        assert [b.type for b in stamped.content] == ["text"]
+        assert "pr_url" not in payload(stamped) and "pr_number" not in payload(stamped)
         from joshua_developer import server
 
         manager = server._get_manager()
-        manager.store.update_run(run_id, pr_url=PR, pr_number=42)
-        stamped = await session.call_tool("run_status", {"run_id": run_id}, meta=meta)
-        assert [b.type for b in stamped.content] == ["text", "resource_link"]
-        assert str(stamped.content[1].uri) == PR
-        plain = await session.call_tool("run_status", {"run_id": run_id})
-        assert [b.type for b in plain.content] == ["text"]
-        assert json.loads(plain.content[0].text)["pr_url"] == PR
         task = manager.store.get_task_full(manager.store.get_run(run_id)["current_task_id"])
         assert task["workspace"] == WORKSPACE
 

@@ -37,7 +37,7 @@ REQUEST_TIMEOUT_S = 10.0
 LIMITS_PATH = "/v1/limits"
 WINDOWS = (("five_hour", "5-hour"), ("seven_day", "weekly"))
 # The lines of a task's notes that the run adds. A brief never holds them.
-_RUN_NOTE = re.compile(r"^(dispatched\b|done in\b)", re.IGNORECASE)
+_RUN_NOTE = re.compile(r"^(dispatched\b|done\b)", re.IGNORECASE)
 BRIEF_TAIL = "Commit and push your work."
 MAX_TEXT = 1500
 
@@ -334,8 +334,6 @@ class Runs:
             "repo": run["repo"],
             "branch": run["branch"],
             "status": run["status"],
-            "pr_url": run["pr_url"],
-            "pr_number": run["pr_number"],
             "current_task_number": run["current_task_number"],
             "current_task": {
                 "task_id": task["task_id"],
@@ -358,40 +356,25 @@ class Runs:
     async def _dispatch(
         self, run: dict[str, Any], task: dict[str, Any], client: TasksClient, note: str = ""
     ) -> dict[str, Any]:
-        """Dispatch a tasks task: a ``rework`` of the run's pull request, else a ``develop``.
+        """Dispatch a tasks task as a ``develop`` on the branch of the run.
 
         On success it stores the task on the run, and adds a line to the notes.
         """
-        manager = self.manager
         link = {
             "run_id": run["run_id"],
             "tasks_task_id": str(task["id"]),
             "tasks_task_number": int(task["number"]),
         }
-        brief = brief_of(task)
-        if run["pr_number"]:
-            result = await manager.rework(
-                run["person"],
-                run["repo"],
-                run["pr_number"],
-                brief,
-                persona=run["persona"],
-                notify_to=run["notify"],
-                branch=run["branch"],
-                workspace=run["workspace"],
-                **link,
-            )
-        else:
-            result = await manager.develop(
-                run["person"],
-                run["repo"],
-                brief,
-                branch=run["branch"],
-                persona=run["persona"],
-                notify_to=run["notify"],
-                workspace=run["workspace"],
-                **link,
-            )
+        result = await self.manager.develop(
+            run["person"],
+            run["repo"],
+            brief_of(task),
+            branch=run["branch"],
+            persona=run["persona"],
+            notify_to=run["notify"],
+            workspace=run["workspace"],
+            **link,
+        )
         if result.get("status") == "rejected":
             return result
         line = f"dispatched{note} as developer task {result['task_id']} on {run['branch']}"
@@ -422,8 +405,7 @@ class Runs:
             logger.warning({"message": "run: the tasks addon failed", "error": str(exc)})
             await self._pause(
                 run,
-                f"Run on {run['repo']} paused: {exc}. "
-                f"Pull request: {task.get('pr_url') or 'none'}.",
+                f"Run on {run['repo']} paused: {exc}. Branch: {run['branch']}.",
             )
             return False
         except Exception as exc:
@@ -435,11 +417,6 @@ class Runs:
             return True
 
     async def _step(self, run: dict[str, Any], task: dict[str, Any]) -> bool:
-        if not run["pr_number"] and task.get("pr_number"):
-            self.store.update_run(
-                run["run_id"], pr_url=task.get("pr_url"), pr_number=task["pr_number"]
-            )
-            run = self.store.get_run(run["run_id"]) or run
         if task["status"] == "success":
             await self._succeeded(run, task)
             return False
@@ -470,9 +447,8 @@ class Runs:
         number = task.get("tasks_task_number")
         if client is None or number is None:
             raise TasksError("TASKS_URL is not set, so the task cannot be marked done")
-        pr = task.get("pr_url") or run["pr_url"]
         finished = await client.by_number(int(number))
-        done_line = f"done in {pr}" if pr else "done"
+        done_line = f"done on {run['branch']}"
         await client.patch(
             str(finished["id"]),
             {"done": True, "notes": append_note(finished.get("notes"), done_line)},
@@ -490,28 +466,24 @@ class Runs:
                 await self._pause(
                     run,
                     f"Run on {name} paused: every open task waits for a blocker. "
-                    f"Pull request: {pr or 'none'}.",
+                    f"Branch: {run['branch']}.",
                 )
             else:
                 self.store.update_run(run["run_id"], status="done")
-                await self._wake(
-                    run, f"Project {name} finished. Pull request: {pr or 'none'}.", task
-                )
+                await self._wake(run, f"Project {name} finished. Branch: {run['branch']}.", task)
             return
         following = ready[0]
         if following.get("group_id") != finished.get("group_id"):
             phase = await client.group_name(str(entry["id"]), finished.get("group_id"))
             await self._pause(
                 run,
-                f"Phase {phase or 'of the project'} done on {name}. Pull request: "
-                f"{pr or 'none'}. Next: {label(following)}. Say resume to continue.",
+                f"Phase {phase or 'of the project'} done on {name}. Branch: "
+                f"{run['branch']}. Next: {label(following)}. Say resume to continue.",
                 task,
             )
             return
         if over:
-            await self._pause(
-                run, f"Run on {name} paused: {over} Pull request: {pr or 'none'}.", task
-            )
+            await self._pause(run, f"Run on {name} paused: {over} Branch: {run['branch']}.", task)
             return
         result = await self._dispatch(run, following, client)
         if result.get("status") == "rejected":

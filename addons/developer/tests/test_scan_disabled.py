@@ -124,8 +124,9 @@ async def test_a_push_to_a_repository_in_the_list_runs_no_scan(
     assert row["findings"] is None
     assert gitleaks.calls == []
     assert [call for call in git_host.calls() if "compare" in call] == []
-    # The task still gets its merge request.
-    assert row["pr_number"] == 42
+    # With no diff, the report of the task holds no diff summary.
+    assert row["diff_summary"] is None
+    assert git_host.calls() == []
 
 
 async def test_a_push_to_a_repository_outside_the_list_is_scanned(

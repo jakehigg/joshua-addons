@@ -76,8 +76,6 @@ CREATE TABLE IF NOT EXISTS runs (
     project TEXT NOT NULL,
     project_name TEXT,
     branch TEXT NOT NULL,
-    pr_url TEXT,
-    pr_number INTEGER,
     workspace TEXT,
     persona TEXT,
     notify TEXT,
@@ -192,8 +190,6 @@ ALLOWED_RUN_FIELDS = frozenset(
     {
         "project_name",
         "branch",
-        "pr_url",
-        "pr_number",
         "status",
         "current_task_number",
         "current_task_id",

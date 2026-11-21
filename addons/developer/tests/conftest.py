@@ -64,9 +64,9 @@ class FakeGitHost:
 
     Each request is recorded. ``override`` puts a reply in front of the
     default reply for a method and a path pattern. By default a pull request
-    lookup finds an open pull request with the source branch ``pr-<n>``, no
-    open pull request exists for a branch, the compare is empty, and opening
-    a pull request gives number 42.
+    lookup finds an open pull request with the source branch ``pr-<n>``, and
+    the compare is empty. The fake answers no other call, so a call that
+    opens a pull request gets a 404.
     """
 
     def __init__(self) -> None:
@@ -95,13 +95,6 @@ class FakeGitHost:
         if request.method == "GET" and re.search(r"/(pulls|merge_requests)/[0-9]+$", path):
             number = int(path.rsplit("/", 1)[1])
             return httpx.Response(200, json=_pr(gitlab, number, f"pr-{number}", "main"))
-        if request.method == "GET" and re.search(r"/(pulls|merge_requests)$", path):
-            return httpx.Response(200, json=[])
-        if request.method == "POST" and re.search(r"/(pulls|merge_requests)$", path):
-            body = json.loads(request.content)
-            head = body.get("head") or body.get("source_branch")
-            base = body.get("base") or body.get("target_branch")
-            return httpx.Response(201, json=_pr(gitlab, 42, head, base))
         if request.method == "GET" and "/compare" in path:
             if gitlab:
                 return httpx.Response(200, json={"diffs": self.compare_files})
