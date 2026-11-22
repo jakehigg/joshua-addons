@@ -16,10 +16,10 @@ A task never works on its base branch, ``main``, or ``master``
 push to every branch that the host lets it write.
 
 Each repository pattern has a class, ``public`` or ``internal``. ``develop``
-refuses a task that holds a writable public repository and an internal
-reference repository together (``repo_class_mixed``), before the task takes
-a lock, so internal text cannot travel into a public repository through one
-sandbox.
+and ``rework`` refuse a task that holds a writable public repository and an
+internal reference repository together (``repo_class_mixed``), before the task
+takes a lock, so internal text cannot travel into a public repository through
+one sandbox.
 
 When a worker reports a push, the manager gates the push: it reads the diff
 of the worker's commits over the platform API and scans it for credentials.
@@ -577,6 +577,9 @@ class Manager:
         checked = self._admit_refs(person, normalized, refs)
         if isinstance(checked, dict):
             return checked
+        refused = self._admit_classes(person, normalized, checked)
+        if refused is not None:
+            return refused
         task_id = str(uuid.uuid4())
         if resolved.kind == "git":
             if branch_name is None:

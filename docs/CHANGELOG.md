@@ -10,10 +10,10 @@ releases, with the images and the packaged chart, are at
 
 - `developer`: a class for each repository pattern. An entry of `repos`, in
   `developer.yaml`, is a plain pattern of class `public`, or a mapping with
-  `pattern` and `class` (`public` or `internal`). `develop` refuses a task
-  that holds a writable public repository and an internal reference
-  repository together, with the reason `repo_class_mixed`, before the task
-  takes a lock. Internal text then cannot travel into a public repository
+  `pattern` and `class` (`public` or `internal`). `develop` and `rework`
+  refuse a task that holds a writable public repository and an internal
+  reference repository together, with the reason `repo_class_mixed`, before
+  the task takes a lock. Internal text then cannot travel into a public repository
   through one sandbox. An existing file keeps its behavior, because a plain
   pattern is public.
 
