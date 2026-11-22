@@ -82,9 +82,10 @@ A call that breaks a rule gets `status: rejected`, a `reason`, and a
   same time. A task whose worker still starts holds its slot.
 - The persona is the `persona` argument, else the default of the person,
   else `default_persona`.
-- A `develop` works in one repository class. A task with a public `repo` and
-  an internal repository in `refs` gets `repo_class_mixed`, before the task
-  takes a lock (see [The repository class](#the-repository-class)).
+- A task works in one repository class. A `develop` or a `rework` with a
+  public `repo` and an internal repository in `refs` gets `repo_class_mixed`,
+  before the task takes a lock (see [The repository
+  class](#the-repository-class)).
 - A person sees only their own tasks.
 - `answer` on a `running` task works only when the worker waits for the
   answer to its open question. When the worker stopped the wait, or the
@@ -213,9 +214,10 @@ classes is `internal`, the class with the tighter rules.
   can hold it (see [The credential scan of an internal
   repository](#the-credential-scan-of-an-internal-repository)).
 
-A task writes to one repository: `repo`. A `develop` with a public `repo` and
-an internal repository in `refs` is refused with `repo_class_mixed`, before
-the task takes a lock. The message names both repositories and their classes.
+A task writes to one repository: `repo`. A `develop` or a `rework` with a
+public `repo` and an internal repository in `refs` is refused with
+`repo_class_mixed`, before the task takes a lock. The message names both
+repositories and their classes.
 A task inside one class runs: a public repository with public references, and
 an internal repository with references of either class, because the writable
 repository is then internal.

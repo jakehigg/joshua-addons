@@ -102,6 +102,44 @@ async def test_a_task_inside_one_class_runs(manager: Manager, repo: str, refs: l
     assert manager.store.get_task(result["task_id"])["refs"] == refs  # type: ignore[index]
 
 
+async def test_a_public_rework_with_an_internal_reference_is_refused(
+    manager: Manager, git_host
+) -> None:
+    result = await manager.rework("alex", PUBLIC, 5, "Port the runbook.", refs=[INTERNAL])
+    assert result["status"] == "rejected"
+    assert result["reason"] == "repo_class_mixed"
+    assert PUBLIC in result["message"] and "public" in result["message"]
+    assert INTERNAL in result["message"] and "internal" in result["message"]
+    # The refusal comes before the git host call, the lock, and the task row.
+    assert git_host.calls() == []
+    assert manager.store.count_active_tasks() == 0
+    assert manager.locks.get(PUBLIC, "branch:pr-5") is None
+
+
+@pytest.mark.parametrize(
+    ("repo", "pr", "branch", "refs"),
+    [
+        (PUBLIC, 5, None, ["github.com/example-home/lib"]),
+        (INTERNAL, None, "feature", ["git.example.net/platform/charts"]),
+        (INTERNAL, None, "other", [PUBLIC]),
+    ],
+)
+async def test_a_rework_inside_one_class_runs(
+    manager: Manager, repo: str, pr: int | None, branch: str | None, refs: list[str]
+) -> None:
+    result = await manager.rework("alex", repo, pr, "Do the work.", branch=branch, refs=refs)
+    assert result["status"] == "dispatched", result
+    assert manager.store.get_task(result["task_id"])["refs"] == refs  # type: ignore[index]
+
+
+async def test_develop_and_rework_refuse_a_mixed_pair_with_one_message(manager: Manager) -> None:
+    """One function holds the check, so the two paths cannot drift."""
+    developed = await manager.develop("alex", PUBLIC, "Port.", refs=[INTERNAL])
+    reworked = await manager.rework("alex", PUBLIC, 5, "Port.", refs=[INTERNAL])
+    assert developed["reason"] == reworked["reason"] == "repo_class_mixed"
+    assert developed["message"] == reworked["message"]
+
+
 async def test_the_class_comes_from_the_list_of_the_person(data_dir) -> None:
     config = {
         **CONFIG,
