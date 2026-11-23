@@ -132,6 +132,25 @@ STATUS_COLUMNS = (
     "resumes",
 )
 
+# The columns the jobs route reads. The brief, the feedback, the report, the
+# session log, the error, and the summary stay out of a job.
+JOB_COLUMNS = (
+    "task_id",
+    "person",
+    "task_type",
+    "repo",
+    "branch_name",
+    "status",
+    "started_at",
+    "notify",
+    "workspace",
+    "open_question",
+    "asked_at",
+    "input_tokens",
+    "output_tokens",
+    "estimated_cost",
+)
+
 # The fields update_task may change.
 ALLOWED_UPDATE_FIELDS = frozenset(
     {
@@ -386,6 +405,29 @@ class TaskStore:
             "WHERE status IN ('dispatched', 'running') ORDER BY created_at, rowid"
         )
         return [row for row in (_row(r) for r in cursor.fetchall()) if row is not None]
+
+    def list_jobs(
+        self, person: str | None, statuses: Iterable[str], limit: int
+    ) -> list[dict[str, Any]]:
+        """The ``JOB_COLUMNS`` of the tasks in ``statuses``, the newest first.
+
+        ``person`` None lists the tasks of every person. An empty ``statuses``
+        matches no task.
+        """
+        names = list(statuses)
+        if not names:
+            return []
+        clauses = [f"status IN ({', '.join('?' for _ in names)})"]
+        params: list[Any] = [*names]
+        if person is not None:
+            clauses.append("person = ?")
+            params.append(person)
+        cursor = self._execute(
+            f"SELECT {', '.join(JOB_COLUMNS)} FROM tasks WHERE {' AND '.join(clauses)} "
+            "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (*params, limit),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
     def find_kept_tasks(self, person: str, repo: str, branch: str, exclude: str) -> list[str]:
         """The ended tasks of ``person`` on ``repo`` and ``branch`` that did not end

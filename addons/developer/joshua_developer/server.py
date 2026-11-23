@@ -8,6 +8,9 @@ names a person. The ``ADDON_TOKEN`` bearer names no person: it may read every
 task and list the personas, and every other tool gives it "403 forbidden".
 A person sees only their own tasks.
 
+``GET /v1/jobs`` reads the jobs for a viewer: the active ones by default, with
+the open question of each. The same bearer guards it.
+
 ``start`` also builds the worker side: the worker API for port 8001
 (``worker_api``), the git host tunnel for port 8002 (``git_proxy``), and,
 with ``packages.enabled`` in ``developer.yaml``, the package proxy for port
@@ -39,7 +42,7 @@ from joshua_developer.manager import Manager, rejected
 from joshua_developer.origin import origin_of, task_links, with_links
 from joshua_developer.package_proxy import PackageProxy
 from joshua_developer.runtime import Runtime, StubRuntime
-from joshua_developer.store import TaskStore
+from joshua_developer.store import ACTIVE_STATUSES, STATUSES, TaskStore
 from joshua_developer.worker_api import build_worker_app
 
 logger = get_logger("joshua_developer")
@@ -47,6 +50,8 @@ logger = get_logger("joshua_developer")
 OPEN_PATHS = frozenset({"/healthz"})
 _BEARER = "Bearer "
 MAX_LIST = 100
+# The most jobs GET /v1/jobs answers, and the count with no limit query.
+MAX_JOBS = 200
 
 mcp = MCPServer(name="developer")
 
@@ -475,7 +480,67 @@ async def healthz(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+def job_of(task: dict[str, Any]) -> dict[str, Any]:
+    """One job of ``GET /v1/jobs``, from the columns of a task.
+
+    ``notify_channel`` is the notify reference of the task: ``workspace:<id>``
+    for a task that a workspace dispatched, else the chat of the task.
+    ``tokens`` is the input and the output tokens together, and ``tokens`` and
+    ``cost`` are 0 for a task with no usage yet.
+    """
+    workspace = task["workspace"]
+    return {
+        "id": task["task_id"],
+        "kind": task["task_type"],
+        "project": task["repo"],
+        "branch": task["branch_name"],
+        "status": task["status"],
+        "started_at": task["started_at"],
+        "notify_channel": f"workspace:{workspace}" if workspace else task["notify"],
+        "workspace": workspace,
+        "question": task["open_question"],
+        "question_at": task["asked_at"],
+        "tokens": (task["input_tokens"] or 0) + (task["output_tokens"] or 0),
+        "cost": task["estimated_cost"] or 0.0,
+    }
+
+
+def job_limit(raw: str | None) -> int:
+    """The ``limit`` query as a count of 1 to ``MAX_JOBS``. A bad value gives the most."""
+    try:
+        value = int(raw) if raw else MAX_JOBS
+    except ValueError:
+        value = MAX_JOBS
+    return max(1, min(value, MAX_JOBS))
+
+
+def job_statuses(raw: str | None) -> list[str]:
+    """The ``status`` query as status names. With no query, the active statuses."""
+    if not raw:
+        return list(ACTIVE_STATUSES)
+    return [name for name in (part.strip() for part in raw.split(",")) if name in STATUSES]
+
+
+async def jobs(request: Request) -> Response:
+    """``GET /v1/jobs``: the jobs the viewer shows, the newest first.
+
+    With no query, the active jobs only. ``status`` is a comma-separated list
+    of status names, and ``limit`` caps the count. A caller with no person
+    reads the jobs of every person; a person reads their own.
+    """
+    caller = find_caller(_get_manager().settings, request.headers.get("authorization"))
+    if caller is None:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    tasks = _get_manager().store.list_jobs(
+        caller.person,
+        job_statuses(request.query_params.get("status")),
+        job_limit(request.query_params.get("limit")),
+    )
+    return JSONResponse({"jobs": [job_of(task) for task in tasks]})
+
+
 mcp.custom_route("/healthz", methods=["GET"])(healthz)
+mcp.custom_route("/v1/jobs", methods=["GET"])(jobs)
 
 
 def make_runtime(manager: Manager, settings: Settings, stub_delay_s: float | None) -> Runtime:

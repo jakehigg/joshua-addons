@@ -179,6 +179,27 @@ chat has no such key, and then nothing here applies.
   the URL of that pull request. A `develop` task has none, so its result has
   no link. A call with no id gets the same result, with no link.
 
+## The jobs route
+
+`GET /v1/jobs` gives a viewer the jobs of the manager, as
+`{"jobs": [...]}`. It needs the same bearer as `/mcp`. The `ADDON_TOKEN`
+bearer reads the jobs of every person, and a person bearer reads their own.
+
+- With no query, the answer holds the active jobs only: the ones in
+  `dispatched` or `running`. `status=success,failed` filters by status name,
+  and a name that is not a status matches no job. `limit` caps the count, and
+  the route caps it at 200.
+- Each job holds `id`, `kind`, `project`, `branch`, `status`, `started_at`,
+  `notify_channel`, `workspace`, `question`, `question_at`, `tokens`, and
+  `cost`. The newest job is first.
+- `question` is the open question of the job, and `question_at` is the time
+  the job started to wait for the answer. A job with no question has `null`
+  in both.
+- `notify_channel` is `workspace:<id>` for a job that a workspace dispatched,
+  and the chat of the job for each other one.
+- The answer carries no brief, no feedback, no report, no session log, no
+  error text, and no summary.
+
 ## Reference repositories
 
 A task can read other repositories beside its own: for example, to move code
@@ -505,7 +526,7 @@ applies before the value in the file.
 | Variable | Default | What it does |
 |---|---|---|
 | `DEVELOPER_TOKENS` | empty | One bearer for each person, `alex=<token>,mia=<token>`. Each person must be in `people`. |
-| `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, `list_personas`, and `run_status` only. |
+| `ADDON_TOKEN` | empty | A bearer with no person. It can use `task_status`, `task_output`, `list_tasks`, `list_personas`, and `run_status` only, and it reads `GET /v1/jobs` (see "The jobs route"). |
 | `DEVELOPER_CONFIG` | `/etc/joshua-addon/developer.yaml` | The path of `developer.yaml`. No file means the defaults. |
 | `DEVELOPER_DATA_DIR` | `/data` | The folder of `developer.db`, and of `bundles/`: the saved commits of failed pushes. |
 | `CHANNELS_URL` | empty | The address of joshua-ai channels. Set it with `JOSHUA_TOKEN_DEVELOPER`, or not at all. |
