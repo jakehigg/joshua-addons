@@ -2,7 +2,7 @@
 
 The MCP tools call this class. A call that breaks a rule gets a dict with
 ``status: "rejected"``, a ``reason``, and a ``message``. The reasons are
-``invalid_arguments``, ``repo_not_allowed``, ``repo_not_configured``,
+``invalid_arguments``, ``repo_not_allowed``, ``repo_archived``, ``repo_not_configured``,
 ``repo_class_mixed``, ``token_missing``, ``pr_not_found``, ``pr_not_open``,
 ``platform_error``, ``unknown_persona``, ``concurrency_limit``, ``locked``,
 ``not_waiting``, ``not_resumable``, and ``branch_is_base``. The run tools
@@ -523,6 +523,9 @@ class Manager:
         refused = self._admit_classes(person, admitted[0], checked)
         if refused is not None:
             return refused
+        refused = await self._refuse_archived(person, [admitted[0], *(checked or [])])
+        if refused is not None:
+            return refused
         return await self._dispatch(
             task_id=task_id,
             person=person,
@@ -577,6 +580,9 @@ class Manager:
         checked = self._admit_refs(person, normalized, refs)
         if isinstance(checked, dict):
             return checked
+        refused = await self._refuse_archived(person, [normalized])
+        if refused is not None:
+            return refused
         refused = self._admit_classes(person, normalized, checked)
         if refused is not None:
             return refused
@@ -681,6 +687,37 @@ class Manager:
                     "repo_class_mixed",
                     f"the repository {repo} is public and the repository {ref} is internal; "
                     "a task works in one repository class",
+                )
+        return None
+
+    async def _refuse_archived(self, person: str, repos: list[str]) -> dict[str, Any] | None:
+        """Refuse a task whose repository, or a reference of it, is archived
+        on its git host. An archived repository is retired: archiving it is
+        how a person tells Joshua to stay out of it.
+
+        A host that cannot say, or that does not answer, lets the task go on:
+        the check only refuses what the host says is archived.
+        ``refuse_archived: false`` in ``developer.yaml`` turns it off."""
+        if not self.config.refuse_archived:
+            return None
+        for repo in repos:
+            try:
+                platform, _ = platforms.for_task(self.settings, self.config, person, repo)
+            except PlatformConfigError:
+                continue
+            try:
+                archived = await platform.archived(repo)
+            except Exception as exc:  # noqa: BLE001 — the check never fails a task
+                logger.info({"message": "archive check skipped", "error": type(exc).__name__})
+                archived = None
+            finally:
+                await platform.aclose()
+            if archived:
+                logger.warning({"message": "refused an archived repository", "person": person})
+                return rejected(
+                    "repo_archived",
+                    f"the repository {repo} is archived on its git host, so it is retired; "
+                    "work in the repository that replaced it",
                 )
         return None
 

@@ -67,7 +67,7 @@ brief, and `running` after that. `repo` is a URL or `host/owner/name`, such as
 
 A call that breaks a rule gets `status: rejected`, a `reason`, and a
 `message`. The reasons are `invalid_arguments`, `repo_not_allowed`,
-`repo_not_configured`, `repo_class_mixed`, `token_missing`, `pr_not_found`,
+`repo_archived`, `repo_not_configured`, `repo_class_mixed`, `token_missing`, `pr_not_found`,
 `pr_not_open`, `platform_error`, `unknown_persona`, `concurrency_limit`,
 `locked`, `not_waiting`, `not_resumable`, and `branch_is_base`. The run tools add
 `tasks_not_configured`, `tasks_unreachable`, `project_not_found`, `no_tasks`,
@@ -222,6 +222,17 @@ in the same form as `repo`, at most 5.
 The read-only clone is a guard, not a boundary: the git token of a host can
 still write where the host lets it. Give a reference repository on a host
 whose token can only read when that matters.
+
+## An archived repository
+
+`develop` and `rework` refuse a task with `repo_archived` when the git host
+says that the repository, or one of its reference repositories, is archived.
+Archiving a repository on GitHub or GitLab is how you tell Joshua to stay
+out of it: an old repository can still match a pattern such as
+`gitlab.example.net/*`, and an old task or note can still name it. The check
+is one API call at dispatch, before the pull request lookup of a rework. A
+host that does not answer, or a plain `git` host, lets the task go on.
+`refuse_archived: false` in `developer.yaml` turns the check off.
 
 ## The repository class
 
