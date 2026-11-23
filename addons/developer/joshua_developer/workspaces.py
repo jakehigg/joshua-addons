@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import time
 import uuid
 from collections.abc import Callable
@@ -124,7 +125,7 @@ class Workspaces:
         if not path.exists():
             return True
         try:
-            shutil.rmtree(path)
+            remove_tree(path)
         except OSError as exc:
             # The sweeper tries again: a task that ended success has no age limit.
             logger.warning(
@@ -161,7 +162,7 @@ class Workspaces:
             if reason is None:
                 continue
             try:
-                shutil.rmtree(path)
+                remove_tree(path)
             except OSError as exc:
                 logger.warning(
                     {
@@ -194,3 +195,31 @@ def _is_task_id(name: str) -> bool:
         return str(uuid.UUID(name)) == name
     except ValueError:
         return False
+
+
+def _make_writable_and_retry(func: Callable[..., Any], path: str, exc: BaseException) -> None:
+    """The ``onexc`` hook of ``remove_tree``: a refused delete gets the write
+    bit of its directory back, then one more try.
+
+    A worker clones each reference repository read-only (``set_read_only``
+    in the worker), so its directories have no write bit, and a plain
+    ``rmtree`` cannot take anything out of them. The manager owns every file
+    of ``/work``, so giving the owner the write bit is enough. A symlink is
+    never followed: only real directories change mode.
+    """
+    if not isinstance(exc, PermissionError):
+        raise exc
+    parent = os.path.dirname(path)
+    for target in (parent, path):
+        try:
+            mode = os.lstat(target).st_mode
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(mode):
+            os.chmod(target, stat.S_IMODE(mode) | stat.S_IRWXU)
+    func(path)
+
+
+def remove_tree(path: Path) -> None:
+    """Delete a work directory, the read-only reference clones in it too."""
+    shutil.rmtree(path, onexc=_make_writable_and_retry)

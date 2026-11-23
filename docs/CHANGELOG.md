@@ -82,6 +82,14 @@ releases, with the images and the packaged chart, are at
   on; a `develop` task has none. The database adds the `diff_summary` column
   on `tasks` at the next start, and drops nothing.
 
+### Fixed
+
+- `developer`: a work directory that holds a reference repository is
+  deleted. A worker clones each reference repository read-only, so the
+  manager could not delete the directory when the task ended, and logged
+  "workspace not deleted" for it at each start. The delete now gives the
+  owner the write bit back first, and never follows a symlink.
+
 ## 0.4.0 - 2026-11-19
 
 ### Upgrading from 0.2.0
