@@ -277,7 +277,7 @@ async def test_the_sweeper_deletes_a_success_directory_that_drop_left(
     task_id = await develop(manager)
     commit_in(work_dir / task_id)
 
-    def refuse(path: Path) -> None:
+    def refuse(path: Path, **kwargs: object) -> None:
         raise OSError("busy")
 
     monkeypatch.setattr("joshua_developer.workspaces.shutil.rmtree", refuse)
@@ -287,6 +287,41 @@ async def test_the_sweeper_deletes_a_success_directory_that_drop_left(
     monkeypatch.undo()
     assert manager.sweep_workspaces() == 1
     assert not (work_dir / task_id).exists()
+
+
+async def test_a_directory_with_read_only_reference_clones_is_deleted(
+    manager: Manager, work_dir: Path
+) -> None:
+    """A worker makes each reference clone read-only. The manager still
+    deletes the whole directory when its task ends."""
+    task_id = await develop(manager)
+    ref = work_dir / task_id / "refs" / "example.net" / "group" / "old"
+    (ref / "docs").mkdir(parents=True)
+    (ref / "docs" / "README.md").write_text("old\n")
+    for path in (ref / "docs" / "README.md", ref / "docs", ref):
+        path.chmod(0o444 if path.is_file() else 0o555)
+    await finish(manager, task_id, "success")
+    assert not (work_dir / task_id).exists()
+
+
+def test_remove_tree_never_follows_a_symlink(tmp_path: Path) -> None:
+    from joshua_developer.workspaces import remove_tree
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("keep")
+    outside.chmod(0o555)
+    tree = tmp_path / "tree"
+    (tree / "ro").mkdir(parents=True)
+    (tree / "ro" / "link").symlink_to(outside)
+    (tree / "ro").chmod(0o555)
+    try:
+        remove_tree(tree)
+        assert not tree.exists()
+        assert (outside / "keep.txt").read_text() == "keep"
+        assert outside.stat().st_mode & 0o777 == 0o555
+    finally:
+        outside.chmod(0o755)
 
 
 async def test_the_sweeper_never_touches_a_name_that_is_not_a_task_id(
