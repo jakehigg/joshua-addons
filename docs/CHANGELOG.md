@@ -8,6 +8,13 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: `GET /v1/jobs` reads the live jobs. A viewer gets the active
+  jobs, and each one holds its kind, its repository, its branch, its status,
+  its start time, its chat, its open question, its tokens, and its cost. The
+  `status` query asks for other statuses, and `limit` caps the count. The
+  route needs the same bearer as `/mcp`, and it carries no brief, no report,
+  and no session log (see "The jobs route" in the addon README).
+
 - `developer`: a class for each repository pattern. An entry of `repos`, in
   `developer.yaml`, is a plain pattern of class `public`, or a mapping with
   `pattern` and `class` (`public` or `internal`). `develop` and `rework`
