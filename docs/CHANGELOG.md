@@ -8,6 +8,14 @@ releases, with the images and the packaged chart, are at
 
 ### Added
 
+- `developer`: an archived repository is refused. `develop` and `rework`
+  ask the git host whether the repository, and each reference repository,
+  is archived, and refuse an archived one with `repo_archived`. So archiving
+  an old repository on GitHub or GitLab keeps Joshua out of it, even when a
+  pattern such as `gitlab.example.net/*` still matches it. A host that does
+  not answer lets the task go on. `refuse_archived: false` in
+  `developer.yaml` turns the check off.
+
 - `developer`: `GET /v1/jobs` reads the live jobs. A viewer gets the active
   jobs, and each one holds its kind, its repository, its branch, its status,
   its start time, its chat, its open question, its tokens, and its cost. The

@@ -329,6 +329,9 @@ class DeveloperConfig(_Model):
     platforms: dict[str, Platform] = Field(default_factory=dict)
     repos: list[RepoPattern] = Field(default_factory=list)
     people: dict[str, Person] = Field(default_factory=dict)
+    # Refuse a task on a repository that its git host says is archived. One
+    # API call at dispatch; a host that does not answer lets the task go on.
+    refuse_archived: bool = True
 
     @field_validator("network", mode="before")
     @classmethod

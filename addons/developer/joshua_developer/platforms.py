@@ -10,7 +10,8 @@ the host of a repository and builds the adapter:
 - ``git``: no API. A task ends at the pushed branch.
 
 No adapter opens a pull request or a merge request. An adapter reads the
-pull request that a ``rework`` names, reads a diff, and deletes a branch.
+pull request that a ``rework`` names, reads a diff, deletes a branch, and
+says whether a repository is archived.
 
 A reply that is not 2xx raises ``PlatformError``. Its message never holds the
 token or a URL with a credential.
@@ -145,6 +146,8 @@ class Platform(Protocol):
 
     async def delete_branch(self, repo: str, branch: str) -> None: ...
 
+    async def archived(self, repo: str) -> bool | None: ...
+
     def credential_username(self) -> str: ...
 
     async def aclose(self) -> None: ...
@@ -278,6 +281,12 @@ class GitHubPlatform(_HttpPlatform):
     async def pr(self, repo: str, number: int) -> PullRequest:
         return self._parse(await self._request("GET", f"{self._repo_path(repo)}/pulls/{number}"))
 
+    async def archived(self, repo: str) -> bool | None:
+        """True when the repository is archived, None when the reply does not say."""
+        data = await self._request("GET", self._repo_path(repo))
+        value = (data or {}).get("archived") if isinstance(data, dict) else None
+        return value if isinstance(value, bool) else None
+
     async def compare(self, repo: str, base: str, head: str) -> Diff:
         """The diff from ``base`` to ``head``, page by page.
 
@@ -400,6 +409,12 @@ class GitLabPlatform(_HttpPlatform):
             "DELETE", f"{self._project(repo)}/repository/branches/{quote(branch, safe='')}"
         )
 
+    async def archived(self, repo: str) -> bool | None:
+        """True when the project is archived, None when the reply does not say."""
+        data = await self._request("GET", self._project(repo))
+        value = (data or {}).get("archived") if isinstance(data, dict) else None
+        return value if isinstance(value, bool) else None
+
 
 # --- git -------------------------------------------------------------------
 
@@ -425,6 +440,10 @@ class GitPlatform:
 
     async def delete_branch(self, repo: str, branch: str) -> None:
         raise self._refuse("branch removal")
+
+    async def archived(self, repo: str) -> bool | None:
+        """A plain git host cannot say."""
+        return None
 
     def credential_username(self) -> str:
         return CREDENTIAL_USERNAMES["git"]

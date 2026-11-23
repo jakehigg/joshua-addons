@@ -29,6 +29,9 @@ ADDON = "addon-token"
 
 CONFIG: dict[str, Any] = {
     "network": "off",
+    # The archive check makes one more call at dispatch. Its own tests turn
+    # it on; the others count the calls of the fake git host without it.
+    "refuse_archived": False,
     "default_persona": "opus",
     "max_workers": 2,
     "platforms": {
