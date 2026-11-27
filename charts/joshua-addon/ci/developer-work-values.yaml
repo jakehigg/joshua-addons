@@ -25,7 +25,7 @@ env:
   DEVELOPER_DATA_DIR: /data
   DEVELOPER_CONFIG: /etc/joshua-addon/developer.yaml
   WORKER_RUNTIME: kubernetes
-  WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:0.4.0
+  WORKER_IMAGE: ghcr.io/jakehigg/joshua-addons-developer-worker:0.4.1
   MANAGER_HOST: addon-ci
 extraEnv:
   - name: POD_NAMESPACE
