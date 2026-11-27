@@ -6,6 +6,32 @@ releases, with the images and the packaged chart, are at
 
 ## Unreleased
 
+## 0.4.1 - 2026-11-27
+
+A `developer` task ends at the pushed branch, so Joshua writes the pull
+request text and opens the pull request. Each repository pattern gets a
+class, the credential scan can skip an internal repository, an archived
+repository is refused, the tool surface of a worker is pinned, and the new
+jobs route reads the live jobs. The `tasks` addon reads one task, keeps a
+list inside the result limit, and finds a task by its number.
+
+### Upgrading from 0.4.0
+
+- Set `targetRevision` (ArgoCD) or `JOSHUA_ADDONS_VERSION` (compose) to
+  `0.4.1`, as [releasing.md](releasing.md#4-update-an-installation) says.
+- `developer`: the manager and the worker image must be of the same
+  release. Set the `env.WORKER_IMAGE` tag to `0.4.1` when your own values
+  name it.
+- `developer`: a caller that reads `pr_url` or `pr_number` from the result
+  of `develop` or `run_project` gets neither. Read the branch of the report
+  and open the pull request yourself.
+- `developer`: a task on an archived repository is refused. Set
+  `refuse_archived: false` in `developer.yaml` to work on one.
+- `tasks`: `list_tasks` leaves the `notes` field out. Set
+  `include_notes: true` when a caller needs the notes.
+- The `developer` database upgrades on the next start: it adds the
+  `diff_summary` column on `tasks`. Nothing is dropped.
+
 ### Added
 
 - `developer`: an archived repository is refused. `develop` and `rework`
@@ -81,6 +107,10 @@ releases, with the images and the packaged chart, are at
   task, `pr_url` and `pr_number` name the pull request that a `rework` works
   on; a `develop` task has none. The database adds the `diff_summary` column
   on `tasks` at the next start, and drops nothing.
+
+- `developer`: the notice of a question asks for the answer in the thread.
+  The notice tells the agent to say what the question was and what it
+  answered, so an answered question leaves one visible line with both.
 
 ### Fixed
 
